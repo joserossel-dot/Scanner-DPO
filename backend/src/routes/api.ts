@@ -22,8 +22,14 @@ const adminCors = cors({
       'http://localhost:3000'       // Local node ununified dashboard
     ].filter(Boolean) as string[];
 
-    // Allow same-origin requests or non-browser/curl calls, or dev env
-    if (!origin || allowedOrigins.indexOf(origin) !== -1 || process.env.NODE_ENV !== 'production') {
+    const isAllowed = !origin || allowedOrigins.some(allowed => 
+      origin === allowed || 
+      origin === `https://${allowed}` || 
+      origin === `http://${allowed}`
+    );
+
+    // Allow same-origin requests, non-browser/curl calls, allowed origins, or dev env
+    if (isAllowed || process.env.NODE_ENV !== 'production') {
       callback(null, true);
     } else {
       callback(new Error('Bloqueado por CORS: Origen administrativo no autorizado.'));
