@@ -1,0 +1,35 @@
+# Render Blueprint Specification for PrivacyTech Compliance SaaS
+# Place this in the root of your GitHub repository.
+
+services:
+  # 1. API Backend Web Service (Node.js + Express)
+  - type: web
+    name: pt-compliance-api
+    env: node
+    plan: free
+    buildCommand: npm install && npm run build -w backend
+    startCommand: npm run start -w backend
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: DATABASE_URL
+        sync: false # Set in Render Dashboard from Neon connection string
+      - key: DASHBOARD_ORIGIN
+        fromService:
+          name: pt-compliance-dashboard
+          type: static
+          property: host
+
+  # 2. Static Site (Client Dashboard & Embeddable widget.js)
+  - type: web
+    name: pt-compliance-dashboard
+    env: static
+    plan: free
+    buildCommand: npm install && npm run build:all
+    publishDir: frontend/dist
+    envVars:
+      - key: VITE_API_URL
+        fromService:
+          name: pt-compliance-api
+          type: web
+          property: host

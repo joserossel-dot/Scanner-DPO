@@ -1,0 +1,342 @@
+import { Router } from 'express';
+import cors from 'cors';
+import { getDb } from '../database/db.js';
+import { runAudit } from '../scanner/crawler.js';
+const router = Router();
+// --- CORS CONFIGURATIONS ---
+// Public endpoints (Widget CMP and ARCO Form): accessible from anywhere
+const openCors = cors({
+    origin: '*',
+    methods: ['GET', 'POST', 'OPTIONS'],
+    allowedHeaders: ['Content-Type']
+});
+// Admin endpoints (Client Dashboard): restricted to dashboard origins
+const adminCors = cors({
+    origin: (origin, callback) => {
+        const allowedOrigins = [
+            process.env.DASHBOARD_ORIGIN, // Production Dashboard (e.g. Render)
+            'http://localhost:5173', // Local React Vite dev
+            'http://localhost:3000' // Local node ununified dashboard
+        ].filter(Boolean);
+        // Allow same-origin requests or non-browser/curl calls, or dev env
+        if (!origin || allowedOrigins.indexOf(origin) !== -1 || process.env.NODE_ENV !== 'production') {
+            callback(null, true);
+        }
+        else {
+            callback(new Error('Bloqueado por CORS: Origen administrativo no autorizado.'));
+        }
+    },
+    credentials: true
+});
+// Helper to parse JSON values safely (handles auto-parsed JSONB by pg, or string fallback)
+function safeParseJson(value) {
+    if (value === null || value === undefined)
+        return null;
+    if (typeof value === 'object')
+        return value;
+    try {
+        return JSON.parse(value);
+    }
+    catch {
+        return value;
+    }
+}
+// Helper to calculate business days
+function addBusinessDays(date, days) {
+    const result = new Date(date);
+    let added = 0;
+    while (added < days) {
+        result.setDate(result.getDate() + 1);
+        const day = result.getDay();
+        if (day !== 0 && day !== 6) { // Skip Saturday/Sunday
+            added++;
+        }
+    }
+    return result;
+}
+// Enable OPTIONS pre-flight calls globally for custom origins
+router.options('*', cors());
+// --- ADMIN ENDPOINTS ---
+// 1. Audit Scan Endpoint
+router.post('/scan', adminCors, async (req, res) => {
+    const { url } = req.body;
+    if (!url) {
+        return res.status(400).json({ error: 'Falta parámetro url' });
+    }
+    try {
+        const report = await runAudit(url);
+        const db = getDb();
+        const result = await db.query(`
+      INSERT INTO audit_reports (url, score, severity_counts, findings)
+      VALUES ($1, $2, $3, $4)
+      RETURNING id
+    `, [
+            report.url,
+            report.score,
+            JSON.stringify(report.severityCounts),
+            JSON.stringify(report.findings)
+        ]);
+        const reportId = result.rows[0].id;
+        return res.json({ id: reportId, ...report });
+    }
+    catch (error) {
+        return res.status(500).json({ error: 'Error ejecutando auditoría: ' + error.message });
+    }
+});
+// 2. Get latest scan report
+router.get('/scan/latest', adminCors, async (req, res) => {
+    try {
+        const db = getDb();
+        const result = await db.query('SELECT * FROM audit_reports ORDER BY id DESC LIMIT 1');
+        const latest = result.rows[0];
+        if (!latest) {
+            return res.json(null);
+        }
+        return res.json({
+            id: latest.id,
+            url: latest.url,
+            score: latest.score,
+            severityCounts: safeParseJson(latest.severity_counts),
+            findings: safeParseJson(latest.findings),
+            created_at: latest.created_at
+        });
+    }
+    catch (error) {
+        return res.status(500).json({ error: error.message });
+    }
+});
+// 3. Get history of scans
+router.get('/scan/history', adminCors, async (req, res) => {
+    try {
+        const db = getDb();
+        const result = await db.query('SELECT id, url, score, severity_counts, created_at FROM audit_reports ORDER BY id DESC LIMIT 10');
+        return res.json(result.rows.map(r => ({
+            id: r.id,
+            url: r.url,
+            score: r.score,
+            severityCounts: safeParseJson(r.severity_counts),
+            created_at: r.created_at
+        })));
+    }
+    catch (error) {
+        return res.status(500).json({ error: error.message });
+    }
+});
+// 4. Consent Stats
+router.get('/consents/stats', adminCors, async (req, res) => {
+    try {
+        const db = getDb();
+        const result = await db.query('SELECT consent_types, timestamp FROM consent_logs ORDER BY id DESC');
+        const consents = result.rows;
+        let essential = 0;
+        let analytical = 0;
+        let marketing = 0;
+        let total = consents.length;
+        consents.forEach(c => {
+            try {
+                const types = safeParseJson(c.consent_types);
+                if (types.essential)
+                    essential++;
+                if (types.analytical)
+                    analytical++;
+                if (types.marketing)
+                    marketing++;
+            }
+            catch { }
+        });
+        const timelineMap = {};
+        consents.slice(0, 100).forEach(c => {
+            const dateStr = new Date(c.timestamp).toISOString().split('T')[0];
+            timelineMap[dateStr] = (timelineMap[dateStr] || 0) + 1;
+        });
+        const timeline = Object.keys(timelineMap).map(date => ({
+            date,
+            count: timelineMap[date]
+        })).sort((a, b) => a.date.localeCompare(b.date));
+        return res.json({
+            total,
+            breakdown: {
+                essential,
+                analytical,
+                marketing
+            },
+            timeline
+        });
+    }
+    catch (error) {
+        return res.status(500).json({ error: error.message });
+    }
+});
+// 5. Raw Consent Logs
+router.get('/consents/logs', adminCors, async (req, res) => {
+    try {
+        const db = getDb();
+        const result = await db.query('SELECT * FROM consent_logs ORDER BY id DESC LIMIT 50');
+        return res.json(result.rows.map(r => ({
+            ...r,
+            consent_types: safeParseJson(r.consent_types)
+        })));
+    }
+    catch (error) {
+        return res.status(500).json({ error: error.message });
+    }
+});
+// 6. Get ARCO+ Tickets
+router.get('/arco/tickets', adminCors, async (req, res) => {
+    try {
+        const db = getDb();
+        const result = await db.query('SELECT * FROM arco_requests ORDER BY id DESC');
+        return res.json(result.rows);
+    }
+    catch (error) {
+        return res.status(500).json({ error: error.message });
+    }
+});
+// 7. Update ARCO+ Status
+router.patch('/arco/tickets/:id/status', adminCors, async (req, res) => {
+    const { id } = req.params;
+    const { status } = req.body;
+    if (!status || !['Pendiente', 'En Proceso', 'Resuelto'].includes(status)) {
+        return res.status(400).json({ error: 'Estado inválido' });
+    }
+    try {
+        const db = getDb();
+        const resolvedAt = status === 'Resuelto' ? new Date().toISOString() : null;
+        await db.query(`
+      UPDATE arco_requests
+      SET status = $1, resolved_at = $2
+      WHERE id = $3
+    `, [status, resolvedAt, id]);
+        return res.json({ success: true, resolvedAt });
+    }
+    catch (error) {
+        return res.status(500).json({ error: error.message });
+    }
+});
+// 8. Update Site Config (written by Admin Dashboard)
+router.put('/config/:domain', adminCors, async (req, res) => {
+    const { domain } = req.params;
+    const { company_name, policy_version, policy_content, banner_title, banner_description } = req.body;
+    if (!company_name || !policy_version || !policy_content || !banner_title || !banner_description) {
+        return res.status(400).json({ error: 'Faltan parámetros de configuración obligatorios' });
+    }
+    try {
+        const db = getDb();
+        await db.query(`
+      INSERT INTO site_configs (domain, company_name, policy_version, policy_content, banner_title, banner_description, updated_at)
+      VALUES ($1, $2, $3, $4, $5, $6, CURRENT_TIMESTAMP)
+      ON CONFLICT (domain) DO UPDATE SET
+        company_name = EXCLUDED.company_name,
+        policy_version = EXCLUDED.policy_version,
+        policy_content = EXCLUDED.policy_content,
+        banner_title = EXCLUDED.banner_title,
+        banner_description = EXCLUDED.banner_description,
+        updated_at = CURRENT_TIMESTAMP
+    `, [
+            domain,
+            company_name,
+            policy_version,
+            JSON.stringify(policy_content),
+            banner_title,
+            banner_description
+        ]);
+        return res.json({ success: true });
+    }
+    catch (error) {
+        return res.status(500).json({ error: error.message });
+    }
+});
+// --- PUBLIC WIDGET ENDPOINTS ---
+// 9. Log Consent from Widget (Public)
+router.post('/consent', openCors, async (req, res) => {
+    const { domain, ipHash, consentTypes, userAgent, policyVersion } = req.body;
+    if (!domain || !consentTypes || !policyVersion) {
+        return res.status(400).json({ error: 'Faltan parámetros requeridos de consentimiento' });
+    }
+    try {
+        const db = getDb();
+        await db.query(`
+      INSERT INTO consent_logs (domain, ip_hash, consent_types, user_agent, policy_version)
+      VALUES ($1, $2, $3, $4, $5)
+    `, [
+            domain,
+            ipHash || 'anon',
+            JSON.stringify(consentTypes),
+            userAgent || '',
+            policyVersion
+        ]);
+        return res.json({ success: true });
+    }
+    catch (error) {
+        return res.status(500).json({ error: error.message });
+    }
+});
+// 10. Submit ARCO+ Request from Widget (Public)
+router.post('/arco', openCors, async (req, res) => {
+    const { domain, requesterName, requesterEmail, requestType, details } = req.body;
+    if (!domain || !requesterName || !requesterEmail || !requestType || !details) {
+        return res.status(400).json({ error: 'Faltan campos requeridos para la solicitud ARCO+' });
+    }
+    try {
+        const db = getDb();
+        const now = new Date();
+        let dueDate;
+        if (requestType === 'Bloqueo') {
+            dueDate = addBusinessDays(now, 2);
+        }
+        else {
+            dueDate = new Date(now);
+            dueDate.setDate(dueDate.getDate() + 30);
+        }
+        const result = await db.query(`
+      INSERT INTO arco_requests (domain, requester_name, requester_email, request_type, details, status, due_date)
+      VALUES ($1, $2, $3, $4, $5, $6, $7)
+      RETURNING due_date
+    `, [
+            domain,
+            requesterName,
+            requesterEmail,
+            requestType,
+            details,
+            'Pendiente',
+            dueDate
+        ]);
+        return res.json({ success: true, dueDate: result.rows[0].due_date });
+    }
+    catch (error) {
+        return res.status(500).json({ error: error.message });
+    }
+});
+// 11. Read Site Config (Public - Widget reads this)
+router.get('/config/:domain', openCors, async (req, res) => {
+    const { domain } = req.params;
+    try {
+        const db = getDb();
+        const result = await db.query('SELECT * FROM site_configs WHERE domain = $1', [domain]);
+        let config = result.rows[0];
+        if (!config) {
+            config = {
+                domain,
+                company_name: 'Nueva Empresa',
+                policy_version: 'v1.0.0',
+                policy_content: {
+                    representative: 'Representante de Datos',
+                    representative_email: `soporte@${domain}`,
+                    purposes: 'Finalidades del tratamiento por definir.',
+                    retention_time: 'Período razonable para cumplir las finalidades.',
+                    exercise_channels: 'Formulario de privacidad del sitio web.'
+                },
+                banner_title: 'Control de Cookies',
+                banner_description: 'Configura tus cookies preferidas.'
+            };
+        }
+        else {
+            config.policy_content = safeParseJson(config.policy_content);
+        }
+        return res.json(config);
+    }
+    catch (error) {
+        return res.status(500).json({ error: error.message });
+    }
+});
+export default router;
