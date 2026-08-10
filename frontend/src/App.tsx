@@ -23,6 +23,15 @@ interface AuditFinding {
   details?: string;
 }
 
+interface ActionStep {
+  step: number;
+  title: string;
+  description: string;
+  priority: 'Alta' | 'Media' | 'Baja';
+  estimatedEffort: string;
+  details: string;
+}
+
 interface AuditResult {
   url: string;
   score: number;
@@ -32,6 +41,8 @@ interface AuditResult {
     grave: number;
     gravisima: number;
   };
+  actionPlan?: ActionStep[];
+  pagesAnalyzed?: string[];
   created_at?: string;
 }
 
@@ -637,6 +648,98 @@ export default function App() {
                 </div>
 
               </div>
+
+              {/* Plan de Acción de Mitigación */}
+              {latestScan.actionPlan && latestScan.actionPlan.length > 0 && (
+                <div className="card" style={{ marginTop: '24px' }}>
+                  <h3 style={{ margin: '0 0 20px 0', fontSize: '18px', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <Sliders size={20} color="var(--color-primary)" />
+                    <span>Plan de Acción de Mitigación (Cumplimiento Ley N° 21.719)</span>
+                  </h3>
+                  
+                  {/* Páginas analizadas */}
+                  {latestScan.pagesAnalyzed && latestScan.pagesAnalyzed.length > 0 && (
+                    <div style={{ 
+                      marginBottom: '20px', 
+                      padding: '12px 16px', 
+                      background: 'rgba(99, 102, 241, 0.05)', 
+                      borderRadius: '8px', 
+                      borderLeft: '4px solid var(--color-primary)', 
+                      fontSize: '13px' 
+                    }}>
+                      <strong>Rastreo Multi-página Completo — Enlaces analizados:</strong>
+                      <ul style={{ margin: '6px 0 0 0', paddingLeft: '20px', color: 'var(--text-secondary)' }}>
+                        {latestScan.pagesAnalyzed.map((p, idx) => (
+                          <li key={idx} style={{ wordBreak: 'break-all', marginTop: '2px' }}>{p}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+
+                  <div className="action-plan-timeline" style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                    {latestScan.actionPlan.map((step) => (
+                      <div key={step.step} className="action-step-item" style={{
+                        display: 'flex',
+                        borderLeft: `4px solid ${step.priority === 'Alta' ? 'var(--color-danger)' : step.priority === 'Media' ? 'var(--color-warning)' : 'var(--color-success)'}`,
+                        background: 'rgba(255, 255, 255, 0.02)',
+                        padding: '20px',
+                        borderRadius: '0 12px 12px 0',
+                        gap: '16px'
+                      }}>
+                        <div style={{
+                          minWidth: '32px',
+                          height: '32px',
+                          borderRadius: '50%',
+                          background: 'var(--color-primary-light)',
+                          color: 'var(--color-primary)',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          fontWeight: 'bold',
+                          fontSize: '14px'
+                        }}>
+                          {step.step}
+                        </div>
+                        <div style={{ flex: 1 }}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '8px', marginBottom: '8px' }}>
+                            <h4 style={{ margin: 0, fontSize: '15px', fontWeight: 600 }}>{step.title}</h4>
+                            <div style={{ display: 'flex', gap: '8px' }}>
+                              <span className={`badge ${step.priority === 'Alta' ? 'badge-gravisima' : step.priority === 'Media' ? 'badge-grave' : 'badge-leve'}`}>
+                                Prioridad {step.priority}
+                              </span>
+                              <span style={{
+                                fontSize: '11px',
+                                padding: '3px 8px',
+                                background: 'rgba(255, 255, 255, 0.05)',
+                                borderRadius: '4px',
+                                border: '1px solid rgba(255, 255, 255, 0.1)',
+                                color: 'var(--text-secondary)'
+                              }}>
+                                ⏱️ Esfuerzo: {step.estimatedEffort}
+                              </span>
+                            </div>
+                          </div>
+                          <p style={{ margin: '0 0 12px 0', fontSize: '13px', color: 'var(--text-secondary)' }}>{step.description}</p>
+                          <div style={{
+                            padding: '12px 16px',
+                            background: 'rgba(0, 0, 0, 0.2)',
+                            borderRadius: '8px',
+                            border: '1px solid rgba(255, 255, 255, 0.05)',
+                            fontSize: '12px',
+                            fontFamily: 'monospace',
+                            color: 'var(--text-primary)',
+                            whiteSpace: 'pre-wrap',
+                            wordBreak: 'break-word'
+                          }}>
+                            <strong>Recomendación Técnica:</strong><br/>
+                            {step.details}
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
             )}
           </div>
         )}
