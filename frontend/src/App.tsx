@@ -89,6 +89,8 @@ interface ClientConfig {
   banner_description: string;
 }
 
+const API_BASE = (import.meta as any).env.VITE_API_URL || '';
+
 export default function App() {
   const [activeTab, setActiveTab] = useState<'dashboard' | 'scanner' | 'consents' | 'arco' | 'config'>('dashboard');
   
@@ -124,7 +126,7 @@ export default function App() {
 
   const fetchLatestScan = async () => {
     try {
-      const res = await fetch('/api/scan/latest');
+      const res = await fetch(`${API_BASE}/api/scan/latest`);
       if (res.ok) {
         const data = await res.json();
         setLatestScan(data);
@@ -136,7 +138,7 @@ export default function App() {
 
   const fetchConsentsStats = async () => {
     try {
-      const res = await fetch('/api/consents/stats');
+      const res = await fetch(`${API_BASE}/api/consents/stats`);
       if (res.ok) {
         const data = await res.json();
         setConsentsStats(data);
@@ -148,7 +150,7 @@ export default function App() {
 
   const fetchConsentLogs = async () => {
     try {
-      const res = await fetch('/api/consents/logs');
+      const res = await fetch(`${API_BASE}/api/consents/logs`);
       if (res.ok) {
         const data = await res.json();
         setConsentLogs(data);
@@ -160,7 +162,7 @@ export default function App() {
 
   const fetchArcoTickets = async () => {
     try {
-      const res = await fetch('/api/arco/tickets');
+      const res = await fetch(`${API_BASE}/api/arco/tickets`);
       if (res.ok) {
         const data = await res.json();
         setArcoTickets(data);
@@ -172,7 +174,7 @@ export default function App() {
 
   const fetchConfig = async () => {
     try {
-      const res = await fetch('/api/config/localhost:3000');
+      const res = await fetch(`${API_BASE}/api/config/localhost:3000`);
       if (res.ok) {
         const data: ClientConfig = await res.json();
         setConfig(data);
@@ -198,7 +200,7 @@ export default function App() {
     if (!scanUrl) return;
     setIsScanning(true);
     try {
-      const res = await fetch('/api/scan', {
+      const res = await fetch(`${API_BASE}/api/scan`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ url: scanUrl })
@@ -220,7 +222,7 @@ export default function App() {
     e.preventDefault();
     setIsSavingConfig(true);
     try {
-      const res = await fetch('/api/config/localhost:3000', {
+      const res = await fetch(`${API_BASE}/api/config/localhost:3000`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -251,7 +253,7 @@ export default function App() {
 
   const handleUpdateTicketStatus = async (id: number, status: 'Pendiente' | 'En Proceso' | 'Resuelto') => {
     try {
-      const res = await fetch(`/api/arco/tickets/${id}/status`, {
+      const res = await fetch(`${API_BASE}/api/arco/tickets/${id}/status`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ status })
