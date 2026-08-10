@@ -7,7 +7,7 @@ services:
     name: pt-compliance-api
     env: node
     plan: free
-    buildCommand: npm install && npm run build -w backend
+    buildCommand: npm install --include=dev && npm run build -w backend
     startCommand: npm run start -w backend
     envVars:
       - key: NODE_ENV
@@ -23,7 +23,7 @@ services:
   - type: web
     name: pt-compliance-dashboard
     runtime: static
-    buildCommand: npm install && npm run build:all
+    buildCommand: npm install --include=dev && npm run build:all
     staticPublishPath: frontend/dist
     envVars:
       - key: VITE_API_URL
