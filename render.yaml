@@ -21,10 +21,8 @@ services:
           property: host
 
   # 2. Static Site (Client Dashboard & Embeddable widget.js)
-  - type: web
+  - type: static
     name: pt-compliance-dashboard
-    env: static
-    plan: free
     buildCommand: npm install && npm run build:all
     publishDir: frontend/dist
     envVars:
