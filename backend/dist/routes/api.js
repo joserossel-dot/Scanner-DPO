@@ -12,8 +12,8 @@ const openCors = cors({
 });
 // Admin endpoints (Client Dashboard): restricted to dashboard origins
 const adminCors = cors((req, callback) => {
-    const origin = req.header('Origin');
-    const host = req.header('Host');
+    const origin = (req.headers?.origin || req.headers?.Origin || '');
+    const host = (req.headers?.host || req.headers?.Host || '');
     const allowedOrigins = [
         process.env.DASHBOARD_ORIGIN, // Production Dashboard (e.g. Render)
         'http://localhost:5173', // Local React Vite dev

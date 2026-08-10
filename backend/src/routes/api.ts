@@ -15,8 +15,8 @@ const openCors = cors({
 
 // Admin endpoints (Client Dashboard): restricted to dashboard origins
 const adminCors = cors((req: any, callback: any) => {
-  const origin = req.header('Origin');
-  const host = req.header('Host');
+  const origin = (req.headers?.origin || req.headers?.Origin || '') as string;
+  const host = (req.headers?.host || req.headers?.Host || '') as string;
 
   const allowedOrigins = [
     process.env.DASHBOARD_ORIGIN, // Production Dashboard (e.g. Render)

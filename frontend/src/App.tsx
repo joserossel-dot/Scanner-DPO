@@ -591,6 +591,9 @@ export default function App() {
                   </div>
                   <div style={{ textAlign: 'center', marginTop: '10px' }}>
                     <h3>Reporte de Auditoría</h3>
+                    <p style={{ fontSize: '11px', color: 'var(--color-primary)', fontWeight: 'bold', margin: '4px 0 8px 0', wordBreak: 'break-all' }}>
+                      {latestScan.url}
+                    </p>
                     <p style={{ fontSize: '13px', color: 'var(--text-secondary)' }}>
                       Hallazgos detectados:<br />
                       <span className="badge badge-gravisima" style={{ margin: '4px' }}>{latestScan.severityCounts.gravisima} Gravísimas</span>
@@ -602,7 +605,9 @@ export default function App() {
 
                 {/* Findings list */}
                 <div className="card col-8">
-                  <h3 style={{ margin: '0 0 20px 0', fontSize: '18px', fontWeight: 600 }}>Brechas de Cumplimiento Identificadas</h3>
+                  <h3 style={{ margin: '0 0 20px 0', fontSize: '18px', fontWeight: 600 }}>
+                    Brechas de Cumplimiento Identificadas para: <span style={{ color: 'var(--color-primary)', wordBreak: 'break-all' }}>{latestScan.url}</span>
+                  </h3>
                   {latestScan.findings.length > 0 ? (
                     <div className="findings-list">
                       {latestScan.findings.map(finding => (
