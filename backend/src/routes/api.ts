@@ -14,28 +14,30 @@ const openCors = cors({
 });
 
 // Admin endpoints (Client Dashboard): restricted to dashboard origins
-const adminCors = cors({
-  origin: (origin, callback) => {
-    const allowedOrigins = [
-      process.env.DASHBOARD_ORIGIN, // Production Dashboard (e.g. Render)
-      'http://localhost:5173',      // Local React Vite dev
-      'http://localhost:3000'       // Local node ununified dashboard
-    ].filter(Boolean) as string[];
+const adminCors = cors((req, callback) => {
+  const origin = req.header('Origin');
+  const host = req.header('Host');
 
-    const isAllowed = !origin || allowedOrigins.some(allowed => 
-      origin === allowed || 
-      origin === `https://${allowed}` || 
-      origin === `http://${allowed}`
-    );
+  const allowedOrigins = [
+    process.env.DASHBOARD_ORIGIN, // Production Dashboard (e.g. Render)
+    'http://localhost:5173',      // Local React Vite dev
+    'http://localhost:3000',      // Local node ununified dashboard
+    host                          // Allow same-origin calls automatically
+  ].filter(Boolean) as string[];
 
-    // Allow same-origin requests, non-browser/curl calls, allowed origins, or dev env
-    if (isAllowed || process.env.NODE_ENV !== 'production') {
-      callback(null, true);
-    } else {
-      callback(new Error('Bloqueado por CORS: Origen administrativo no autorizado.'));
-    }
-  },
-  credentials: true
+  const isAllowed = !origin || allowedOrigins.some(allowed => 
+    origin === allowed || 
+    origin === `https://${allowed}` || 
+    origin === `http://${allowed}`
+  );
+
+  let corsOptions;
+  if (isAllowed || process.env.NODE_ENV !== 'production') {
+    corsOptions = { origin: true, credentials: true };
+  } else {
+    corsOptions = { origin: false };
+  }
+  callback(null, corsOptions);
 });
 
 // Helper to parse JSON values safely (handles auto-parsed JSONB by pg, or string fallback)
