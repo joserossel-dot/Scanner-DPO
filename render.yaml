@@ -17,7 +17,7 @@ services:
       - key: DASHBOARD_ORIGIN
         fromService:
           name: pt-compliance-dashboard
-          type: static
+          type: static_site
           property: host
 
   # 2. Static Site (Client Dashboard & Embeddable widget.js)
