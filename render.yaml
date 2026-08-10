@@ -17,13 +17,14 @@ services:
       - key: DASHBOARD_ORIGIN
         fromService:
           name: pt-compliance-dashboard
-          type: static_site
+          type: web
           property: host
   # 2. Static Site (Client Dashboard & Embeddable widget.js)
-staticSites:
-  - name: pt-compliance-dashboard
+  - type: web
+    name: pt-compliance-dashboard
+    runtime: static
     buildCommand: npm install && npm run build:all
-    publishDir: frontend/dist
+    staticPublishPath: frontend/dist
     envVars:
       - key: VITE_API_URL
         fromService:
