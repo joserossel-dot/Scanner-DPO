@@ -5,6 +5,7 @@ import { fileURLToPath } from 'url';
 import dotenv from 'dotenv';
 import { initDb } from './database/db.js';
 import apiRouter from './routes/api.js';
+import transfersRouter from './routes/transfers.js';
 // Load environment variables
 dotenv.config();
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -13,6 +14,7 @@ const PORT = process.env.PORT || 3000;
 app.use(express.json());
 // API Routes
 app.use('/api', apiRouter);
+app.use('/api/transfers', transfersRouter);
 // Serve the compiled Frontend Dashboard from the frontend workspace
 const frontendDistPath = path.resolve(__dirname, '../../frontend/dist');
 app.use(express.static(frontendDistPath));

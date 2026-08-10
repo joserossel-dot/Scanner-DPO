@@ -64,3 +64,41 @@ CREATE TABLE IF NOT EXISTS arco_requests (
 );
 
 CREATE INDEX IF NOT EXISTS idx_arco_domain ON arco_requests(domain);
+
+-- 5. Adequate Countries Reference Table
+CREATE TABLE IF NOT EXISTS adequate_countries_reference (
+  country_code VARCHAR(2) PRIMARY KEY,
+  country_name VARCHAR(100) NOT NULL,
+  is_adequate BOOLEAN NOT NULL,
+  notes TEXT
+);
+
+-- Seed adequate countries reference
+INSERT INTO adequate_countries_reference (country_code, country_name, is_adequate, notes)
+VALUES 
+  ('CL', 'Chile', TRUE, 'Origen y jurisdicción principal de la Ley N° 21.719.'),
+  ('ES', 'España (UE/EEE)', TRUE, 'Nivel adecuado por equivalencia RGPD de la Unión Europea.'),
+  ('DE', 'Alemania (UE/EEE)', TRUE, 'Nivel adecuado por equivalencia RGPD de la Unión Europea.'),
+  ('FR', 'Francia (UE/EEE)', TRUE, 'Nivel adecuado por equivalencia RGPD de la Unión Europea.'),
+  ('IT', 'Italia (UE/EEE)', TRUE, 'Nivel adecuado por equivalencia RGPD de la Unión Europea.'),
+  ('GB', 'Reino Unido', TRUE, 'Adecuación reconocida post-Brexit.'),
+  ('CA', 'Canadá', TRUE, 'Reconocido bajo la Ley PIPEDA federal.'),
+  ('JP', 'Japón', TRUE, 'Nivel adecuado por reconocimiento de adecuación recíproco.'),
+  ('NZ', 'Nueva Zelanda', TRUE, 'Nivel de protección adecuado reconocido.'),
+  ('US', 'Estados Unidos', FALSE, 'No adecuado de forma automática. Requiere firma de Cláusulas Contractuales Tipo (SCC).')
+ON CONFLICT (country_code) DO NOTHING;
+
+-- 6. International Transfers Table
+CREATE TABLE IF NOT EXISTS international_transfers (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  domain VARCHAR(255) NOT NULL REFERENCES site_configs(domain) ON DELETE CASCADE,
+  vendor_name VARCHAR(255) NOT NULL,
+  destination_country VARCHAR(100) NOT NULL,
+  data_categories JSONB NOT NULL, -- Array of strings e.g. ["email", "phone"]
+  transfer_mechanism VARCHAR(50) NOT NULL, -- ADEQUATE_COUNTRY, STANDARD_CLAUSES, BCR, CONSENT_EXCEPTIONAL, OTHER
+  has_signed_scc BOOLEAN NOT NULL DEFAULT FALSE,
+  scc_document_url VARCHAR(500),
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
