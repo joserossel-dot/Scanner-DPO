@@ -6,6 +6,7 @@ import DiagnosisResultsView from './pages/dashboard/DiagnosisResultsView';
 import ContractBuilderView from './pages/dashboard/components/ContractBuilderView';
 import LoginView from './pages/auth/LoginView';
 import RegisterView from './pages/auth/RegisterView';
+import PolicyGeneratorView from './pages/dashboard/components/PolicyGeneratorView';
 import { 
   Shield, 
   Activity, 
@@ -1803,60 +1804,7 @@ Firmas autorizadas:
 
         {/* Sub-tab: Policy & Documents Generator */}
         {remediationSubTab === 'policies' && (
-          <div className="dashboard-grid">
-            <div className="card col-12">
-              <h3 style={{ margin: '0 0 10px 0', fontSize: '15px', fontWeight: 600 }}>Configuración de Cláusulas (Art. 14 ter)</h3>
-              <p style={{ fontSize: '13px', color: 'var(--text-secondary)', marginBottom: '15px' }}>Completa los datos de tu política de privacidad obligatoria bajo la ley de privacidad chilena.</p>
-              
-              <form onSubmit={handleSaveConfig} style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '15px' }}>
-                <div>
-                  <label className="form-label">Nombre del DPO / Representante Legal</label>
-                  <input type="text" className="input-text" style={{ width: '100%' }} value={configRepresentative} onChange={e => setConfigRepresentative(e.target.value)} required />
-                </div>
-                <div>
-                  <label className="form-label">Email de contacto DPO</label>
-                  <input type="email" className="input-text" style={{ width: '100%' }} value={configEmail} onChange={e => setConfigEmail(e.target.value)} required />
-                </div>
-                <div>
-                  <label className="form-label">Plazos de Retención de Datos</label>
-                  <input type="text" className="input-text" style={{ width: '100%' }} value={configRetention} onChange={e => setConfigRetention(e.target.value)} placeholder="ej. 24 meses desde el último contacto" required />
-                </div>
-                <div>
-                  <label className="form-label">Canales de Atención Derechos ARCO+</label>
-                  <input type="text" className="input-text" style={{ width: '100%' }} value={configChannels} onChange={e => setConfigChannels(e.target.value)} placeholder="ej. Correo del DPO y formulario público" required />
-                </div>
-                <div className="col-12">
-                  <label className="form-label">Finalidades Declaradas del Tratamiento</label>
-                  <textarea className="input-text" style={{ width: '100%' }} rows={3} value={configPurposes} onChange={e => setConfigPurposes(e.target.value)} required />
-                </div>
-                <div className="col-12">
-                  <label className="form-label">Nombre de la Organización</label>
-                  <input type="text" className="input-text" style={{ width: '100%' }} value={configCompanyName} onChange={e => setConfigCompanyName(e.target.value)} required />
-                </div>
-                <div className="col-12" style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '10px' }}>
-                  <button type="submit" className="btn-save" disabled={isSavingConfig}>
-                    {isSavingConfig ? 'Guardando...' : 'Guardar y Generar Textos'}
-                  </button>
-                </div>
-              </form>
-            </div>
-
-            {config && (
-              <div className="card col-12">
-                <h3 style={{ margin: '0 0 10px 0', fontSize: '15px', fontWeight: 600 }}>Texto de Política de Privacidad Auto-Generado</h3>
-                <p style={{ fontSize: '13px', color: 'var(--text-secondary)', marginBottom: '15px' }}>Copia y publica esta política legal de cumplimiento en tu sitio web.</p>
-                <div style={{ background: '#0a0a14', padding: '16px', borderRadius: '8px', border: '1px solid var(--border-color)', fontSize: '12.5px', lineHeight: 1.5, maxHeight: '300px', overflowY: 'auto' }}>
-                  <strong>POLÍTICA DE PRIVACIDAD Y TRATAMIENTO DE DATOS PERSONALES</strong><br />
-                  Empresa responsable: {config.company_name}<br />
-                  Versión: {config.policy_version}<br /><br />
-                  1. IDENTIFICACIÓN: El representante legal a cargo de la protección de sus datos es {config.policy_content?.representative} con correo de contacto {config.policy_content?.representative_email}.<br /><br />
-                  2. FINALIDADES: Los datos recopilados a través de nuestros formularios web se utilizarán estrictamente para: {config.policy_content?.purposes}.<br /><br />
-                  3. RETENCIÓN: Conservaremos sus datos personales durante un periodo máximo de: {config.policy_content?.retention}.<br /><br />
-                  4. CANALES DE EJERCICIO ARCO+: De acuerdo con la Ley N° 21.719, usted tiene derecho a Acceder, Rectificar, Cancelar, Oponerse y Portar sus datos personales. Puede ejercer sus derechos a través de: {config.policy_content?.channels}.
-                </div>
-              </div>
-            )}
-          </div>
+          <PolicyGeneratorView token={token} />
         )}
 
         {/* Sub-tab: Contract Builder (DPA/SCC) */}

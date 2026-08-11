@@ -48,7 +48,8 @@ const store = {
   consentLogs: [
     { id: 1, user_cookie_id: 'cookie_sess_abc', ip_masked: '186.104.22.xxx', essential_accepted: true, analytical_accepted: true, marketing_accepted: false, created_at: new Date().toISOString() }
   ],
-  reports: [] as any[]
+  reports: [] as any[],
+  privacyPolicies: [] as any[]
 };
 
 // Mock Pool that behaves like pg.Pool for local development
@@ -179,6 +180,53 @@ class MockPool {
         created_at: new Date().toISOString()
       };
       return { rows: [newLead], rowCount: 1 };
+    }
+
+    if (text.startsWith('INSERT INTO privacy_policies')) {
+      if (!store.privacyPolicies) {
+        store.privacyPolicies = [];
+      }
+      
+      const userId = params[0];
+      const companyRut = params[1];
+      const address = params[2];
+      const contactEmail = params[3];
+      const dataCategories = typeof params[4] === 'string' ? JSON.parse(params[4]) : params[4];
+      const purposes = typeof params[5] === 'string' ? JSON.parse(params[5]) : params[5];
+      const retentionRules = params[6];
+      const policyHtml = params[7];
+
+      let policy = store.privacyPolicies.find((p: any) => p.user_id === userId);
+      if (policy) {
+        policy.company_rut = companyRut;
+        policy.address = address;
+        policy.contact_email = contactEmail;
+        policy.data_categories = dataCategories;
+        policy.purposes = purposes;
+        policy.retention_rules = retentionRules;
+        policy.policy_html = policyHtml;
+        policy.updated_at = new Date().toISOString();
+      } else {
+        policy = {
+          id: 'policy-' + Math.random().toString(36).substring(2, 9),
+          user_id: userId,
+          company_rut: companyRut,
+          address: address,
+          contact_email: contactEmail,
+          data_categories: dataCategories,
+          purposes: purposes,
+          retention_rules: retentionRules,
+          policy_html: policyHtml,
+          updated_at: new Date().toISOString()
+        };
+        store.privacyPolicies.push(policy);
+      }
+      return { rows: [policy], rowCount: 1 };
+    }
+
+    if (text.includes('FROM privacy_policies') && text.includes('user_id = $1')) {
+      const policy = store.privacyPolicies?.find((p: any) => p.user_id === params[0]);
+      return { rows: policy ? [policy] : [], rowCount: policy ? 1 : 0 };
     }
 
     if (text.startsWith('INSERT INTO audit_reports')) {
@@ -476,6 +524,21 @@ export async function initDb() {
       email VARCHAR(255) NOT NULL,
       score_detected INTEGER NOT NULL,
       created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+    )
+  `);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS privacy_policies (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      user_id UUID UNIQUE REFERENCES users(id) ON DELETE CASCADE,
+      company_rut VARCHAR(50) NOT NULL,
+      address VARCHAR(255) NOT NULL,
+      contact_email VARCHAR(255) NOT NULL,
+      data_categories JSONB NOT NULL,
+      purposes JSONB NOT NULL,
+      retention_rules TEXT NOT NULL,
+      policy_html TEXT NOT NULL,
+      updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
     )
   `);
 
