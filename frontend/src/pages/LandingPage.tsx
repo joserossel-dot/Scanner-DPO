@@ -12,18 +12,55 @@ import {
   Sliders, 
   Activity,
   Users,
-  Search
+  Search,
+  RefreshCw
 } from 'lucide-react';
+
+const API_BASE = (import.meta as any).env.VITE_API_URL || '';
 
 export default function LandingPage() {
   const [scanUrl, setScanUrl] = useState('');
+  const [emailInput, setEmailInput] = useState('');
+  const [isScanning, setIsScanning] = useState(false);
+  const [scanResult, setScanResult] = useState<any>(null);
+  const [scanError, setScanError] = useState('');
   const navigate = useNavigate();
 
-  const handleFreeScanSubmit = (e: React.FormEvent) => {
+  const handleFreeScanSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!scanUrl.trim()) return;
-    // Redirect to the dashboard and trigger automated scan
-    navigate('/dashboard', { state: { autoScanUrl: scanUrl } });
+    if (!scanUrl.trim() || !emailInput.trim()) return;
+
+    setIsScanning(true);
+    setScanError('');
+    setScanResult(null);
+
+    try {
+      const response = await fetch(`${API_BASE}/api/free-scan`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ domain: scanUrl, email: emailInput }),
+      });
+
+      const data = await response.json();
+
+      if (response.ok) {
+        setScanResult(data);
+        // Smooth scroll to results
+        setTimeout(() => {
+          const el = document.getElementById('free-scan-results');
+          if (el) el.scrollIntoView({ behavior: 'smooth' });
+        }, 100);
+      } else {
+        setScanError(data.error || 'Error al ejecutar el escaneo.');
+      }
+    } catch (err) {
+      console.error(err);
+      setScanError('Error de comunicación con el servidor de auditorías.');
+    } finally {
+      setIsScanning(false);
+    }
   };
 
   return (
@@ -83,33 +120,180 @@ export default function LandingPage() {
           Automatiza el cumplimiento web e interno en tiempo récord con nuestra plataforma SaaS y el acompañamiento de consultores legales y técnicos expertos.
         </p>
 
-        {/* Live Scan Search Input Card */}
-        <div className="mt-10 max-w-xl mx-auto">
+        {/* Lead Magnet Double-Input Form */}
+        <div className="mt-10 max-w-2xl mx-auto">
           <form 
             onSubmit={handleFreeScanSubmit} 
-            className="p-2 rounded-xl bg-slate-900 border border-slate-800 focus-within:border-indigo-500/50 shadow-2xl shadow-indigo-950/10 flex flex-col sm:flex-row gap-2 transition-all"
+            className="p-4 rounded-xl bg-slate-900 border border-slate-850 shadow-2xl flex flex-col gap-3 text-left"
           >
-            <input 
-              type="text" 
-              className="flex-grow bg-transparent px-4 py-3 rounded-lg text-slate-100 placeholder:text-slate-500 text-sm focus:outline-none"
-              placeholder="Ingresa la URL de tu sitio (ej. misitio.cl)"
-              value={scanUrl}
-              onChange={e => setScanUrl(e.target.value)}
-              required
-            />
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              <div>
+                <label className="text-[11px] font-bold text-slate-400 uppercase tracking-wide block mb-1">Sitio Web de la Empresa</label>
+                <input 
+                  type="text" 
+                  className="w-full bg-slate-950 border border-slate-800 rounded-lg px-4 py-2.5 text-sm text-slate-100 placeholder:text-slate-700 focus:outline-none focus:border-indigo-500/50"
+                  placeholder="ej. misitio.cl"
+                  value={scanUrl}
+                  onChange={e => setScanUrl(e.target.value)}
+                  required
+                />
+              </div>
+              <div>
+                <label className="text-[11px] font-bold text-slate-400 uppercase tracking-wide block mb-1">Correo Electrónico Corporativo</label>
+                <input 
+                  type="email" 
+                  className="w-full bg-slate-950 border border-slate-800 rounded-lg px-4 py-2.5 text-sm text-slate-100 placeholder:text-slate-700 focus:outline-none focus:border-indigo-500/50"
+                  placeholder="ej. dpo@misitio.cl"
+                  value={emailInput}
+                  onChange={e => setEmailInput(e.target.value)}
+                  required
+                />
+              </div>
+            </div>
+            
             <button 
               type="submit" 
-              className="bg-indigo-600 hover:bg-indigo-500 active:bg-indigo-700 text-white font-semibold text-sm px-6 py-3 rounded-lg shadow-md shadow-indigo-600/20 hover:shadow-indigo-600/30 transition-all flex items-center justify-center gap-2 group"
+              disabled={isScanning}
+              className="w-full mt-2 bg-indigo-600 hover:bg-indigo-500 active:bg-indigo-700 text-white font-bold text-sm py-3 rounded-lg shadow-lg shadow-indigo-600/25 transition-all flex items-center justify-center gap-2 group"
             >
-              <span>Escanear mi web gratis</span>
-              <ArrowRight size={16} className="group-hover:translate-x-1 transition-transform" />
+              {isScanning ? (
+                <>
+                  <RefreshCw className="w-4 h-4 loader" />
+                  <span>Ejecutando Auditoría Legal en Vivo...</span>
+                </>
+              ) : (
+                <>
+                  <span>Iniciar Auditoría Técnica Gratuita</span>
+                  <ArrowRight size={16} className="group-hover:translate-x-1 transition-transform" />
+                </>
+              )}
             </button>
           </form>
+
+          {scanError && (
+            <p className="mt-3 text-xs text-rose-400 font-semibold">{scanError}</p>
+          )}
           <p className="mt-3 text-[11px] text-slate-500">
             * El escáner gratuito analiza cookies externas, scripts espías de terceros y formularios con opt-in ausentes.
           </p>
         </div>
       </section>
+
+      {/* 2. Public Scan Results (Lead Magnet Gancho / Regwall) */}
+      {scanResult && (
+        <section id="free-scan-results" className="py-16 bg-slate-900/30 border-y border-slate-900 scroll-mt-20">
+          <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div className="p-6 md:p-8 bg-slate-900 border border-slate-800 rounded-2xl shadow-2xl space-y-8">
+              
+              {/* Header result */}
+              <div className="flex flex-col md:flex-row justify-between items-center gap-6 pb-6 border-b border-slate-800">
+                <div className="text-center md:text-left">
+                  <span className="text-indigo-400 font-bold text-xs uppercase tracking-widest block">Reporte Inicial Generado</span>
+                  <h3 className="text-2xl font-extrabold text-white mt-1">
+                    Análisis de cookies y scripts para: <span className="text-indigo-400 font-mono text-xl">{scanResult.url}</span>
+                  </h3>
+                  <p className="text-slate-400 text-xs mt-2">Evaluado en tiempo real conforme a las regulaciones de la Ley N° 21.719 en Chile.</p>
+                </div>
+
+                {/* score ring */}
+                <div className="relative w-28 h-28 flex items-center justify-center flex-shrink-0">
+                  <svg className="absolute w-full h-full -rotate-90">
+                    <circle className="stroke-slate-800" strokeWidth="8" fill="transparent" r="46" cx="56" cy="56" />
+                    <circle 
+                      className={scanResult.score >= 80 ? 'stroke-emerald-500' : scanResult.score >= 50 ? 'stroke-amber-500' : 'stroke-rose-500'} 
+                      strokeWidth="8" 
+                      fill="transparent" 
+                      r="46" 
+                      cx="56" 
+                      cy="56" 
+                      strokeDasharray={289}
+                      strokeDashoffset={289 - (289 * scanResult.score) / 100}
+                      strokeLinecap="round"
+                    />
+                  </svg>
+                  <div className="text-center z-10">
+                    <span className="text-2xl font-extrabold text-white block">{scanResult.score}%</span>
+                    <span className="text-[9px] text-slate-500 uppercase font-bold tracking-wider">Score</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Findings grid */}
+              <div className="space-y-4">
+                <h4 className="font-bold text-sm text-white uppercase tracking-wider">Brechas y Vulnerabilidades Web Detectadas</h4>
+                
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {scanResult.findings && scanResult.findings.map((f: any, idx: number) => (
+                    <div key={idx} className="p-4 bg-slate-950/40 border border-slate-850 rounded-xl flex gap-3 items-start">
+                      <div className={`p-1.5 rounded-lg flex-shrink-0 mt-0.5 ${
+                        f.severity === 'Grave' || f.severity === 'Gravísima' ? 'bg-rose-950/60 text-rose-400' : 'bg-amber-950/60 text-amber-400'
+                      }`}>
+                        <AlertTriangle size={15} />
+                      </div>
+                      <div>
+                        <span className="text-xs font-bold text-white block">{f.description}</span>
+                        <span className="text-[11px] text-slate-400 block mt-1">Recomendación: {f.recommendation}</span>
+                      </div>
+                    </div>
+                  ))}
+                  {(!scanResult.findings || scanResult.findings.length === 0) && (
+                    <p className="text-slate-400 text-xs col-span-2 text-center py-4">No se detectaron brechas críticas externas de scripts o cookies.</p>
+                  )}
+                </div>
+              </div>
+
+              {/* Action plan priorizado - Regwall blurred! */}
+              <div className="relative mt-8 pt-6 border-t border-slate-800">
+                <h4 className="font-bold text-sm text-slate-400 uppercase tracking-wider mb-4">Plan de Acción y Remedición Priorizado</h4>
+                
+                {/* Blurred Content */}
+                <div className="space-y-3 blur-md opacity-25 select-none pointer-events-none">
+                  <div className="p-4 bg-slate-950/40 border border-slate-850 rounded-xl flex justify-between items-center">
+                    <div>
+                      <span className="font-bold text-xs text-white block">1. Implementar CMP y Banner de Consentimiento Seguro</span>
+                      <span className="text-[11px] text-slate-400 block">Esfuerzo: 2 horas • Infracción Art. 14 quinquies</span>
+                    </div>
+                  </div>
+                  <div className="p-4 bg-slate-950/40 border border-slate-850 rounded-xl flex justify-between items-center">
+                    <div>
+                      <span className="font-bold text-xs text-white block">2. Regularizar cláusulas DPA con proveedores SaaS</span>
+                      <span className="text-[11px] text-slate-400 block">Esfuerzo: 1 día • Infracción Art. 15 bis</span>
+                    </div>
+                  </div>
+                  <div className="p-4 bg-slate-950/40 border border-slate-850 rounded-xl flex justify-between items-center">
+                    <div>
+                      <span className="font-bold text-xs text-white block">3. Redactar políticas de privacidad automatizadas</span>
+                      <span className="text-[11px] text-slate-400 block">Esfuerzo: 30 mins • Infracción Art. 14 ter</span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Overlaid Lock and CTA */}
+                <div className="absolute inset-0 bg-slate-900/40 flex flex-col items-center justify-center text-center p-4">
+                  <div className="p-3 bg-indigo-950 text-indigo-400 border border-indigo-900/50 rounded-full mb-4 shadow-xl">
+                    <Lock size={24} className="animate-bounce" />
+                  </div>
+                  <h5 className="text-white font-extrabold text-base md:text-lg max-w-md leading-snug">
+                    Desbloquea el plan de mitigación priorizado y las herramientas de remedición
+                  </h5>
+                  <p className="text-xs text-slate-400 mt-2 max-w-sm mb-5">
+                    Genera anexos DPA, cláusulas SCC, configura el CMP y obtén el score de cumplimiento legal al 100%.
+                  </p>
+                  <button
+                    onClick={() => navigate(`/register?email=${encodeURIComponent(emailInput)}`)}
+                    className="px-6 py-3 bg-indigo-600 hover:bg-indigo-500 active:bg-indigo-700 text-white font-extrabold text-sm rounded-xl shadow-lg shadow-indigo-600/30 transition-all flex items-center gap-2 group"
+                  >
+                    <span>Crear cuenta gratis y ver plan de acción</span>
+                    <ArrowRight size={15} className="group-hover:translate-x-1 transition-transform" />
+                  </button>
+                </div>
+
+              </div>
+
+            </div>
+          </div>
+        </section>
+      )}
 
       {/* Risks Section (Urgency) */}
       <section id="riesgos" className="border-y border-slate-900 bg-slate-950/30 py-20">
@@ -193,7 +377,7 @@ export default function LandingPage() {
               <ul className="mt-6 space-y-3.5 text-slate-300 text-sm">
                 <li className="flex items-center gap-3">
                   <CheckCircle size={16} className="text-emerald-500 flex-shrink-0" />
-                  <span><strong>Consent Manager (CMP):</strong> Bloqueo y log auditables.</span>
+                  <span><strong>Consent Manager (CMP):</strong> Almacenamiento auditable de cookies.</span>
                 </li>
                 <li className="flex items-center gap-3">
                   <CheckCircle size={16} className="text-emerald-500 flex-shrink-0" />

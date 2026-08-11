@@ -351,4 +351,27 @@ router.get('/config/:domain', openCors, async (req, res) => {
         return res.status(500).json({ error: error.message });
     }
 });
+// 12. Public free scanner endpoint for the Landing Page Lead Magnet (No Auth)
+router.post('/free-scan', openCors, async (req, res) => {
+    const { domain, email } = req.body;
+    if (!domain || !email) {
+        return res.status(400).json({ error: 'Faltan parámetros obligatorios: domain y email.' });
+    }
+    try {
+        const report = await runAudit(domain);
+        const db = getDb();
+        // Insert lead asynchronously
+        db.query(`
+      INSERT INTO leads (domain, email, score_detected)
+      VALUES ($1, $2, $3)
+    `, [domain, email, report.score]).catch((err) => {
+            console.error('Error inserting lead asynchronously:', err.message);
+        });
+        return res.json(report);
+    }
+    catch (error) {
+        console.error('Error running public free scan:', error.message);
+        return res.status(500).json({ error: 'Error ejecutando auditoría gratuita: ' + error.message });
+    }
+});
 export default router;

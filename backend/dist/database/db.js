@@ -149,6 +149,16 @@ class MockPool {
             store.incidents.push(newIncident);
             return { rows: [newIncident], rowCount: 1 };
         }
+        if (text.startsWith('INSERT INTO leads')) {
+            const newLead = {
+                id: 'lead-' + Math.random().toString(36).substring(2, 9),
+                domain: params[0],
+                email: params[1],
+                score_detected: params[2],
+                created_at: new Date().toISOString()
+            };
+            return { rows: [newLead], rowCount: 1 };
+        }
         if (text.startsWith('INSERT INTO audit_reports')) {
             const newReport = {
                 id: store.reports.length + 1,
@@ -409,6 +419,15 @@ export async function initDb() {
   `);
     await pool.query(`
     ALTER TABLE security_incidents ADD COLUMN IF NOT EXISTS user_id UUID REFERENCES users(id) ON DELETE CASCADE;
+  `);
+    await pool.query(`
+    CREATE TABLE IF NOT EXISTS leads (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      domain VARCHAR(255) NOT NULL,
+      email VARCHAR(255) NOT NULL,
+      score_detected INTEGER NOT NULL,
+      created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+    )
   `);
     console.log('✅ Tablas y esquema de PostgreSQL validados/creados.');
     return pool;

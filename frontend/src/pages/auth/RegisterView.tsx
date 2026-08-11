@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { Shield, Key, Mail, Building, RefreshCw, AlertCircle } from 'lucide-react';
 
 const API_BASE = (import.meta as any).env.VITE_API_URL || '';
@@ -9,12 +9,16 @@ interface RegisterViewProps {
 }
 
 export default function RegisterView({ onRegisterSuccess }: RegisterViewProps) {
-  const [email, setEmail] = useState('');
+  const navigate = useNavigate();
+  const location = useLocation();
+  const [email, setEmail] = useState(() => {
+    const params = new URLSearchParams(location.search);
+    return params.get('email') || '';
+  });
   const [password, setPassword] = useState('');
   const [companyName, setCompanyName] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
-  const navigate = useNavigate();
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
