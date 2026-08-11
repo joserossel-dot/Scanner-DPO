@@ -6,12 +6,236 @@ dotenv.config();
 
 const { Pool } = pg;
 
-let pool: pg.Pool;
+// Mutable In-Memory database for local development fallback
+const store = {
+  config: {
+    domain: 'localhost:3000',
+    company_name: 'Mi Empresa Chile S.A.',
+    policy_version: 'v1.0.0',
+    policy_content: {
+      representative: 'PrivacyTech Chile SpA',
+      representative_email: 'contacto@privacytech.cl',
+      purposes: 'Prestación de servicios SaaS, soporte técnico y mejora de la plataforma.',
+      retention: '5 años desde el fin del contrato o revocación del consentimiento.',
+      channels: 'Formulario ARCO+ del sitio web o al correo arco@privacytech.cl'
+    },
+    banner_title: 'Control de su Privacidad',
+    banner_description: 'Utilizamos cookies esenciales y de terceros para asegurar el correcto funcionamiento del portal, análisis estadístico y marketing personalizado conforme a la Ley N° 21.719 de Chile.'
+  },
+  transfers: [
+    { id: 'transfer-1', provider_name: 'Google Analytics', country: 'US', data_categories: ['Datos de navegación (cookies/IP)'], adequacy_status: 'No Adecuado', has_scc: false, has_dpa: false },
+    { id: 'transfer-2', provider_name: 'Stripe Payment Gateway', country: 'US', data_categories: ['Datos financieros/tarjetas'], adequacy_status: 'No Adecuado', has_scc: true, has_dpa: true }
+  ],
+  incidents: [
+    {
+      id: 'incident-1',
+      incident_title: 'Acceso no autorizado a BBDD de clientes',
+      incident_date: new Date().toISOString(),
+      incident_type: 'DATA_LEAK',
+      affected_data_categories: ['Datos de Identidad (RUT, Claves de Acceso)'],
+      approx_affected_titulars: 1500,
+      description_and_effects: 'Fuga de credenciales expuestas en repositorio de desarrollo.',
+      mitigation_measures: 'Rotación inmediata de llaves SSH, revocación de credenciales y parche de seguridad.',
+      requires_agency_notification: true,
+      requires_titulars_notification: true,
+      status: 'DETECTED'
+    }
+  ],
+  arco: [
+    { id: 'arco-1', requester_name: 'María Paz González', requester_email: 'maria.paz@gmail.com', request_type: 'Acceso', request_details: 'Solicito acceso a mis registros de compras.', status: 'Ingresado', created_at: new Date().toISOString() }
+  ],
+  consentLogs: [
+    { id: 1, user_cookie_id: 'cookie_sess_abc', ip_masked: '186.104.22.xxx', essential_accepted: true, analytical_accepted: true, marketing_accepted: false, created_at: new Date().toISOString() }
+  ],
+  reports: [] as any[]
+};
+
+// Mock Pool that behaves like pg.Pool for local development
+class MockPool {
+  async connect() {
+    return { release: () => {} };
+  }
+
+  async query(queryText: string, params: any[] = []) {
+    const text = queryText.trim().replace(/\s+/g, ' ');
+
+    // 1. DDL Queries - Always return success
+    if (
+      text.startsWith('CREATE TABLE') || 
+      text.startsWith('INSERT INTO adequate_countries_reference') || 
+      text.startsWith('ALTER TABLE') || 
+      text.startsWith('CREATE INDEX')
+    ) {
+      return { rows: [], rowCount: 1 };
+    }
+
+    // 2. Selects
+    if (text.startsWith('SELECT 1 FROM site_configs')) {
+      return { rows: [{ '1': 1 }], rowCount: 1 };
+    }
+
+    if (text.includes('FROM site_configs')) {
+      return { rows: [store.config], rowCount: 1 };
+    }
+
+    if (text.includes('FROM adequate_countries_reference')) {
+      return {
+        rows: [
+          { country_code: 'CL', country_name: 'Chile', is_adequate: true, notes: 'Origen y jurisdicción principal.' },
+          { country_code: 'ES', country_name: 'España (UE/EEE)', is_adequate: true, notes: 'Adecuación por RGPD.' },
+          { country_code: 'DE', country_name: 'Alemania (UE/EEE)', is_adequate: true, notes: 'Adecuación por RGPD.' },
+          { country_code: 'US', country_name: 'Estados Unidos', is_adequate: false, notes: 'Requiere SCC.' }
+        ],
+        rowCount: 4
+      };
+    }
+
+    if (text.includes('FROM international_transfers')) {
+      return { rows: store.transfers, rowCount: store.transfers.length };
+    }
+
+    if (text.includes('FROM security_incidents')) {
+      return { rows: store.incidents, rowCount: store.incidents.length };
+    }
+
+    if (text.includes('FROM consent_logs')) {
+      return { rows: store.consentLogs, rowCount: store.consentLogs.length };
+    }
+
+    if (text.includes('FROM arco_requests')) {
+      return { rows: store.arco, rowCount: store.arco.length };
+    }
+
+    if (text.includes('FROM audit_reports')) {
+      // Find latest or list
+      if (text.includes('ORDER BY created_at DESC LIMIT 1') && store.reports.length > 0) {
+        return { rows: [store.reports[store.reports.length - 1]], rowCount: 1 };
+      }
+      return { rows: store.reports, rowCount: store.reports.length };
+    }
+
+    // 3. Inserts & Mutations
+    if (text.startsWith('INSERT INTO international_transfers')) {
+      // Params: domain, vendor_name, destination_country, data_categories, transfer_mechanism, has_signed_scc, scc_url
+      const newTransfer = {
+        id: 'transfer-' + Math.random().toString(36).substring(2, 9),
+        provider_name: params[1],
+        country: params[2],
+        data_categories: typeof params[3] === 'string' ? JSON.parse(params[3]) : params[3],
+        transfer_mechanism: params[4],
+        has_scc: params[5] || false,
+        has_dpa: false,
+        scc_url: params[6] || ''
+      };
+      store.transfers.push(newTransfer);
+      return { rows: [newTransfer], rowCount: 1 };
+    }
+
+    if (text.startsWith('INSERT INTO security_incidents')) {
+      // Params: domain, incident_title, incident_date, incident_type, affected_data_categories, approx_affected_titulars, description_and_effects, mitigation_measures, status, requires_agency_notification, requires_titulars_notification
+      const newIncident = {
+        id: 'incident-' + Math.random().toString(36).substring(2, 9),
+        incident_title: params[1],
+        incident_date: params[2],
+        incident_type: params[3],
+        affected_data_categories: typeof params[4] === 'string' ? JSON.parse(params[4]) : params[4],
+        approx_affected_titulars: params[5],
+        description_and_effects: params[6],
+        mitigation_measures: params[7],
+        status: params[8] || 'DETECTED',
+        requires_agency_notification: params[9] || false,
+        requires_titulars_notification: params[10] || false
+      };
+      store.incidents.push(newIncident);
+      return { rows: [newIncident], rowCount: 1 };
+    }
+
+    if (text.startsWith('INSERT INTO audit_reports')) {
+      const newReport = {
+        id: store.reports.length + 1,
+        url: params[0],
+        score: params[1],
+        severity_counts: typeof params[2] === 'string' ? JSON.parse(params[2]) : params[2],
+        findings: typeof params[3] === 'string' ? JSON.parse(params[3]) : params[3],
+        pages_analyzed: typeof params[4] === 'string' ? JSON.parse(params[4]) : params[4],
+        pages_skipped: typeof params[5] === 'string' ? JSON.parse(params[5]) : params[5]
+      };
+      store.reports.push(newReport);
+      return { rows: [newReport], rowCount: 1 };
+    }
+
+    if (text.startsWith('INSERT INTO consent_logs')) {
+      const newLog = {
+        id: store.consentLogs.length + 1,
+        user_cookie_id: 'cookie_sess_' + Math.random().toString(36).substring(2, 9),
+        ip_masked: params[1],
+        essential_accepted: true,
+        analytical_accepted: params[2].analytical || false,
+        marketing_accepted: params[2].marketing || false,
+        created_at: new Date().toISOString()
+      };
+      store.consentLogs.push(newLog as any);
+      return { rows: [newLog], rowCount: 1 };
+    }
+
+    // 4. Updates
+    if (text.startsWith('UPDATE site_configs')) {
+      // company_name = $1, policy_version = $2, banner_title = $3, banner_description = $4, policy_content = $5
+      store.config.company_name = params[0];
+      store.config.policy_version = params[1];
+      store.config.banner_title = params[2];
+      store.config.banner_description = params[3];
+      store.config.policy_content = typeof params[4] === 'string' ? JSON.parse(params[4]) : params[4];
+      return { rows: [store.config], rowCount: 1 };
+    }
+
+    if (text.startsWith('UPDATE international_transfers')) {
+      const id = params[params.length - 1];
+      const trans = store.transfers.find(t => t.id === id);
+      if (trans) {
+        // Simple mock mapping for key updates
+        if (text.includes('has_signed_scc =') || text.includes('has_scc =')) {
+          trans.has_scc = params[0];
+        }
+        if (text.includes('has_dpa =')) {
+          trans.has_dpa = params[1];
+        }
+      }
+      return { rows: trans ? [trans] : [], rowCount: trans ? 1 : 0 };
+    }
+
+    if (text.startsWith('UPDATE security_incidents')) {
+      const id = params[params.length - 1];
+      const inc = store.incidents.find(i => i.id === id);
+      if (inc) {
+        if (text.includes('status =')) {
+          inc.status = params[0];
+        }
+      }
+      return { rows: inc ? [inc] : [], rowCount: inc ? 1 : 0 };
+    }
+
+    // 5. Deletes
+    if (text.startsWith('DELETE FROM international_transfers')) {
+      const id = params[0];
+      store.transfers = store.transfers.filter(t => t.id !== id);
+      return { rows: [], rowCount: 1 };
+    }
+
+    return { rows: [], rowCount: 0 };
+  }
+
+  async end() {}
+}
+
+let pool: any;
 
 export async function initDb() {
   const connectionString = process.env.DATABASE_URL;
   if (!connectionString) {
-    throw new Error('La variable de entorno DATABASE_URL es obligatoria para conectar a Neon/PostgreSQL.');
+    console.log('⚠️ DATABASE_URL no configurada. Usando Base de Datos en Memoria (Mock) para desarrollo local.');
+    pool = new MockPool();
+    return pool;
   }
 
   // Auto-enable SSL for Neon connections or production environment
@@ -28,8 +252,6 @@ export async function initDb() {
   client.release();
 
   // Create tables dynamically on startup if they do not exist
-  
-  // 1. Site Configurations table
   await pool.query(`
     CREATE TABLE IF NOT EXISTS site_configs (
       domain VARCHAR(255) PRIMARY KEY,
@@ -51,8 +273,8 @@ export async function initDb() {
       representative: 'PrivacyTech Chile SpA',
       representative_email: 'contacto@privacytech.cl',
       purposes: 'Prestación de servicios SaaS, soporte técnico y mejora de la plataforma.',
-      retention_time: '5 años desde el fin del contrato o revocación del consentimiento.',
-      exercise_channels: 'Formulario ARCO+ del sitio web o al correo arco@privacytech.cl'
+      retention: '5 años desde el fin del contrato o revocación del consentimiento.',
+      channels: 'Formulario ARCO+ del sitio web o al correo arco@privacytech.cl'
     });
     await pool.query(`
       INSERT INTO site_configs (domain, company_name, policy_version, policy_content, banner_title, banner_description, api_key)
@@ -68,7 +290,7 @@ export async function initDb() {
     ]);
   }
 
-  // 2. Audit Reports table
+  // Create other tables
   await pool.query(`
     CREATE TABLE IF NOT EXISTS audit_reports (
       id SERIAL PRIMARY KEY,
@@ -82,14 +304,12 @@ export async function initDb() {
     )
   `);
 
-  // Alter table if it already exists
   await pool.query(`
     ALTER TABLE audit_reports 
     ADD COLUMN IF NOT EXISTS pages_analyzed JSONB,
     ADD COLUMN IF NOT EXISTS pages_skipped JSONB
   `);
 
-  // 3. Consent Logs table
   await pool.query(`
     CREATE TABLE IF NOT EXISTS consent_logs (
       id SERIAL PRIMARY KEY,
@@ -102,7 +322,6 @@ export async function initDb() {
     )
   `);
 
-  // 4. ARCO Requests table
   await pool.query(`
     CREATE TABLE IF NOT EXISTS arco_requests (
       id SERIAL PRIMARY KEY,
@@ -118,7 +337,6 @@ export async function initDb() {
     )
   `);
 
-  // 5. Adequate Countries Reference table
   await pool.query(`
     CREATE TABLE IF NOT EXISTS adequate_countries_reference (
       country_code VARCHAR(2) PRIMARY KEY,
@@ -128,7 +346,6 @@ export async function initDb() {
     )
   `);
 
-  // Seed adequate countries
   await pool.query(`
     INSERT INTO adequate_countries_reference (country_code, country_name, is_adequate, notes)
     VALUES 
@@ -145,7 +362,6 @@ export async function initDb() {
     ON CONFLICT (country_code) DO NOTHING
   `);
 
-  // 6. International Transfers table
   await pool.query(`
     CREATE TABLE IF NOT EXISTS international_transfers (
       id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -162,20 +378,18 @@ export async function initDb() {
     )
   `);
 
-  // Alter table to add signature_status if table already exists in production
   await pool.query(`
     ALTER TABLE international_transfers 
     ADD COLUMN IF NOT EXISTS signature_status VARCHAR(50) NOT NULL DEFAULT 'PENDING'
   `);
 
-  // 7. Security Incidents table
   await pool.query(`
     CREATE TABLE IF NOT EXISTS security_incidents (
       id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
       domain VARCHAR(255) NOT NULL REFERENCES site_configs(domain) ON DELETE CASCADE,
       incident_title VARCHAR(255) NOT NULL,
       incident_date TIMESTAMP WITH TIME ZONE NOT NULL,
-      incident_type VARCHAR(50) NOT NULL, -- DATA_LEAK, RANSOMWARE_HACK, LOST_DEVICE, UNAUTHORIZED_ACCESS, HUMAN_ERROR, OTHER
+      incident_type VARCHAR(50) NOT NULL,
       affected_data_categories JSONB NOT NULL,
       approx_affected_titulars INTEGER NOT NULL,
       description_and_effects TEXT NOT NULL,
@@ -184,7 +398,7 @@ export async function initDb() {
       requires_titulars_notification BOOLEAN NOT NULL DEFAULT FALSE,
       agency_notified_at TIMESTAMP WITH TIME ZONE,
       titulars_notified_at TIMESTAMP WITH TIME ZONE,
-      status VARCHAR(50) NOT NULL DEFAULT 'DETECTED', -- DETECTED, UNDER_ANALYSIS, MITIGATED, REPORTED_AND_CLOSED
+      status VARCHAR(50) NOT NULL DEFAULT 'DETECTED',
       created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
       updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
     )
