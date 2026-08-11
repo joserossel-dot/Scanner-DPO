@@ -130,7 +130,7 @@ router.get('/scan/history', adminCors, async (req, res) => {
   try {
     const db = getDb();
     const result = await db.query('SELECT id, url, score, severity_counts, created_at FROM audit_reports ORDER BY id DESC LIMIT 10');
-    return res.json(result.rows.map(r => ({
+    return res.json(result.rows.map((r: any) => ({
       id: r.id,
       url: r.url,
       score: r.score,
@@ -154,7 +154,7 @@ router.get('/consents/stats', adminCors, async (req, res) => {
     let marketing = 0;
     let total = consents.length;
 
-    consents.forEach(c => {
+    consents.forEach((c: any) => {
       try {
         const types = safeParseJson(c.consent_types);
         if (types.essential) essential++;
@@ -164,7 +164,7 @@ router.get('/consents/stats', adminCors, async (req, res) => {
     });
 
     const timelineMap: { [date: string]: number } = {};
-    consents.slice(0, 100).forEach(c => {
+    consents.slice(0, 100).forEach((c: any) => {
       const dateStr = new Date(c.timestamp).toISOString().split('T')[0];
       timelineMap[dateStr] = (timelineMap[dateStr] || 0) + 1;
     });
@@ -193,7 +193,7 @@ router.get('/consents/logs', adminCors, async (req, res) => {
   try {
     const db = getDb();
     const result = await db.query('SELECT * FROM consent_logs ORDER BY id DESC LIMIT 50');
-    return res.json(result.rows.map(r => ({
+    return res.json(result.rows.map((r: any) => ({
       ...r,
       consent_types: safeParseJson(r.consent_types)
     })));

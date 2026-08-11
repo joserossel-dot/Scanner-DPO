@@ -103,7 +103,7 @@ router.get('/diagnosis', adminCors, async (req, res) => {
 
     // 5. Calculate security incidents threat impact
     let securityScore = 100;
-    const activeIncidents = incidentsRes.rows.filter(i => i.status !== 'REPORTED_AND_CLOSED');
+    const activeIncidents = incidentsRes.rows.filter((i: any) => i.status !== 'REPORTED_AND_CLOSED');
     activeIncidents.forEach((i: any) => {
       if (i.incident_type === 'PREVENTIVE_ALERT') {
         securityScore -= 5;

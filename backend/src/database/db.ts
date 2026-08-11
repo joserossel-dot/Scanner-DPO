@@ -25,7 +25,7 @@ const store = {
   transfers: [
     { id: 'transfer-1', provider_name: 'Google Analytics', country: 'US', data_categories: ['Datos de navegación (cookies/IP)'], adequacy_status: 'No Adecuado', has_scc: false, has_dpa: false },
     { id: 'transfer-2', provider_name: 'Stripe Payment Gateway', country: 'US', data_categories: ['Datos financieros/tarjetas'], adequacy_status: 'No Adecuado', has_scc: true, has_dpa: true }
-  ],
+  ] as any[],
   incidents: [
     {
       id: 'incident-1',
@@ -125,7 +125,8 @@ class MockPool {
         transfer_mechanism: params[4],
         has_scc: params[5] || false,
         has_dpa: false,
-        scc_url: params[6] || ''
+        scc_url: params[6] || '',
+        adequacy_status: 'No Adecuado'
       };
       store.transfers.push(newTransfer);
       return { rows: [newTransfer], rowCount: 1 };
