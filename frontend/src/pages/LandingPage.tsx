@@ -11,7 +11,8 @@ import {
   FileText, 
   Sliders, 
   Activity,
-  Users
+  Users,
+  Search
 } from 'lucide-react';
 
 export default function LandingPage() {
