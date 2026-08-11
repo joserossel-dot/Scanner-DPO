@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import cors from 'cors';
 import { generateContractText } from '../services/contractBuilder.js';
+import { authenticateToken } from '../middlewares/auth.js';
 
 const router = Router();
 
@@ -30,8 +31,11 @@ const adminCors = cors((req: any, callback: any) => {
   callback(null, corsOptions);
 });
 
+// Protect all routes
+router.use(authenticateToken);
+
 // POST /api/remediation/generate-contract
-router.post('/generate-contract', adminCors, async (req, res) => {
+router.post('/generate-contract', adminCors, async (req: any, res) => {
   try {
     const data = req.body;
     

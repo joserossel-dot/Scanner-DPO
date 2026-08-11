@@ -11,7 +11,11 @@ import {
 
 const API_BASE = (import.meta as any).env.VITE_API_URL || '';
 
-export default function ContractBuilderView() {
+interface ContractBuilderViewProps {
+  token: string | null;
+}
+
+export default function ContractBuilderView({ token }: ContractBuilderViewProps) {
   // Form fields
   const [clientName, setClientName] = useState('Mi Empresa Chile SpA');
   const [clientRut, setClientRut] = useState('76.123.456-7');
@@ -55,6 +59,7 @@ export default function ContractBuilderView() {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
         },
         body: JSON.stringify({
           clientName,

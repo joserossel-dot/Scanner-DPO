@@ -2,6 +2,7 @@ import { Router } from 'express';
 import cors from 'cors';
 import { getDb } from '../database/db.js';
 import { runAudit } from '../services/crawlerService.js';
+import { authenticateToken } from '../middlewares/auth.js';
 
 const router = Router();
 
@@ -19,10 +20,10 @@ const adminCors = cors((req: any, callback: any) => {
   const host = (req.headers?.host || req.headers?.Host || '') as string;
 
   const allowedOrigins = [
-    process.env.DASHBOARD_ORIGIN, // Production Dashboard (e.g. Render)
-    'http://localhost:5173',      // Local React Vite dev
-    'http://localhost:3000',      // Local node ununified dashboard
-    host                          // Allow same-origin calls automatically
+    process.env.DASHBOARD_ORIGIN,
+    'http://localhost:5173',
+    'http://localhost:3000',
+    host
   ].filter(Boolean) as string[];
 
   const isAllowed = !origin || allowedOrigins.some(allowed => 
@@ -40,7 +41,7 @@ const adminCors = cors((req: any, callback: any) => {
   callback(null, corsOptions);
 });
 
-// Helper to parse JSON values safely (handles auto-parsed JSONB by pg, or string fallback)
+// Helper to parse JSON values safely
 function safeParseJson(value: any) {
   if (value === null || value === undefined) return null;
   if (typeof value === 'object') return value;
@@ -65,13 +66,13 @@ function addBusinessDays(date: Date, days: number): Date {
   return result;
 }
 
-// Enable OPTIONS pre-flight calls globally for custom origins
+// Enable OPTIONS pre-flight calls globally
 router.options('*', cors());
 
-// --- ADMIN ENDPOINTS ---
+// --- ADMIN ENDPOINTS (Requires authenticateToken) ---
 
 // 1. Audit Scan Endpoint
-router.post('/scan', adminCors, async (req, res) => {
+router.post('/scan', adminCors, authenticateToken, async (req: any, res) => {
   const { url } = req.body;
   if (!url) {
     return res.status(400).json({ error: 'Falta parámetro url' });
@@ -82,8 +83,8 @@ router.post('/scan', adminCors, async (req, res) => {
     const db = getDb();
 
     const result = await db.query(`
-      INSERT INTO audit_reports (url, score, severity_counts, findings, pages_analyzed, pages_skipped)
-      VALUES ($1, $2, $3, $4, $5, $6)
+      INSERT INTO audit_reports (url, score, severity_counts, findings, pages_analyzed, pages_skipped, user_id)
+      VALUES ($1, $2, $3, $4, $5, $6, $7)
       RETURNING id
     `, [
       report.url,
@@ -91,7 +92,8 @@ router.post('/scan', adminCors, async (req, res) => {
       JSON.stringify(report.severityCounts),
       JSON.stringify(report.findings),
       JSON.stringify(report.pagesAnalyzed || []),
-      JSON.stringify(report.pagesSkipped || [])
+      JSON.stringify(report.pagesSkipped || []),
+      req.user.id
     ]);
 
     const reportId = result.rows[0].id;
@@ -101,11 +103,11 @@ router.post('/scan', adminCors, async (req, res) => {
   }
 });
 
-// 2. Get latest scan report
-router.get('/scan/latest', adminCors, async (req, res) => {
+// 2. Get latest scan report for user
+router.get('/scan/latest', adminCors, authenticateToken, async (req: any, res) => {
   try {
     const db = getDb();
-    const result = await db.query('SELECT * FROM audit_reports ORDER BY id DESC LIMIT 1');
+    const result = await db.query('SELECT * FROM audit_reports WHERE user_id = $1 ORDER BY id DESC LIMIT 1', [req.user.id]);
     const latest = result.rows[0];
     if (!latest) {
       return res.json(null);
@@ -125,11 +127,11 @@ router.get('/scan/latest', adminCors, async (req, res) => {
   }
 });
 
-// 3. Get history of scans
-router.get('/scan/history', adminCors, async (req, res) => {
+// 3. Get history of scans for user
+router.get('/scan/history', adminCors, authenticateToken, async (req: any, res) => {
   try {
     const db = getDb();
-    const result = await db.query('SELECT id, url, score, severity_counts, created_at FROM audit_reports ORDER BY id DESC LIMIT 10');
+    const result = await db.query('SELECT id, url, score, severity_counts, created_at FROM audit_reports WHERE user_id = $1 ORDER BY id DESC LIMIT 10', [req.user.id]);
     return res.json(result.rows.map((r: any) => ({
       id: r.id,
       url: r.url,
@@ -143,10 +145,10 @@ router.get('/scan/history', adminCors, async (req, res) => {
 });
 
 // 4. Consent Stats
-router.get('/consents/stats', adminCors, async (req, res) => {
+router.get('/consents/stats', adminCors, authenticateToken, async (req: any, res) => {
   try {
     const db = getDb();
-    const result = await db.query('SELECT consent_types, timestamp FROM consent_logs ORDER BY id DESC');
+    const result = await db.query('SELECT consent_types, timestamp FROM consent_logs WHERE domain IN (SELECT domain FROM site_configs WHERE user_id = $1) ORDER BY id DESC', [req.user.id]);
     const consents = result.rows;
     
     let essential = 0;
@@ -189,10 +191,10 @@ router.get('/consents/stats', adminCors, async (req, res) => {
 });
 
 // 5. Raw Consent Logs
-router.get('/consents/logs', adminCors, async (req, res) => {
+router.get('/consents/logs', adminCors, authenticateToken, async (req: any, res) => {
   try {
     const db = getDb();
-    const result = await db.query('SELECT * FROM consent_logs ORDER BY id DESC LIMIT 50');
+    const result = await db.query('SELECT * FROM consent_logs WHERE domain IN (SELECT domain FROM site_configs WHERE user_id = $1) ORDER BY id DESC LIMIT 50', [req.user.id]);
     return res.json(result.rows.map((r: any) => ({
       ...r,
       consent_types: safeParseJson(r.consent_types)
@@ -203,10 +205,10 @@ router.get('/consents/logs', adminCors, async (req, res) => {
 });
 
 // 6. Get ARCO+ Tickets
-router.get('/arco/tickets', adminCors, async (req, res) => {
+router.get('/arco/tickets', adminCors, authenticateToken, async (req: any, res) => {
   try {
     const db = getDb();
-    const result = await db.query('SELECT * FROM arco_requests ORDER BY id DESC');
+    const result = await db.query('SELECT * FROM arco_requests WHERE domain IN (SELECT domain FROM site_configs WHERE user_id = $1) ORDER BY id DESC', [req.user.id]);
     return res.json(result.rows);
   } catch (error: any) {
     return res.status(500).json({ error: error.message });
@@ -214,7 +216,7 @@ router.get('/arco/tickets', adminCors, async (req, res) => {
 });
 
 // 7. Update ARCO+ Status
-router.patch('/arco/tickets/:id/status', adminCors, async (req, res) => {
+router.patch('/arco/tickets/:id/status', adminCors, authenticateToken, async (req: any, res) => {
   const { id } = req.params;
   const { status } = req.body;
 
@@ -229,8 +231,8 @@ router.patch('/arco/tickets/:id/status', adminCors, async (req, res) => {
     await db.query(`
       UPDATE arco_requests
       SET status = $1, resolved_at = $2
-      WHERE id = $3
-    `, [status, resolvedAt, id]);
+      WHERE id = $3 AND domain IN (SELECT domain FROM site_configs WHERE user_id = $4)
+    `, [status, resolvedAt, id, req.user.id]);
 
     return res.json({ success: true, resolvedAt });
   } catch (error: any) {
@@ -239,7 +241,7 @@ router.patch('/arco/tickets/:id/status', adminCors, async (req, res) => {
 });
 
 // 8. Update Site Config (written by Admin Dashboard)
-router.put('/config/:domain', adminCors, async (req, res) => {
+router.put('/config/:domain', adminCors, authenticateToken, async (req: any, res) => {
   const { domain } = req.params;
   const { company_name, policy_version, policy_content, banner_title, banner_description } = req.body;
 
@@ -250,22 +252,24 @@ router.put('/config/:domain', adminCors, async (req, res) => {
   try {
     const db = getDb();
     await db.query(`
-      INSERT INTO site_configs (domain, company_name, policy_version, policy_content, banner_title, banner_description, updated_at)
-      VALUES ($1, $2, $3, $4, $5, $6, CURRENT_TIMESTAMP)
+      INSERT INTO site_configs (domain, company_name, policy_version, policy_content, banner_title, banner_description, updated_at, user_id)
+      VALUES ($1, $2, $3, $4, $5, $6, CURRENT_TIMESTAMP, $7)
       ON CONFLICT (domain) DO UPDATE SET
         company_name = EXCLUDED.company_name,
         policy_version = EXCLUDED.policy_version,
         policy_content = EXCLUDED.policy_content,
         banner_title = EXCLUDED.banner_title,
         banner_description = EXCLUDED.banner_description,
-        updated_at = CURRENT_TIMESTAMP
+        updated_at = CURRENT_TIMESTAMP,
+        user_id = EXCLUDED.user_id
     `, [
       domain,
       company_name,
       policy_version,
       JSON.stringify(policy_content),
       banner_title,
-      banner_description
+      banner_description,
+      req.user.id
     ]);
 
     return res.json({ success: true });
@@ -275,7 +279,7 @@ router.put('/config/:domain', adminCors, async (req, res) => {
 });
 
 
-// --- PUBLIC WIDGET ENDPOINTS ---
+// --- PUBLIC WIDGET ENDPOINTS (No authenticateToken) ---
 
 // 9. Log Consent from Widget (Public)
 router.post('/consent', openCors, async (req, res) => {

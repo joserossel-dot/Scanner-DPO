@@ -8,6 +8,7 @@ const { Pool } = pg;
 
 // Mutable In-Memory database for local development fallback
 const store = {
+  users: [] as any[],
   config: {
     domain: 'localhost:3000',
     company_name: 'Mi Empresa Chile S.A.',
@@ -114,7 +115,25 @@ class MockPool {
       return { rows: store.reports, rowCount: store.reports.length };
     }
 
+    if (text.includes('FROM users')) {
+      const email = params[0];
+      const user = store.users.find(u => u.email === email);
+      return { rows: user ? [user] : [], rowCount: user ? 1 : 0 };
+    }
+
     // 3. Inserts & Mutations
+    if (text.startsWith('INSERT INTO users')) {
+      const newUser = {
+        id: 'user-' + Math.random().toString(36).substring(2, 9),
+        email: params[0],
+        password_hash: params[1],
+        company_name: params[2],
+        created_at: new Date().toISOString()
+      };
+      store.users.push(newUser);
+      return { rows: [newUser], rowCount: 1 };
+    }
+
     if (text.startsWith('INSERT INTO international_transfers')) {
       // Params: domain, vendor_name, destination_country, data_categories, transfer_mechanism, has_signed_scc, scc_url
       const newTransfer = {
@@ -253,6 +272,16 @@ export async function initDb() {
   client.release();
 
   // Create tables dynamically on startup if they do not exist
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS users (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      email VARCHAR(255) UNIQUE NOT NULL,
+      password_hash VARCHAR(255) NOT NULL,
+      company_name VARCHAR(255) NOT NULL,
+      created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+    )
+  `);
+
   await pool.query(`
     CREATE TABLE IF NOT EXISTS site_configs (
       domain VARCHAR(255) PRIMARY KEY,
@@ -407,6 +436,26 @@ export async function initDb() {
 
   await pool.query(`
     CREATE INDEX IF NOT EXISTS idx_incidents_domain ON security_incidents(domain)
+  `);
+
+  // Alter existing tables to ensure they include user_id FK column for multi-tenancy
+  await pool.query(`
+    ALTER TABLE site_configs ADD COLUMN IF NOT EXISTS user_id UUID REFERENCES users(id) ON DELETE CASCADE;
+  `);
+  await pool.query(`
+    ALTER TABLE audit_reports ADD COLUMN IF NOT EXISTS user_id UUID REFERENCES users(id) ON DELETE CASCADE;
+  `);
+  await pool.query(`
+    ALTER TABLE consent_logs ADD COLUMN IF NOT EXISTS user_id UUID REFERENCES users(id) ON DELETE CASCADE;
+  `);
+  await pool.query(`
+    ALTER TABLE arco_requests ADD COLUMN IF NOT EXISTS user_id UUID REFERENCES users(id) ON DELETE CASCADE;
+  `);
+  await pool.query(`
+    ALTER TABLE international_transfers ADD COLUMN IF NOT EXISTS user_id UUID REFERENCES users(id) ON DELETE CASCADE;
+  `);
+  await pool.query(`
+    ALTER TABLE security_incidents ADD COLUMN IF NOT EXISTS user_id UUID REFERENCES users(id) ON DELETE CASCADE;
   `);
 
   console.log('✅ Tablas y esquema de PostgreSQL validados/creados.');

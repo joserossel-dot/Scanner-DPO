@@ -2,6 +2,7 @@ import { Router } from 'express';
 import cors from 'cors';
 import { getDb } from '../database/db.js';
 import { evaluateQuestionnaire } from '../services/diagnosisEngine.js';
+import { authenticateToken } from '../middlewares/auth.js';
 
 const router = Router();
 
@@ -31,8 +32,11 @@ const adminCors = cors((req: any, callback: any) => {
   callback(null, corsOptions);
 });
 
+// Protect all routes
+router.use(authenticateToken);
+
 // GET /api/reports/diagnosis - Unified Compliance Center Report
-router.get('/diagnosis', adminCors, async (req, res) => {
+router.get('/diagnosis', adminCors, async (req: any, res) => {
   const { domain } = req.query;
   if (!domain) {
     return res.status(400).json({ error: 'Falta parámetro domain' });
@@ -42,20 +46,20 @@ router.get('/diagnosis', adminCors, async (req, res) => {
   try {
     // 1. Get latest audit report from scanner
     const scanRes = await db.query(
-      `SELECT * FROM audit_reports WHERE domain = $1 ORDER BY created_at DESC LIMIT 1`,
-      [domain]
+      `SELECT * FROM audit_reports WHERE user_id = $1 ORDER BY created_at DESC LIMIT 1`,
+      [req.user.id]
     );
 
     // 2. Get registered international transfers
     const transfersRes = await db.query(
-      `SELECT * FROM international_transfers WHERE domain = $1`,
-      [domain]
+      `SELECT * FROM international_transfers WHERE user_id = $1`,
+      [req.user.id]
     );
 
     // 3. Get security incidents
     const incidentsRes = await db.query(
-      `SELECT * FROM security_incidents WHERE domain = $1`,
-      [domain]
+      `SELECT * FROM security_incidents WHERE user_id = $1`,
+      [req.user.id]
     );
 
     let crawlScore = 100;
@@ -155,7 +159,7 @@ router.get('/diagnosis', adminCors, async (req, res) => {
 });
 
 // POST /api/reports/evaluate - Evaluate diagnostic questionnaire and save report
-router.post('/evaluate', adminCors, async (req, res) => {
+router.post('/evaluate', adminCors, async (req: any, res) => {
   try {
     const answers = req.body;
     const evaluation = evaluateQuestionnaire(answers);
@@ -171,15 +175,16 @@ router.post('/evaluate', adminCors, async (req, res) => {
     };
 
     const result = await db.query(
-      `INSERT INTO audit_reports (url, score, severity_counts, findings, pages_analyzed, pages_skipped)
-       VALUES ($1, $2, $3, $4, $5, $6) RETURNING id`,
+      `INSERT INTO audit_reports (url, score, severity_counts, findings, pages_analyzed, pages_skipped, user_id)
+       VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id`,
       [
         domain,
         evaluation.scoreTotal,
         JSON.stringify(severityCounts),
         JSON.stringify(evaluation.findings),
         JSON.stringify([]),
-        JSON.stringify([])
+        JSON.stringify([]),
+        req.user.id
       ]
     );
 

@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import cors from 'cors';
 import { getDb } from '../database/db.js';
+import { authenticateToken } from '../middlewares/auth.js';
 const router = Router();
 // CORS setup matching dashboard origins
 const adminCors = cors((req, callback) => {
@@ -24,12 +25,13 @@ const adminCors = cors((req, callback) => {
     }
     callback(null, corsOptions);
 });
-// GET /api/transfers - List all registered transfers
+// Protect all routes under this router
+router.use(authenticateToken);
+// GET /api/transfers - List all registered transfers for user
 router.get('/', adminCors, async (req, res) => {
-    const domain = req.query.domain || 'localhost:3000';
     const db = getDb();
     try {
-        const result = await db.query('SELECT * FROM international_transfers WHERE domain = $1 ORDER BY created_at DESC', [domain]);
+        const result = await db.query('SELECT * FROM international_transfers WHERE user_id = $1 ORDER BY created_at DESC', [req.user.id]);
         res.json(result.rows);
     }
     catch (error) {
@@ -37,7 +39,7 @@ router.get('/', adminCors, async (req, res) => {
         res.status(500).json({ error: 'Error interno del servidor al consultar transferencias.' });
     }
 });
-// POST /api/transfers - Register a new transfer flow
+// POST /api/transfers - Register a new transfer flow for user
 router.post('/', adminCors, async (req, res) => {
     const { domain, vendor_name, destination_country, data_categories, transfer_mechanism, has_signed_scc, scc_document_url, signature_status } = req.body;
     if (!domain || !vendor_name || !destination_country || !transfer_mechanism || !Array.isArray(data_categories)) {
@@ -46,8 +48,8 @@ router.post('/', adminCors, async (req, res) => {
     const db = getDb();
     try {
         const result = await db.query(`INSERT INTO international_transfers 
-       (domain, vendor_name, destination_country, data_categories, transfer_mechanism, has_signed_scc, scc_document_url, signature_status)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+       (domain, vendor_name, destination_country, data_categories, transfer_mechanism, has_signed_scc, scc_document_url, signature_status, user_id)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
        RETURNING *`, [
             domain,
             vendor_name,
@@ -56,7 +58,8 @@ router.post('/', adminCors, async (req, res) => {
             transfer_mechanism,
             has_signed_scc === true,
             scc_document_url || null,
-            signature_status || 'PENDING'
+            signature_status || 'PENDING',
+            req.user.id
         ]);
         res.status(201).json(result.rows[0]);
     }
@@ -71,10 +74,10 @@ router.put('/:id', adminCors, async (req, res) => {
     const { vendor_name, destination_country, data_categories, transfer_mechanism, has_signed_scc, scc_document_url, signature_status } = req.body;
     const db = getDb();
     try {
-        // Check if transfer exists
-        const check = await db.query('SELECT 1 FROM international_transfers WHERE id = $1', [id]);
+        // Check if transfer exists and belongs to the user
+        const check = await db.query('SELECT 1 FROM international_transfers WHERE id = $1 AND user_id = $2', [id, req.user.id]);
         if (check.rowCount === 0) {
-            return res.status(404).json({ error: 'Registro de transferencia no encontrado.' });
+            return res.status(404).json({ error: 'Registro de transferencia no encontrado o sin permisos.' });
         }
         const result = await db.query(`UPDATE international_transfers
        SET vendor_name = COALESCE($2, vendor_name),
@@ -85,7 +88,7 @@ router.put('/:id', adminCors, async (req, res) => {
            scc_document_url = COALESCE($7, scc_document_url),
            signature_status = COALESCE($8, signature_status),
            updated_at = CURRENT_TIMESTAMP
-       WHERE id = $1
+       WHERE id = $1 AND user_id = $9
        RETURNING *`, [
             id,
             vendor_name,
@@ -94,7 +97,8 @@ router.put('/:id', adminCors, async (req, res) => {
             transfer_mechanism,
             has_signed_scc !== undefined ? has_signed_scc === true : null,
             scc_document_url,
-            signature_status
+            signature_status,
+            req.user.id
         ]);
         res.json(result.rows[0]);
     }
@@ -108,11 +112,11 @@ router.delete('/:id', adminCors, async (req, res) => {
     const { id } = req.params;
     const db = getDb();
     try {
-        const check = await db.query('SELECT 1 FROM international_transfers WHERE id = $1', [id]);
+        const check = await db.query('SELECT 1 FROM international_transfers WHERE id = $1 AND user_id = $2', [id, req.user.id]);
         if (check.rowCount === 0) {
-            return res.status(404).json({ error: 'Registro de transferencia no encontrado.' });
+            return res.status(404).json({ error: 'Registro de transferencia no encontrado o sin permisos.' });
         }
-        await db.query('DELETE FROM international_transfers WHERE id = $1', [id]);
+        await db.query('DELETE FROM international_transfers WHERE id = $1 AND user_id = $2', [id, req.user.id]);
         res.json({ message: 'Registro de transferencia eliminado exitosamente.' });
     }
     catch (error) {

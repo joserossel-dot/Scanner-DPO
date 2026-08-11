@@ -1,9 +1,11 @@
 import { useState, useEffect, FormEvent } from 'react';
-import { BrowserRouter, Routes, Route, Link, useLocation, useNavigate } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Link, useLocation, useNavigate, Navigate } from 'react-router-dom';
 import LandingPage from './pages/LandingPage';
 import DiagnosticQuestionnaire from './pages/dashboard/components/DiagnosticQuestionnaire';
 import DiagnosisResultsView from './pages/dashboard/DiagnosisResultsView';
 import ContractBuilderView from './pages/dashboard/components/ContractBuilderView';
+import LoginView from './pages/auth/LoginView';
+import RegisterView from './pages/auth/RegisterView';
 import { 
   Shield, 
   Activity, 
@@ -114,9 +116,24 @@ interface ClientConfig {
 
 const API_BASE = (import.meta as any).env.VITE_API_URL || '';
 
-export function Dashboard() {
+interface DashboardProps {
+  token: string | null;
+  user: any;
+  onLogout: () => void;
+}
+
+export function Dashboard({ token, user, onLogout }: DashboardProps) {
   const location = useLocation();
   const navigate = useNavigate();
+
+  // Lexically shadow the global fetch with an authenticated fetch wrapper
+  const fetch = async (url: string, options: RequestInit = {}) => {
+    const headers = {
+      ...options.headers,
+      'Authorization': `Bearer ${token}`
+    };
+    return window.fetch(url, { ...options, headers });
+  };
 
   const [activeTab, setActiveTab] = useState<'scanner' | 'diagnosis' | 'remediation'>('scanner');
   const [remediationSubTab, setRemediationSubTab] = useState<'cmp' | 'arco' | 'transfers' | 'policies' | 'contracts'>('cmp');
@@ -1844,7 +1861,7 @@ Firmas autorizadas:
 
         {/* Sub-tab: Contract Builder (DPA/SCC) */}
         {remediationSubTab === 'contracts' && (
-          <ContractBuilderView />
+          <ContractBuilderView token={token} />
         )}
       </div>
     );
@@ -1922,6 +1939,41 @@ Firmas autorizadas:
           </div>
         </nav>
         
+        <div style={{ padding: '12px 16px', borderTop: '1px solid var(--border-color)', borderBottom: '1px solid var(--border-color)', marginBottom: '15px' }}>
+          <div style={{ fontSize: '9px', color: 'var(--text-secondary)', textTransform: 'uppercase', fontWeight: 'bold' }}>Empresa:</div>
+          <div style={{ fontSize: '12px', fontWeight: 'bold', color: 'white', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', marginTop: '2px' }}>
+            {user?.company_name || 'Mi Empresa'}
+          </div>
+          <div style={{ fontSize: '9px', color: 'var(--text-secondary)', textTransform: 'uppercase', fontWeight: 'bold', marginTop: '8px' }}>Usuario:</div>
+          <div style={{ fontSize: '11px', color: 'var(--color-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', marginTop: '2px' }}>
+            {user?.email}
+          </div>
+        </div>
+
+        <div style={{ padding: '0 16px 15px 16px' }}>
+          <button 
+            onClick={onLogout}
+            style={{
+              width: '100%',
+              padding: '8px 12px',
+              background: 'rgba(239, 68, 68, 0.08)',
+              color: '#f87171',
+              border: '1px solid rgba(239, 68, 68, 0.2)',
+              borderRadius: '8px',
+              fontSize: '11.5px',
+              fontWeight: 'bold',
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              transition: 'all 0.2s',
+              outline: 'none'
+            }}
+          >
+            Cerrar Sesión
+          </button>
+        </div>
+
         <div style={{ fontSize: '11px', color: 'var(--text-secondary)', textAlign: 'center', borderTop: '1px solid var(--border-color)', paddingTop: '15px' }}>
           Cumplimiento Ley N° 21.719
         </div>
@@ -2024,12 +2076,54 @@ Firmas autorizadas:
   );
 }
 
+function ProtectedRoute({ children, token }: { children: React.ReactNode; token: string | null }) {
+  if (!token) {
+    return <Navigate to="/login" replace />;
+  }
+  return <>{children}</>;
+}
+
 export default function App() {
+  const [token, setToken] = useState<string | null>(() => localStorage.getItem('dpo_token'));
+  const [user, setUser] = useState<any>(() => {
+    const saved = localStorage.getItem('dpo_user');
+    return saved ? JSON.parse(saved) : null;
+  });
+
+  const handleAuthSuccess = (newToken: string, newUser: any) => {
+    setToken(newToken);
+    setUser(newUser);
+    localStorage.setItem('dpo_token', newToken);
+    localStorage.setItem('dpo_user', JSON.stringify(newUser));
+  };
+
+  const handleLogout = () => {
+    setToken(null);
+    setUser(null);
+    localStorage.removeItem('dpo_token');
+    localStorage.removeItem('dpo_user');
+  };
+
   return (
     <BrowserRouter>
       <Routes>
         <Route path="/" element={<LandingPage />} />
-        <Route path="/dashboard" element={<Dashboard />} />
+        <Route 
+          path="/login" 
+          element={<LoginView onLoginSuccess={handleAuthSuccess} />} 
+        />
+        <Route 
+          path="/register" 
+          element={<RegisterView onRegisterSuccess={handleAuthSuccess} />} 
+        />
+        <Route 
+          path="/dashboard" 
+          element={
+            <ProtectedRoute token={token}>
+              <Dashboard token={token} user={user} onLogout={handleLogout} />
+            </ProtectedRoute>
+          } 
+        />
       </Routes>
     </BrowserRouter>
   );

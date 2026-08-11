@@ -9,6 +9,7 @@ import transfersRouter from './routes/transfers.js';
 import incidentsRouter from './routes/incidents.js';
 import reportsRouter from './routes/reports.js';
 import remediationRouter from './routes/remediation.js';
+import authRouter from './routes/auth.js';
 
 // Load environment variables
 dotenv.config();
@@ -20,6 +21,7 @@ const PORT = process.env.PORT || 3000;
 app.use(express.json());
 
 // API Routes
+app.use('/api/auth', authRouter);
 app.use('/api', apiRouter);
 app.use('/api/transfers', transfersRouter);
 app.use('/api/incidents', incidentsRouter);
