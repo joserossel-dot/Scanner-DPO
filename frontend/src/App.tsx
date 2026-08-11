@@ -1,4 +1,6 @@
 import { useState, useEffect, FormEvent } from 'react';
+import { BrowserRouter, Routes, Route, Link, useLocation, useNavigate } from 'react-router-dom';
+import LandingPage from './pages/LandingPage';
 import { 
   Shield, 
   Activity, 
@@ -109,7 +111,10 @@ interface ClientConfig {
 
 const API_BASE = (import.meta as any).env.VITE_API_URL || '';
 
-export default function App() {
+export function Dashboard() {
+  const location = useLocation();
+  const navigate = useNavigate();
+
   const [activeTab, setActiveTab] = useState<'scanner' | 'diagnosis' | 'remediation'>('scanner');
   const [remediationSubTab, setRemediationSubTab] = useState<'cmp' | 'arco' | 'transfers' | 'policies'>('cmp');
   
@@ -224,6 +229,53 @@ export default function App() {
   const [weeklyCronEnabled, setWeeklyCronEnabled] = useState(() => {
     return localStorage.getItem('weekly_security_cron') === 'true';
   });
+
+  // Auto scan logic from landing page redirect
+  useEffect(() => {
+    if (location.state && (location.state as any).autoScanUrl) {
+      const urlToScan = (location.state as any).autoScanUrl;
+      setScanUrl(urlToScan);
+      
+      // Clear state so we don't scan on every refresh
+      navigate(location.pathname, { replace: true, state: {} });
+      
+      // Trigger scan
+      triggerAutoScan(urlToScan);
+    }
+  }, [location.state]);
+
+  const triggerAutoScan = async (url: string) => {
+    setIsScanning(true);
+    showToast('Iniciando escaneo automático de cortesía...', 'info');
+    try {
+      const res = await fetch(`${API_BASE}/api/scan`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url })
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setLatestScan(data);
+        showToast(`Escaneo finalizado con éxito. Score de privacidad: ${data.score}%`, 'success');
+        
+        // Refresh diagnosis stats
+        setIsFetchingDiagnosis(true);
+        const diagRes = await fetch(`${API_BASE}/api/reports/diagnosis?domain=localhost:3000`);
+        if (diagRes.ok) {
+          const diagData = await diagRes.json();
+          setDiagnosisData(diagData);
+        }
+        setIsFetchingDiagnosis(false);
+      } else {
+        showToast('Error al auditar el dominio solicitado.', 'warning');
+      }
+    } catch (err) {
+      console.error(err);
+      showToast('Error al conectar con la API de escaneo.', 'warning');
+    } finally {
+      setIsScanning(false);
+    }
+  };
 
   const handleFetchDiagnosis = async () => {
     setIsFetchingDiagnosis(true);
@@ -1107,7 +1159,7 @@ Firmas autorizadas:
                   <circle className="score-bg-circle" cx="70" cy="70" r="58" />
                   <circle 
                     className="score-fill-circle" 
-                    cx="70" cy="70" r={58} 
+                    cx="70" cy="70" r="58" 
                     strokeDasharray={364.4}
                     strokeDashoffset={364.4 - (364.4 * finalScore) / 100}
                     style={{ stroke: finalScore >= 80 ? 'var(--color-success)' : finalScore >= 50 ? 'var(--color-warning)' : 'var(--color-danger)' }}
@@ -1779,6 +1831,12 @@ Firmas autorizadas:
           </div>
           <span>PrivacyTech</span>
         </div>
+
+        <div style={{ padding: '0 16px 12px 16px', borderBottom: '1px solid var(--border-color)', marginBottom: '15px' }}>
+          <Link to="/" style={{ color: 'var(--text-secondary)', fontSize: '11px', textDecoration: 'none', display: 'flex', alignItems: 'center', gap: '5px' }}>
+            ← Volver a la Web Comercial
+          </Link>
+        </div>
         
         <nav className="nav-menu">
           <div 
@@ -1905,5 +1963,16 @@ Firmas autorizadas:
         )}
       </main>
     </div>
+  );
+}
+
+export default function App() {
+  return (
+    <BrowserRouter>
+      <Routes>
+        <Route path="/" element={<LandingPage />} />
+        <Route path="/dashboard" element={<Dashboard />} />
+      </Routes>
+    </BrowserRouter>
   );
 }
