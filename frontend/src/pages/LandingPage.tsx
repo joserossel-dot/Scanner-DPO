@@ -269,7 +269,7 @@ export default function LandingPage() {
                 </div>
 
                 {/* Overlaid Lock and CTA */}
-                <div className="absolute inset-0 bg-slate-900/40 flex flex-col items-center justify-center text-center p-4">
+                <div className="absolute inset-0 bg-slate-950/60 backdrop-blur-[3px] flex flex-col items-center justify-center text-center p-6 rounded-2xl border border-slate-800/50">
                   <div className="p-3 bg-indigo-950 text-indigo-400 border border-indigo-900/50 rounded-full mb-4 shadow-xl">
                     <Lock size={24} className="animate-bounce" />
                   </div>
