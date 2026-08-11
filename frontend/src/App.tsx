@@ -11,7 +11,17 @@ import {
   RefreshCw, 
   Sliders, 
   Calendar, 
-  ExternalLink 
+  ExternalLink,
+  Plus,
+  Trash,
+  FileText,
+  Check,
+  Globe,
+  AlertOctagon,
+  ArrowRight,
+  Lock,
+  ChevronDown,
+  ChevronUp
 } from 'lucide-react';
 
 interface AuditFinding {
@@ -55,45 +65,40 @@ interface ConsentStats {
     analytical: number;
     marketing: number;
   };
-  timeline: { date: string; count: number }[];
 }
 
 interface ConsentLog {
-  id: number;
-  domain: string;
-  ip_hash: string;
-  consent_types: {
-    essential: boolean;
-    analytical: boolean;
-    marketing: boolean;
-  };
+  id: string;
+  user_cookie_id: string;
+  essential_accepted: boolean;
+  analytical_accepted: boolean;
+  marketing_accepted: boolean;
+  ip_masked: string;
   user_agent: string;
-  policy_version: string;
-  timestamp: string;
+  created_at: string;
 }
 
 interface ArcoTicket {
-  id: number;
-  domain: string;
+  id: string;
   requester_name: string;
   requester_email: string;
   request_type: string;
-  details: string;
-  status: 'Pendiente' | 'En Proceso' | 'Resuelto';
-  due_date: string;
+  request_details: string;
+  verification_id_attached: boolean;
+  status: 'Ingresado' | 'En Revisión' | 'Resuelto';
   created_at: string;
-  resolved_at?: string | null;
 }
 
 interface PolicyContent {
   representative: string;
   representative_email: string;
-  purposes: string;
-  retention_time: string;
-  exercise_channels: string;
+  purposes?: string;
+  retention?: string;
+  channels?: string;
 }
 
 interface ClientConfig {
+  id?: string;
   domain: string;
   company_name: string;
   policy_version: string;
@@ -105,8 +110,13 @@ interface ClientConfig {
 const API_BASE = (import.meta as any).env.VITE_API_URL || '';
 
 export default function App() {
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'scanner' | 'consents' | 'arco' | 'config'>('dashboard');
+  const [activeTab, setActiveTab] = useState<'scanner' | 'diagnosis' | 'remediation'>('scanner');
+  const [remediationSubTab, setRemediationSubTab] = useState<'cmp' | 'arco' | 'transfers' | 'policies'>('cmp');
   
+  // Diagnosis State (Capa 2)
+  const [diagnosisData, setDiagnosisData] = useState<any>(null);
+  const [isFetchingDiagnosis, setIsFetchingDiagnosis] = useState(false);
+
   // State variables
   const [latestScan, setLatestScan] = useState<AuditResult | null>(null);
   const [consentsStats, setConsentsStats] = useState<ConsentStats | null>(null);
@@ -190,8 +200,6 @@ export default function App() {
   // Toast notifications state
   const [toasts, setToasts] = useState<Array<{ id: string; message: string; type: 'success' | 'warning' | 'info' }>>([]);
   const [isDiscoveryOpen, setIsDiscoveryOpen] = useState(false);
-  const [isResourcesOpen, setIsResourcesOpen] = useState(false);
-  const [isDragging, setIsDragging] = useState<string | null>(null);
 
   // Security Incidents Module State
   const [incidents, setIncidents] = useState<any[]>([]);
@@ -217,6 +225,24 @@ export default function App() {
     return localStorage.getItem('weekly_security_cron') === 'true';
   });
 
+  const handleFetchDiagnosis = async () => {
+    setIsFetchingDiagnosis(true);
+    try {
+      const res = await fetch(`${API_BASE}/api/reports/diagnosis?domain=localhost:3000`);
+      if (res.ok) {
+        const data = await res.json();
+        setDiagnosisData(data);
+      } else {
+        showToast('Error al cargar el diagnóstico consolidado.', 'warning');
+      }
+    } catch (e) {
+      console.error(e);
+      showToast('Error de comunicación con la API de diagnóstico.', 'warning');
+    } finally {
+      setIsFetchingDiagnosis(false);
+    }
+  };
+
   // Load basic statistics on mount
   useEffect(() => {
     fetchLatestScan();
@@ -225,6 +251,7 @@ export default function App() {
     fetchArcoTickets();
     fetchConfig();
     fetchIncidents();
+    handleFetchDiagnosis();
   }, []);
 
   const fetchLatestScan = async () => {
@@ -279,132 +306,47 @@ export default function App() {
     try {
       const res = await fetch(`${API_BASE}/api/config/localhost:3000`);
       if (res.ok) {
-        const data: ClientConfig = await res.json();
+        const data = await res.json();
         setConfig(data);
-        setConfigCompanyName(data.company_name);
-        setConfigVersion(data.policy_version);
-        setConfigBannerTitle(data.banner_title);
-        setConfigBannerDesc(data.banner_description);
-        
-        const content = data.policy_content;
-        setConfigRepresentative(content.representative);
-        setConfigEmail(content.representative_email);
-        setConfigPurposes(content.purposes);
-        setConfigRetention(content.retention_time);
-        setConfigChannels(content.exercise_channels);
+        setConfigRepresentative(data.policy_content?.representative || '');
+        setConfigEmail(data.policy_content?.representative_email || '');
+        setConfigPurposes(data.policy_content?.purposes || '');
+        setConfigRetention(data.policy_content?.retention || '');
+        setConfigChannels(data.policy_content?.channels || '');
+        setConfigCompanyName(data.company_name || '');
+        setConfigBannerTitle(data.banner_title || '');
+        setConfigBannerDesc(data.banner_description || '');
+        setConfigVersion(data.policy_version || 'v1.0.0');
       }
     } catch (e) {
       console.error(e);
     }
   };
 
-  // --- Módulo 3 API Operations (TID) ---
-  // Toast notifications helper
-  const showToast = (message: string, type: 'success' | 'warning' | 'info' = 'success') => {
-    const id = Math.random().toString(36).substring(2, 9);
-    setToasts(prev => [...prev, { id, message, type }]);
-    setTimeout(() => {
-      setToasts(prev => prev.filter(t => t.id !== id));
-    }, 4000);
-  };
-
-  // Import discovery findings to database in batch
-  const handleImportDiscovery = async () => {
-    const itemsToImport = Object.entries(discoveryState).filter(([_, val]) => val.used);
-    if (itemsToImport.length === 0) {
-      showToast('No has seleccionado ningún proveedor en el cuestionario.', 'warning');
-      return;
-    }
-
-    let count = 0;
-    for (const [key, val] of itemsToImport) {
-      try {
-        // Recommend mechanism automatically based on selected country
-        const isUS = val.country === 'US';
-        const mechanismRec = isUS ? 'STANDARD_CLAUSES' : 'ADEQUATE_COUNTRY';
-        
-        const res = await fetch(`${API_BASE}/api/transfers`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            domain: 'localhost:3000',
-            vendor_name: val.vendorName,
-            destination_country: val.country,
-            data_categories: val.categories,
-            transfer_mechanism: mechanismRec,
-            has_signed_scc: !isUS, // Assume signed if not US (adequate country), else false
-            scc_document_url: null,
-            signature_status: isUS ? 'PENDING' : 'SIGNED'
-          })
-        });
-        if (res.ok) count++;
-      } catch (err) {
-        console.error(err);
-      }
-    }
-
-    if (count > 0) {
-      showToast(`¡Se importaron ${count} proveedores con éxito al Mapa de Transferencias!`, 'success');
-      fetchTransfers();
-      setIsDiscoveryOpen(false);
-      // Reset discovery checkboxes
-      setDiscoveryState(prev => {
-        const reset: any = {};
-        Object.keys(prev).forEach(k => {
-          reset[k] = { ...prev[k], used: false };
-        });
-        return reset;
-      });
-    } else {
-      showToast('Error al importar proveedores.', 'warning');
-    }
-  };
-
-  // Save inline edit field changes to database
-  const handleSaveInlineEdit = async (id: string, updatedFields: any) => {
+  const fetchTransfers = async () => {
     try {
-      const res = await fetch(`${API_BASE}/api/transfers/${id}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(updatedFields)
-      });
+      const res = await fetch(`${API_BASE}/api/transfers?domain=localhost:3000`);
       if (res.ok) {
-        showToast('Proveedor actualizado en vivo.', 'success');
-        fetchTransfers();
-        setEditingRowId(null);
-      } else {
-        showToast('Error al actualizar proveedor.', 'warning');
+        const data = await res.json();
+        setTransfers(data);
       }
-    } catch (err) {
-      console.error(err);
-      showToast('Error de comunicación con el servidor.', 'warning');
+    } catch (e) {
+      console.error(e);
     }
   };
 
-  // Mock PDF Drag and Drop handler
-  const handleFileDrop = async (id: string, fileName: string) => {
-    const sccUrlMock = `https://pt-evidence-vault.s3.amazonaws.com/scc_${id}_signed.pdf`;
+  const fetchCountries = async () => {
     try {
-      const res = await fetch(`${API_BASE}/api/transfers/${id}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          has_signed_scc: true,
-          signature_status: 'SIGNED',
-          scc_document_url: sccUrlMock
-        })
-      });
+      const res = await fetch(`${API_BASE}/api/transfers/countries`);
       if (res.ok) {
-        showToast(`Documento "${fileName}" cargado como evidencia de firma con éxito.`, 'success');
-        fetchTransfers();
+        const data = await res.json();
+        setCountries(data);
       }
-    } catch (err) {
-      console.error(err);
-      showToast('Error al subir el archivo.', 'warning');
+    } catch (e) {
+      console.error(e);
     }
   };
 
-  // --- Módulo de Incidentes API Operations ---
   const fetchIncidents = async () => {
     try {
       const res = await fetch(`${API_BASE}/api/incidents?domain=localhost:3000`);
@@ -413,69 +355,251 @@ export default function App() {
         setIncidents(data);
       }
     } catch (e) {
-      console.error('Error fetching incidents:', e);
+      console.error(e);
+    }
+  };
+
+  // Action Triggers
+  const showToast = (message: string, type: 'success' | 'warning' | 'info' = 'info') => {
+    const id = Math.random().toString(36).substring(2, 9);
+    setToasts(prev => [...prev, { id, message, type }]);
+    setTimeout(() => {
+      setToasts(prev => prev.filter(t => t.id !== id));
+    }, 4500);
+  };
+
+  const handleScan = async (e: FormEvent) => {
+    e.preventDefault();
+    setIsScanning(true);
+    showToast('Iniciando escaneo de cookies, formularios y políticas...', 'info');
+    try {
+      const res = await fetch(`${API_BASE}/api/scan`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url: scanUrl })
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setLatestScan(data);
+        showToast(`Escaneo finalizado con éxito. Score de cumplimiento: ${data.score}%`, 'success');
+        handleFetchDiagnosis();
+      } else {
+        showToast('Error al auditar el sitio web.', 'warning');
+      }
+    } catch (err) {
+      console.error(err);
+      showToast('Error de red al conectar con el motor de escaneo.', 'warning');
+    } finally {
+      setIsScanning(false);
+    }
+  };
+
+  const handleSaveConfig = async (e: FormEvent) => {
+    e.preventDefault();
+    setIsSavingConfig(true);
+    try {
+      const payload = {
+        company_name: configCompanyName,
+        policy_version: configVersion,
+        banner_title: configBannerTitle,
+        banner_description: configBannerDesc,
+        policy_content: {
+          representative: configRepresentative,
+          representative_email: configEmail,
+          purposes: configPurposes,
+          retention: configRetention,
+          channels: configChannels
+        }
+      };
+      const res = await fetch(`${API_BASE}/api/config/localhost:3000`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setConfig(data);
+        showToast('Configuraciones guardadas y CMP actualizado.', 'success');
+        handleFetchDiagnosis();
+      } else {
+        showToast('Error al guardar configuraciones.', 'warning');
+      }
+    } catch (err) {
+      console.error(err);
+      showToast('Error de red al guardar.', 'warning');
+    } finally {
+      setIsSavingConfig(false);
+    }
+  };
+
+  const handleCreateTransfer = async (e: FormEvent) => {
+    e.preventDefault();
+    try {
+      const payload = {
+        domain: 'localhost:3000',
+        provider_name: vendorName,
+        country: destCountry,
+        data_categories: selectedCategories,
+        transfer_mechanism: mechanism,
+        has_scc: signedScc,
+        scc_url: sccUrl
+      };
+      const res = await fetch(`${API_BASE}/api/transfers`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+      if (res.ok) {
+        showToast('Proveedor de transferencia internacional registrado.', 'success');
+        setVendorName('');
+        setSelectedCategories([]);
+        setIsAddingTransfer(false);
+        setWizardStep(1);
+        fetchTransfers();
+        handleFetchDiagnosis();
+      }
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const handleUpdateTransfer = async (id: string, updatedFields: any) => {
+    try {
+      const res = await fetch(`${API_BASE}/api/transfers/${id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(updatedFields)
+      });
+      if (res.ok) {
+        showToast('Garantía contractual registrada con éxito.', 'success');
+        fetchTransfers();
+        handleFetchDiagnosis();
+      }
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  const handleDeleteTransfer = async (id: string) => {
+    if (!confirm('¿Seguro que deseas eliminar este proveedor?')) return;
+    try {
+      const res = await fetch(`${API_BASE}/api/transfers/${id}`, {
+        method: 'DELETE'
+      });
+      if (res.ok) {
+        showToast('Proveedor eliminado.', 'info');
+        fetchTransfers();
+        handleFetchDiagnosis();
+      }
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  const handleGenerateScc = (provider: any) => {
+    setSccExporterName(config?.company_name || 'Mi Empresa Chile S.A.');
+    setSccExporterRut('76.123.456-7');
+    setSccExporterAddress('Av. Apoquindo 4500, Las Condes, Santiago, Chile');
+    setSccImporterName(provider.provider_name);
+    setSccImporterAddress(`HQ in ${provider.country}`);
+    
+    const docText = `CONTRATO DE TRANSFERENCIA INTERNACIONAL DE DATOS (ART. 28 LEY N° 21.719)
+
+EXPORTADOR DE DATOS:
+Razón Social: ${config?.company_name || 'Mi Empresa Chile S.A.'}
+RUT: 76.123.456-7
+Domicilio: Av. Apoquindo 4500, Las Condes, Santiago, Chile
+Representante Legal / DPO: ${configRepresentative || 'DPO de la Compañía'}
+
+IMPORTADOR DE DATOS:
+Proveedor: ${provider.provider_name}
+País Destinatario: ${provider.country}
+Categoría de Datos transferidos: ${provider.data_categories?.join(', ') || 'Contacto general'}
+
+CLÁUSULAS CONTRACTUALES TIPO (SCC):
+1. OBJETO Y ALCANCE: El Importador se compromete a tratar los datos personales únicamente bajo las instrucciones del Exportador de acuerdo con la Ley N° 21.719 de Chile.
+2. MEDIDAS DE SEGURIDAD: El Importador declara poseer medidas técnicas y organizativas óptimas para prevenir fugas, ransomware o accesos no autorizados.
+3. EJERCICIO DE DERECHOS: El Importador cooperará con el Exportador para responder solicitudes ARCO+ en un plazo máximo de 48 horas hábiles.
+4. AGENCIA DE DATOS: Ambas partes se someten a la fiscalización de la Agencia de Protección de Datos Personales de Chile.
+
+Firmas autorizadas:
+- Por el Exportador: ____________________________
+- Por el Importador: ____________________________`;
+    
+    setGeneratedSccText(docText);
+    setIsGeneratingScc(true);
+  };
+
+  const handleResolveArco = async (id: string) => {
+    try {
+      const res = await fetch(`${API_BASE}/api/arco/tickets/${id}/resolve`, {
+        method: 'POST'
+      });
+      if (res.ok) {
+        showToast('Solicitud ARCO+ resuelta y archivada.', 'success');
+        fetchArcoTickets();
+      }
+    } catch (e) {
+      console.error(e);
     }
   };
 
   const handleCreateIncident = async (e: FormEvent) => {
     e.preventDefault();
     try {
+      const payload = {
+        domain: 'localhost:3000',
+        incident_title: incidentTitle,
+        incident_date: incidentDate,
+        incident_type: incidentType,
+        affected_data_categories: affectedCategories,
+        approx_affected_titulars: Number(approxAffectedTitulars),
+        description_and_effects: descriptionAndEffects,
+        mitigation_measures: mitigationMeasures,
+        status: incidentStatus
+      };
+
       const res = await fetch(`${API_BASE}/api/incidents`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          domain: 'localhost:3000',
-          incident_title: incidentTitle,
-          incident_date: incidentDate,
-          incident_type: incidentType,
-          affected_data_categories: affectedCategories,
-          approx_affected_titulars: approxAffectedTitulars,
-          description_and_effects: descriptionAndEffects,
-          mitigation_measures: mitigationMeasures,
-          status: incidentStatus
-        })
-      });
-
-      if (res.ok) {
-        showToast('Incidente registrado con éxito.', 'success');
-        fetchIncidents();
-        setIsAddingIncident(false);
-        // Reset wizard values
-        setIncidentTitle('');
-        setIncidentDate(new Date().toISOString().slice(0, 16));
-        setIncidentType('DATA_LEAK');
-        setAffectedCategories([]);
-        setApproxAffectedTitulars(0);
-        setDescriptionAndEffects('');
-        setMitigationMeasures('');
-        setIncidentStatus('DETECTED');
-        setWizardIncidentStep(1);
-      } else {
-        showToast('Error al registrar incidente.', 'warning');
-      }
-    } catch (e) {
-      console.error(e);
-      showToast('Error de comunicación con el servidor.', 'warning');
-    }
-  };
-
-  const handleUpdateIncidentStatus = async (id: string, nextStatus: string) => {
-    try {
-      const payload: any = { status: nextStatus };
-      if (nextStatus === 'REPORTED_AND_CLOSED') {
-        payload.agency_notified_at = new Date().toISOString();
-        payload.titulars_notified_at = new Date().toISOString();
-      }
-      
-      const res = await fetch(`${API_BASE}/api/incidents/${id}`, {
-        method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)
       });
 
       if (res.ok) {
-        showToast(`Estado de incidente actualizado a ${nextStatus}`, 'success');
+        showToast('Incidente registrado en la bitácora legal.', 'success');
+        setIncidentTitle('');
+        setAffectedCategories([]);
+        setApproxAffectedTitulars(0);
+        setDescriptionAndEffects('');
+        setMitigationMeasures('');
+        setIsAddingIncident(false);
+        setWizardIncidentStep(1);
         fetchIncidents();
+        handleFetchDiagnosis();
+      } else {
+        showToast('Error al registrar incidente.', 'warning');
+      }
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  const handleUpdateIncidentStatus = async (id: string, newStatus: string) => {
+    try {
+      const updateFields: any = { status: newStatus };
+      if (newStatus === 'REPORTED_AND_CLOSED') {
+        updateFields.agency_notified_at = new Date().toISOString();
+        updateFields.titulars_notified_at = new Date().toISOString();
+      }
+      const res = await fetch(`${API_BASE}/api/incidents/${id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(updateFields)
+      });
+      if (res.ok) {
+        showToast('Estado del incidente actualizado.', 'success');
+        fetchIncidents();
+        handleFetchDiagnosis();
       } else {
         showToast('Error al actualizar estado.', 'warning');
       }
@@ -516,7 +640,8 @@ export default function App() {
         const data = await res.json();
         setScanVulnerabilitiesResult(data.scanResult);
         showToast(`Escaneo de vulnerabilidades finalizado. Score: ${data.scanResult.score}%`, 'success');
-        fetchIncidents(); // reload to get new automated alerts
+        fetchIncidents();
+        handleFetchDiagnosis();
       } else {
         showToast('Error al ejecutar el escaneo de vulnerabilidades.', 'warning');
       }
@@ -541,230 +666,1077 @@ export default function App() {
     showToast('Wizard de incidente pre-llenado con los datos de la alerta.', 'info');
   };
 
-  const fetchTransfers = async () => {
-    try {
-      const res = await fetch(`${API_BASE}/api/transfers?domain=localhost:3000`);
-      if (res.ok) {
-        const data = await res.json();
-        setTransfers(data);
-      }
-    } catch (e) {
-      console.error('Error fetching transfers:', e);
-    }
-  };
-
-  const fetchCountries = async () => {
-    try {
-      const res = await fetch(`${API_BASE}/api/transfers/countries`);
-      if (res.ok) {
-        const data = await res.json();
-        setCountries(data);
-      }
-    } catch (e) {
-      console.error('Error fetching countries:', e);
-    }
-  };
-
-  const handleCreateTransfer = async (e: FormEvent) => {
-    e.preventDefault();
-    try {
-      const res = await fetch(`${API_BASE}/api/transfers`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          domain: 'localhost:3000',
-          vendor_name: vendorName,
-          destination_country: destCountry,
-          data_categories: selectedCategories,
-          transfer_mechanism: mechanism,
-          has_signed_scc: signedScc,
-          scc_document_url: sccUrl
-        })
-      });
-      if (res.ok) {
-        alert('Flujo transfronterizo registrado con éxito.');
-        fetchTransfers();
-        setIsAddingTransfer(false);
-        // Reset wizard
-        setVendorName('');
-        setDestCountry('US');
-        setSelectedCategories([]);
-        setMechanism('STANDARD_CLAUSES');
-        setSignedScc(false);
-        setSccUrl('');
-        setWizardStep(1);
-        setGeneratedSccText('');
-      }
-    } catch (error) {
-      console.error(error);
-      alert('Error al registrar flujo internacional.');
-    }
-  };
-
-  const handleGenerateScc = async () => {
-    setIsGeneratingScc(true);
-    try {
-      const res = await fetch(`${API_BASE}/api/transfers/generate-scc`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          exporterName: sccExporterName,
-          exporterRut: sccExporterRut,
-          exporterAddress: sccExporterAddress,
-          importerName: sccImporterName,
-          importerCountry: destCountry,
-          importerAddress: sccImporterAddress,
-          dataCategories: selectedCategories.length > 0 ? selectedCategories : ['emails', 'billing_details']
-        })
-      });
-      if (res.ok) {
-        const data = await res.json();
-        setGeneratedSccText(data.sccContent);
-      }
-    } catch (error) {
-      console.error(error);
-      alert('Error al generar cláusulas tipo.');
-    } finally {
-      setIsGeneratingScc(false);
-    }
-  };
-
-  const handleDeleteTransfer = async (id: string) => {
-    if (!confirm('¿Estás seguro de que deseas eliminar este registro de transferencia?')) return;
-    try {
-      const res = await fetch(`${API_BASE}/api/transfers/${id}`, {
-        method: 'DELETE',
-        headers: { 'Content-Type': 'application/json' }
-      });
-      if (res.ok) {
-        fetchTransfers();
-      }
-    } catch (e) {
-      console.error(e);
-    }
-  };
-
-  const getRiskStatus = (transfer: any, countriesList: any[]) => {
-    const country = countriesList.find(c => c.country_name === transfer.destination_country || c.country_code === transfer.destination_country);
-    const isAdequate = country ? country.is_adequate : false;
-    
-    if (isAdequate || transfer.transfer_mechanism === 'BCR' || (transfer.transfer_mechanism === 'STANDARD_CLAUSES' && transfer.has_signed_scc)) {
-      return { status: 'Conforme', color: 'var(--color-success)', badgeClass: 'badge-leve', text: '🟢 Cumple' };
-    }
-    if (transfer.transfer_mechanism === 'CONSENT_EXCEPTIONAL' || transfer.transfer_mechanism === 'OTHER') {
-      return { status: 'En Revisión', color: 'var(--color-warning)', badgeClass: 'badge-grave', text: '🟡 Excepción / En Revisión' };
-    }
-    return { status: 'No Conforme (Riesgo Alto)', color: 'var(--color-danger)', badgeClass: 'badge-gravisima', text: '🔴 Riesgo Crítico' };
-  };
-
-  const handleScan = async (e: FormEvent) => {
-    e.preventDefault();
-    if (!scanUrl) return;
-    setIsScanning(true);
-    try {
-      const res = await fetch(`${API_BASE}/api/scan`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ url: scanUrl })
-      });
-      if (res.ok) {
-        const data = await res.json();
-        setLatestScan(data);
-        fetchConsentsStats(); // Refresh in case mock stats updated
-      }
-    } catch (err) {
-      console.error(err);
-      alert('Error al realizar escaneo.');
-    } finally {
-      setIsScanning(false);
-    }
-  };
-
-  const handleSaveConfig = async (e: FormEvent) => {
-    e.preventDefault();
-    setIsSavingConfig(true);
-    try {
-      const res = await fetch(`${API_BASE}/api/config/localhost:3000`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          company_name: configCompanyName,
-          policy_version: configVersion,
-          banner_title: configBannerTitle,
-          banner_description: configBannerDesc,
-          policy_content: {
-            representative: configRepresentative,
-            representative_email: configEmail,
-            purposes: configPurposes,
-            retention_time: configRetention,
-            exercise_channels: configChannels
-          }
-        })
-      });
-      if (res.ok) {
-        alert('Configuración guardada y widget actualizado con éxito.');
-        fetchConfig();
-      }
-    } catch (err) {
-      console.error(err);
-      alert('Error guardando configuración.');
-    } finally {
-      setIsSavingConfig(false);
-    }
-  };
-
-  const handleUpdateTicketStatus = async (id: number, status: 'Pendiente' | 'En Proceso' | 'Resuelto') => {
-    try {
-      const res = await fetch(`${API_BASE}/api/arco/tickets/${id}/status`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ status })
-      });
-      if (res.ok) {
-        fetchArcoTickets();
-      }
-    } catch (e) {
-      console.error(e);
-    }
-  };
-
-  // Helper to compute deadline colors and remaining text
-  const getDeadlineBadge = (ticket: ArcoTicket) => {
-    if (ticket.status === 'Resuelto') {
-      return (
-        <span className="badge badge-success">
-          <CheckCircle size={12} /> Resuelto
-        </span>
-      );
-    }
-
-    const due = new Date(ticket.due_date);
+  // Helper inside layout
+  const getDeadlineBadge = (arco: ArcoTicket) => {
+    const receivedDate = new Date(arco.created_at);
+    const limitDate = new Date(receivedDate.getTime() + (30 * 24 * 60 * 60 * 1000));
     const now = new Date();
-    const diffTime = due.getTime() - now.getTime();
+    const diffTime = limitDate.getTime() - now.getTime();
     const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
     
-    const isBloqueo = ticket.request_type === 'Bloqueo';
+    if (diffDays <= 0) return <span className="badge badge-gravisima">Expirado (Multa)</span>;
+    if (diffDays <= 5) return <span className="badge badge-grave">Urgente ({diffDays}d)</span>;
+    return <span className="badge badge-success">A tiempo ({diffDays}d)</span>;
+  };
 
-    if (diffDays <= 0) {
-      return (
-        <span className="badge badge-gravisima">
-          <Clock size={12} /> Vencido ({Math.abs(diffDays)}d)
-        </span>
-      );
+  // Toggle Shadow IT Providers Checkboxes
+  const handleCheckboxToggle = async (key: string) => {
+    const prev = discoveryState[key];
+    const updated = !prev.used;
+    setDiscoveryState(d => ({
+      ...d,
+      [key]: { ...prev, used: updated }
+    }));
+    
+    if (updated) {
+      try {
+        const payload = {
+          domain: 'localhost:3000',
+          provider_name: prev.vendorName,
+          country: prev.country,
+          data_categories: prev.categories,
+          transfer_mechanism: 'STANDARD_CLAUSES',
+          has_scc: false,
+          scc_url: ''
+        };
+        const res = await fetch(`${API_BASE}/api/transfers`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+        if (res.ok) {
+          showToast(`Proveedor ${prev.vendorName} importado a la matriz de regularización.`, 'success');
+          fetchTransfers();
+          handleFetchDiagnosis();
+        }
+      } catch (e) {
+        console.error(e);
+      }
     }
+  };
 
-    if (isBloqueo || diffDays <= 2) {
-      return (
-        <span className="badge badge-grave">
-          <Clock size={12} /> Critico ({diffDays}d hábiles/corridos)
-        </span>
-      );
-    }
+  // Render Sub-Views (Capa 1)
+  const renderScanner = () => {
+    return (
+      <div>
+        <header className="page-header">
+          <h1 className="page-title">🔍 Escáner & Auditoría de Privacidad</h1>
+          <p className="page-subtitle">Rastreo automatizado del dominio para cookies no consentidas, formularios sin opt-in y vulnerabilidades técnicas de red.</p>
+        </header>
+
+        <div className="dashboard-grid">
+          {/* Section A: Live Web Crawler */}
+          <div className="card col-12">
+            <h3 style={{ margin: '0 0 10px 0', fontSize: '16px', fontWeight: 600, color: 'var(--color-primary)' }}>1. Crawler Auditor de Sitio Web</h3>
+            <p style={{ fontSize: '13px', color: 'var(--text-secondary)', marginBottom: '20px' }}>Simula un rastreo recursivo del HTML sobre enlaces locales (Límite seguro: 15 páginas).</p>
+            
+            <form onSubmit={handleScan} style={{ marginBottom: '15px' }}>
+              <div className="scan-input-group">
+                <input 
+                  type="text" 
+                  className="input-text" 
+                  value={scanUrl} 
+                  onChange={e => setScanUrl(e.target.value)} 
+                  placeholder="ej. misitio.cl o localhost:3000/mock-site/index.html"
+                  disabled={isScanning}
+                />
+                <button type="submit" className="btn-scan" disabled={isScanning}>
+                  {isScanning ? (
+                    <>
+                      <RefreshCw className="loader" size={16} />
+                      <span>Rastreando HTML...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Search size={16} />
+                      <span>Iniciar Escaneo</span>
+                    </>
+                  )}
+                </button>
+              </div>
+            </form>
+            
+            {latestScan && (
+              <div style={{ background: 'rgba(255,255,255,0.02)', padding: '16px', borderRadius: '8px', border: '1px solid var(--border-color)', marginTop: '20px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', flexWrap: 'wrap', gap: '15px', marginBottom: '15px' }}>
+                  <span style={{ fontSize: '14px', fontWeight: 600 }}>Dominio Analizado: <code>{latestScan.url}</code></span>
+                  <span className="badge badge-success">Crawler Score: {latestScan.score}%</span>
+                </div>
+                
+                {/* Sitemap and Scope Coverage */}
+                <h4 style={{ margin: '15px 0 8px 0', fontSize: '13px', fontWeight: 600 }}>Mapa del Sitio Analizado ({latestScan.pagesAnalyzed?.length || 1} / 15 URLs visitadas)</h4>
+                <div style={{ background: '#0a0a14', padding: '12px', borderRadius: '6px', fontSize: '12px', fontFamily: 'monospace', maxHeight: '180px', overflowY: 'auto', border: '1px solid var(--border-color)', lineHeight: 1.5 }}>
+                  <div style={{ color: 'var(--color-success)', marginBottom: '5px' }}>🟢 Páginas Auditadas Exitosamente (Ingeridas para diagnóstico):</div>
+                  {latestScan.pagesAnalyzed?.map((p, idx) => (
+                    <div key={idx} style={{ paddingLeft: '15px' }}>├─ {p}</div>
+                  ))}
+                  
+                  {latestScan.pagesSkipped && latestScan.pagesSkipped.length > 0 && (
+                    <>
+                      <div style={{ color: 'var(--color-warning)', marginTop: '10px', marginBottom: '5px' }}>🟡 Enlaces Encontrados No Auditados (Acciones Rápidas):</div>
+                      {latestScan.pagesSkipped.map((p, idx) => (
+                        <div key={idx} style={{ paddingLeft: '15px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', margin: '4px 0' }}>
+                          <span>├─ {p}</span>
+                          <button 
+                            className="btn-action" 
+                            style={{ padding: '2px 8px', fontSize: '10px', background: 'rgba(99, 102, 241, 0.12)' }}
+                            onClick={() => {
+                              setScanUrl(p);
+                              showToast('URL cargada en el buscador. Haz clic en Iniciar Escaneo para auditar este segmento.', 'info');
+                              window.scrollTo({ top: 0, behavior: 'smooth' });
+                            }}
+                          >
+                            Rastrear Enlace
+                          </button>
+                        </div>
+                      ))}
+                    </>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Section B: Proactive Network & SSL Scanner */}
+          <div className="card col-12">
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px', flexWrap: 'wrap', gap: '10px' }}>
+              <div>
+                <h3 style={{ margin: 0, fontSize: '16px', fontWeight: 600, color: 'var(--color-primary)' }}>2. Auditoría Técnica de Red y Certificados SSL</h3>
+                <p style={{ margin: '2px 0 0 0', fontSize: '13px', color: 'var(--text-secondary)' }}>Escaneo preventivo del puerto 443, cabeceras HTTP de protección y fugas de credenciales.</p>
+              </div>
+              <button 
+                className="btn-action" 
+                style={{ background: 'rgba(99,102,241,0.1)', border: '1px solid var(--color-primary)', color: 'var(--color-primary)' }}
+                onClick={handleScanVulnerabilities}
+                disabled={isScanningVulnerabilities}
+              >
+                {isScanningVulnerabilities ? <RefreshCw className="loader" size={14} /> : <Shield size={14} />}
+                <span style={{ marginLeft: '6px' }}>{isScanningVulnerabilities ? 'Analizando Puertos...' : 'Auditar Puertos & SSL'}</span>
+              </button>
+            </div>
+
+            {/* Weekly Scheduler */}
+            <div style={{ background: 'rgba(255,255,255,0.01)', border: '1px dashed var(--border-color)', borderRadius: '8px', padding: '12px 16px', marginBottom: '20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '10px' }}>
+              <div>
+                <strong style={{ fontSize: '13.5px' }}>⏰ Programador Automático de Escaneos</strong>
+                <p style={{ margin: '2px 0 0 0', fontSize: '12px', color: 'var(--text-secondary)' }}>Ejecuta auditorías periódicas automáticas de red todos los lunes a las 08:00 AM.</p>
+              </div>
+              <label className="switch" style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}>
+                <input 
+                  type="checkbox" 
+                  checked={weeklyCronEnabled} 
+                  onChange={e => {
+                    const val = e.target.checked;
+                    setWeeklyCronEnabled(val);
+                    localStorage.setItem('weekly_security_cron', String(val));
+                    showToast(val ? 'Auditoría automática semanal activada.' : 'Auditoría semanal inactiva.', 'info');
+                  }}
+                />
+                <span className="slider round"></span>
+                <span style={{ fontSize: '12px', fontWeight: 600 }}>{weeklyCronEnabled ? 'Activo (Lunes 08:00)' : 'Inactivo'}</span>
+              </label>
+            </div>
+
+            {scanVulnerabilitiesResult && (
+              <div style={{ background: 'rgba(239, 68, 68, 0.02)', border: '1px solid rgba(239, 68, 68, 0.2)', padding: '16px', borderRadius: '8px' }}>
+                <h4 style={{ margin: '0 0 12px 0', fontSize: '14px', color: 'var(--color-danger)' }}>🚨 Amenazas y Fallos Detectados Proactivamente (Score: {scanVulnerabilitiesResult.score}%)</h4>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '15px' }}>
+                  {scanVulnerabilitiesResult.vulnerabilities.map((v: any) => (
+                    <div key={v.id} style={{ border: '1px solid var(--border-color)', borderRadius: '8px', padding: '12px', background: 'black', display: 'flex', flexDirection: 'column', justifyContent: 'space-between', gap: '10px' }}>
+                      <div>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+                          <span style={{ fontWeight: 600, fontSize: '13px' }}>{v.title}</span>
+                          <span className={`badge ${v.severity === 'CRITICAL' ? 'badge-gravisima' : v.severity === 'HIGH' ? 'badge-grave' : 'badge-leve'}`}>{v.severity}</span>
+                        </div>
+                        <p style={{ margin: 0, fontSize: '11.5px', color: 'var(--text-secondary)' }}>{v.description}</p>
+                        <p style={{ margin: '6px 0 0 0', fontSize: '11px', color: 'var(--color-primary)' }}><strong>Solución:</strong> {v.recommendation}</p>
+                      </div>
+                      <button 
+                        className="btn-save" 
+                        style={{ width: '100%', fontSize: '11px', padding: '6px 0', background: 'rgba(99,102,241,0.15)', border: '1px solid var(--color-primary)' }}
+                        onClick={() => handlePromoteVulnerability(v)}
+                      >
+                        🛡️ Promover a Bitácora Legal
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Section C: Shadow IT Discovery Accordion */}
+          <div className="card col-12">
+            <h3 style={{ margin: '0 0 10px 0', fontSize: '16px', fontWeight: 600, color: 'var(--color-primary)' }}>3. Shadow IT Hunter: Descubrimiento de Proveedores</h3>
+            <p style={{ fontSize: '13px', color: 'var(--text-secondary)', marginBottom: '20px' }}>Responde este checklist por categorías para relevar y auditar herramientas externas que tu equipo técnico use de forma no autorizada.</p>
+            
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+              {[
+                { id: 'infra', title: 'A. Infraestructura y Nube (AWS, GCP, Azure, DigitalOcean)', keys: ['aws', 'gcp', 'azure', 'digitalocean'] },
+                { id: 'marketing', title: 'B. CRM, Marketing y Automatización (HubSpot, Salesforce, Mailchimp)', keys: ['hubspot', 'salesforce', 'mailchimp', 'activecampaign', 'sendgrid'] },
+                { id: 'operations', title: 'C. Operaciones y Recursos Humanos (Slack, Workspace, Zoom)', keys: ['google_workspace', 'office_365', 'zoom', 'workday', 'bamboohr'] },
+                { id: 'analytics', title: 'D. TI, Analytics y Soporte (Analytics, Pixel, Hotjar, Zendesk)', keys: ['google_analytics', 'meta_pixel', 'hotjar', 'zendesk', 'intercom'] }
+              ].map(group => {
+                const isOpen = activeAccordion === group.id;
+                return (
+                  <div key={group.id} style={{ border: '1px solid var(--border-color)', borderRadius: '8px', overflow: 'hidden' }}>
+                    <div 
+                      onClick={() => setActiveAccordion(isOpen ? null : group.id)} 
+                      style={{ padding: '12px 16px', background: 'rgba(255,255,255,0.02)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: 'pointer', fontWeight: 600, fontSize: '13.5px' }}
+                    >
+                      <span>{group.title}</span>
+                      {isOpen ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+                    </div>
+                    {isOpen && (
+                      <div style={{ padding: '16px', background: 'black', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                        {group.keys.map(k => {
+                          const item = discoveryState[k];
+                          return (
+                            <label key={k} style={{ display: 'flex', alignItems: 'center', gap: '10px', fontSize: '13px', cursor: 'pointer' }}>
+                              <input 
+                                type="checkbox" 
+                                checked={item.used} 
+                                onChange={() => handleCheckboxToggle(k)}
+                              />
+                              <span>Utilizamos <strong>{item.vendorName}</strong> (HQ en {item.country === 'US' ? 'EE.UU.' : item.country})</span>
+                            </label>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  // Render Sub-Views (Capa 2)
+  const renderDiagnosis = () => {
+    const finalScore = diagnosisData ? diagnosisData.globalScore : (latestScan ? latestScan.score : 100);
+    const breakdown = diagnosisData ? diagnosisData.breakdown : { crawlScore: latestScan ? latestScan.score : 100, transfersScore: 100, securityScore: 100 };
+    const findings = diagnosisData ? diagnosisData.findings : (latestScan ? latestScan.findings : []);
+    const actionPlan = diagnosisData ? diagnosisData.actionPlan : (latestScan ? latestScan.actionPlan : []);
 
     return (
-      <span className="badge badge-leve">
-        <Clock size={12} /> Quedan {diffDays} días
-      </span>
+      <div>
+        <header className="page-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '15px' }}>
+          <div>
+            <h1 className="page-title">📊 Diagnóstico & Plan de Acción Priorizado</h1>
+            <p className="page-subtitle">Evaluación normativa consolidada frente a la Ley N° 21.719. Ponderación de auditoría web, garantías de transferencias y brechas.</p>
+          </div>
+          <button className="btn-action" onClick={handleFetchDiagnosis} disabled={isFetchingDiagnosis}>
+            {isFetchingDiagnosis ? <RefreshCw className="loader" size={14} /> : <RefreshCw size={14} />}
+            <span style={{ marginLeft: '6px' }}>Actualizar Diagnóstico</span>
+          </button>
+        </header>
+
+        {isAddingIncident ? (
+          /* Render React wizard incident reporting form */
+          <div className="card" style={{ maxWidth: '800px', margin: '0 auto' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', borderBottom: '1px solid var(--border-color)', paddingBottom: '10px' }}>
+              <h3 style={{ margin: 0, fontSize: '18px', fontWeight: 600 }}>Reportar Nuevo Incidente de Seguridad</h3>
+              <button className="btn-action" onClick={() => setIsAddingIncident(false)}>Cancelar</button>
+            </div>
+            
+            {/* Wizard Stepper */}
+            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '30px', position: 'relative' }}>
+              <div style={{ position: 'absolute', top: '15px', left: 0, right: 0, height: '2px', background: 'var(--border-color)', zIndex: 1 }}></div>
+              <div style={{ position: 'absolute', top: '15px', left: 0, width: `${((wizardIncidentStep - 1) / 3) * 100}%`, height: '2px', background: 'var(--color-primary)', zIndex: 2, transition: 'width 0.3s ease' }}></div>
+              {[1, 2, 3, 4].map(s => (
+                <div key={s} style={{ zIndex: 3, display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+                  <div style={{
+                    width: '32px', height: '32px', borderRadius: '50%',
+                    background: wizardIncidentStep === s ? 'var(--color-primary)' : wizardIncidentStep > s ? 'var(--color-success)' : 'var(--bg-card)',
+                    color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 'bold', fontSize: '13px'
+                  }}>{wizardIncidentStep > s ? '✓' : s}</div>
+                  <span style={{ fontSize: '11px', marginTop: '6px', color: wizardIncidentStep === s ? 'white' : 'var(--text-secondary)' }}>
+                    {s === 1 ? 'Datos' : s === 2 ? 'Impacto' : s === 3 ? 'Riesgo Legal' : 'Mitigación'}
+                  </span>
+                </div>
+              ))}
+            </div>
+
+            <form onSubmit={handleCreateIncident}>
+              {wizardIncidentStep === 1 && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
+                  <div>
+                    <label className="form-label">Título descriptivo del incidente</label>
+                    <input type="text" className="input-text" style={{ width: '100%' }} value={incidentTitle} onChange={e => setIncidentTitle(e.target.value)} required placeholder="ej. Acceso no autorizado a BBDD de clientes" />
+                  </div>
+                  <div>
+                    <label className="form-label">Fecha y Hora de Detección</label>
+                    <input type="datetime-local" className="input-text" style={{ width: '100%' }} value={incidentDate} onChange={e => setIncidentDate(e.target.value)} required />
+                  </div>
+                  <div>
+                    <label className="form-label">Tipo de Brecha de Seguridad</label>
+                    <select className="input-text" style={{ width: '100%', background: '#0a0a14' }} value={incidentType} onChange={e => setIncidentType(e.target.value)}>
+                      <option value="DATA_LEAK">Filtración de Datos (Data Leak)</option>
+                      <option value="RANSOMWARE_HACK">Secuestro de Servidor (Ransomware / Hack)</option>
+                      <option value="UNAUTHORIZED_ACCESS">Acceso No Autorizado</option>
+                      <option value="LOST_DEVICE">Pérdida de Dispositivo</option>
+                      <option value="HUMAN_ERROR">Error Humano</option>
+                      <option value="OTHER">Otro</option>
+                    </select>
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '20px' }}>
+                    <button type="button" className="btn-save" onClick={() => setWizardIncidentStep(2)}>Siguiente: Evaluar Impacto</button>
+                  </div>
+                </div>
+              )}
+
+              {wizardIncidentStep === 2 && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
+                  <div>
+                    <label className="form-label">Categorías de Datos Afectadas (Selección Múltiple)</label>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', background: 'rgba(255,255,255,0.01)', padding: '12px', borderRadius: '6px', border: '1px solid var(--border-color)' }}>
+                      {[
+                        'Datos Bancarios u Obligaciones Financieras (Financieros)',
+                        'Datos Sensibles (Salud, Biométricos, Ideología)',
+                        'Datos de Menores de 14 Años',
+                        'Datos de Contacto General (Emails, Teléfonos)',
+                        'Datos de Identidad (RUT, Claves de Acceso)'
+                      ].map(cat => {
+                        const hasCat = affectedCategories.includes(cat);
+                        return (
+                          <label key={cat} style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', cursor: 'pointer' }}>
+                            <input 
+                              type="checkbox" 
+                              checked={hasCat} 
+                              onChange={() => {
+                                if (hasCat) {
+                                  setAffectedCategories(prev => prev.filter(c => c !== cat));
+                                } else {
+                                  setAffectedCategories(prev => [...prev, cat]);
+                                }
+                              }}
+                            />
+                            <span>{cat}</span>
+                          </label>
+                        );
+                      })}
+                    </div>
+                  </div>
+                  <div>
+                    <label className="form-label">Número Aproximado de Titulares Afectados</label>
+                    <input type="number" className="input-text" style={{ width: '100%' }} value={approxAffectedTitulars} onChange={e => setApproxAffectedTitulars(Number(e.target.value))} required />
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '20px' }}>
+                    <button type="button" className="btn-action" onClick={() => setWizardIncidentStep(1)}>Atrás</button>
+                    <button type="button" className="btn-save" onClick={() => setWizardIncidentStep(3)}>Siguiente: Riesgo Legal</button>
+                  </div>
+                </div>
+              )}
+
+              {wizardIncidentStep === 3 && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
+                  <h4 style={{ margin: 0, fontSize: '14px', fontWeight: 600 }}>Cálculo de Riesgo Legal (Art. 14 sexies & Art. 34)</h4>
+                  
+                  {/* Dynamic Alert Verdict Cards */}
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                    {/* Check if agency report required */}
+                    {['DATA_LEAK', 'RANSOMWARE_HACK', 'UNAUTHORIZED_ACCESS', 'LOST_DEVICE'].includes(incidentType) || approxAffectedTitulars > 0 ? (
+                      <div style={{ background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.2)', padding: '12px', borderRadius: '8px' }}>
+                        <div style={{ color: 'var(--color-danger)', fontWeight: 600, fontSize: '13.5px' }}>🚨 Obligación de Reportar a la Agencia DPA</div>
+                        <p style={{ margin: '4px 0 0 0', fontSize: '12px', color: 'var(--text-secondary)', lineHeight: 1.4 }}>
+                          La ley exige notificar a la Agencia en un plazo expedito tras detectar la vulneración. Omitir esta notificación constituye una infracción Grave o Gravísima.
+                        </p>
+                      </div>
+                    ) : (
+                      <div style={{ background: 'rgba(16,185,129,0.08)', border: '1px solid rgba(16,185,129,0.2)', padding: '12px', borderRadius: '8px' }}>
+                        <div style={{ color: 'var(--color-success)', fontWeight: 600, fontSize: '13.5px' }}>🟢 Sin Obligación Crítica Directa a la Agencia</div>
+                        <p style={{ margin: '4px 0 0 0', fontSize: '12px', color: 'var(--text-secondary)' }}>
+                          El tipo de brecha e impacto no exige reportar legalmente de forma obligatoria. Se aconseja documentar de forma preventiva.
+                        </p>
+                      </div>
+                    )}
+
+                    {/* Check if titulars report required */}
+                    {affectedCategories.some(cat => ['Financieros', 'Sensibles', 'Menores'].some(kw => cat.includes(kw))) ? (
+                      <div style={{ background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.2)', padding: '12px', borderRadius: '8px' }}>
+                        <div style={{ color: 'var(--color-warning)', fontWeight: 600, fontSize: '13.5px' }}>⚠️ Obligación de Comunicar a los Titulares Afectados</div>
+                        <p style={{ margin: '4px 0 0 0', fontSize: '12px', color: 'var(--text-secondary)', lineHeight: 1.4 }}>
+                          Debido a la recolección de datos sensibles, financieros o de menores de 14 años, debes enviar comunicados claros e informativos a tus clientes para mitigar riesgos de suplantación.
+                        </p>
+                      </div>
+                    ) : (
+                      <div style={{ background: 'rgba(16,185,129,0.08)', border: '1px solid rgba(16,185,129,0.2)', padding: '12px', borderRadius: '8px' }}>
+                        <div style={{ color: 'var(--color-success)', fontWeight: 600, fontSize: '13.5px' }}>🟢 Sin Obligación Directa a Clientes</div>
+                        <p style={{ margin: '4px 0 0 0', fontSize: '12px', color: 'var(--text-secondary)' }}>
+                          La naturaleza de los datos afectados no exige comunicaciones masivas externas obligatorias.
+                        </p>
+                      </div>
+                    )}
+                  </div>
+
+                  <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '20px' }}>
+                    <button type="button" className="btn-action" onClick={() => setWizardIncidentStep(2)}>Atrás</button>
+                    <button type="button" className="btn-save" onClick={() => setWizardIncidentStep(4)}>Siguiente: Plan de Mitigación</button>
+                  </div>
+                </div>
+              )}
+
+              {wizardIncidentStep === 4 && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
+                  <div>
+                    <label className="form-label">Descripción Técnica de la Contingencia</label>
+                    <textarea className="input-text" style={{ width: '100%' }} rows={4} value={descriptionAndEffects} onChange={e => setDescriptionAndEffects(e.target.value)} required placeholder="Describa cómo ocurrió y los posibles efectos colaterales detectados." />
+                  </div>
+                  <div>
+                    <label className="form-label">Medidas de Contención y Mitigación Adoptadas</label>
+                    <textarea className="input-text" style={{ width: '100%' }} rows={4} value={mitigationMeasures} onChange={e => setMitigationMeasures(e.target.value)} required placeholder="ej. Aislamiento del servidor, rotación de claves API, revocación de accesos..." />
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '20px' }}>
+                    <button type="button" className="btn-action" onClick={() => setWizardIncidentStep(3)}>Atrás</button>
+                    <button type="submit" className="btn-save">Registrar Incidente Oficial</button>
+                  </div>
+                </div>
+              )}
+            </form>
+          </div>
+        ) : (
+          <div className="dashboard-grid">
+            {/* Widget 1: Compliance Ring */}
+            <div className="card col-4" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
+              <h3 style={{ margin: '0 0 20px 0', fontSize: '15px', fontWeight: 600 }}>Nivel de Cumplimiento Global</h3>
+              <div className="score-container">
+                <svg className="score-svg">
+                  <circle className="score-bg-circle" cx="70" cy="70" r="58" />
+                  <circle 
+                    className="score-fill-circle" 
+                    cx="70" cy="70" r={58} 
+                    strokeDasharray={364.4}
+                    strokeDashoffset={364.4 - (364.4 * finalScore) / 100}
+                    style={{ stroke: finalScore >= 80 ? 'var(--color-success)' : finalScore >= 50 ? 'var(--color-warning)' : 'var(--color-danger)' }}
+                  />
+                </svg>
+                <div className="score-text">
+                  <span className="score-num">{finalScore}%</span>
+                  <span className="score-label">Score</span>
+                </div>
+              </div>
+              
+              <div className="stats-row" style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '8px', width: '100%', marginTop: '15px', fontSize: '12px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px', background: 'rgba(255,255,255,0.02)', borderRadius: '4px' }}>
+                  <span>Auditoría Web:</span>
+                  <span style={{ fontWeight: 600 }}>{breakdown.crawlScore}%</span>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px', background: 'rgba(255,255,255,0.02)', borderRadius: '4px' }}>
+                  <span>Garantías TID (Art. 28):</span>
+                  <span style={{ fontWeight: 600 }}>{breakdown.transfersScore}%</span>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px', background: 'rgba(255,255,255,0.02)', borderRadius: '4px' }}>
+                  <span>Contingencias (Art. 14):</span>
+                  <span style={{ fontWeight: 600 }}>{breakdown.securityScore}%</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Widget 2: Action Plan Roadmap */}
+            <div className="card col-8">
+              <h3 style={{ margin: '0 0 10px 0', fontSize: '15px', fontWeight: 600, color: 'var(--color-primary)' }}>Plan de Mitigación y Plan de Acción Priorizado</h3>
+              <p style={{ fontSize: '13px', color: 'var(--text-secondary)', marginBottom: '15px' }}>Acciones correctivas ordenadas por impacto legal y multas asociadas.</p>
+              
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', maxHeight: '320px', overflowY: 'auto' }}>
+                {actionPlan && actionPlan.length > 0 ? (
+                  actionPlan.map((step: any) => (
+                    <div key={step.step} style={{ display: 'flex', gap: '15px', padding: '12px', background: 'rgba(255,255,255,0.01)', border: '1px solid var(--border-color)', borderRadius: '8px' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: '28px', height: '28px', borderRadius: '50%', background: 'var(--color-primary)', color: 'white', fontWeight: 'bold', fontSize: '12px', flexShrink: 0 }}>
+                        {step.step}
+                      </div>
+                      <div style={{ flexGrow: 1 }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '5px' }}>
+                          <span style={{ fontWeight: 600, fontSize: '13px' }}>{step.title}</span>
+                          <span className={`badge ${step.priority === 'Alta' ? 'badge-gravisima' : step.priority === 'Media' ? 'badge-grave' : 'badge-success'}`}>{step.priority}</span>
+                        </div>
+                        <p style={{ margin: '4px 0 0 0', fontSize: '12px', color: 'var(--text-secondary)' }}>{step.description}</p>
+                        <p style={{ margin: '6px 0 0 0', fontSize: '11px', color: 'var(--color-primary)' }}><strong>Acción Técnica:</strong> {step.details} (Esfuerzo: {step.estimatedEffort})</p>
+                      </div>
+                    </div>
+                  ))
+                ) : (
+                  <div style={{ textAlign: 'center', padding: '30px' }}>
+                    <CheckCircle color="var(--color-success)" size={32} />
+                    <p style={{ marginTop: '10px', fontSize: '13px' }}>¡Felicitaciones! Cumples al 100% con todos los requisitos del plan de acción.</p>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Widget 3: Vulnerabilities Findings Grid */}
+            <div className="card col-12">
+              <h3 style={{ margin: '0 0 15px 0', fontSize: '15px', fontWeight: 600 }}>Brechas de Cumplimiento Detectadas</h3>
+              {findings && findings.length > 0 ? (
+                <div style={{ overflowX: 'auto' }}>
+                  <table className="transfers-table">
+                    <thead>
+                      <tr>
+                        <th>Categoría</th>
+                        <th>Gravedad</th>
+                        <th>Descripción del Hallazgo</th>
+                        <th>Recomendación Correctiva</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {findings.map((f: any, idx: number) => (
+                        <tr key={idx}>
+                          <td><span className="badge badge-success">{f.category?.replace('_', ' ')}</span></td>
+                          <td>
+                            <span className={`badge ${f.severity === 'Gravísima' ? 'badge-gravisima' : f.severity === 'Grave' ? 'badge-grave' : 'badge-leve'}`}>
+                              {f.severity}
+                            </span>
+                          </td>
+                          <td style={{ fontSize: '12px' }}>{f.description}</td>
+                          <td style={{ fontSize: '11.5px', color: 'var(--color-primary)' }}>{f.recommendation}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              ) : (
+                <p style={{ margin: 0, fontSize: '13px', color: 'var(--color-success)', fontWeight: 600 }}>🟢 No se encontraron brechas abiertas en la auditoría.</p>
+              )}
+            </div>
+
+            {/* Widget 4: Security Incidents Registry */}
+            <div className="card col-12">
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px', flexWrap: 'wrap', gap: '10px' }}>
+                <div>
+                  <h3 style={{ margin: 0, fontSize: '15px', fontWeight: 600 }}>Bitácora Histórica de Brechas & Incidentes</h3>
+                  <p style={{ margin: '2px 0 0 0', fontSize: '13px', color: 'var(--text-secondary)' }}>Artículos 14 sexies y 34 quáter: reporte mandatorio ante fugas y hackeos.</p>
+                </div>
+                <button className="btn-save" onClick={() => { setIsAddingIncident(true); setWizardIncidentStep(1); }}>
+                  <AlertTriangle size={14} />
+                  <span style={{ marginLeft: '6px' }}>Reportar Brecha</span>
+                </button>
+              </div>
+
+              {incidents && incidents.length > 0 ? (
+                <div style={{ overflowX: 'auto' }}>
+                  <table className="transfers-table">
+                    <thead>
+                      <tr>
+                        <th>Título</th>
+                        <th>Fecha de Ocurrencia</th>
+                        <th>Tipo</th>
+                        <th>Afectados</th>
+                        <th>Estado</th>
+                        <th>Notificar</th>
+                        <th>Acción</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {incidents.map((i: any) => (
+                        <tr key={i.id}>
+                          <td style={{ fontSize: '12.5px', fontWeight: 600 }}>{i.incident_title}</td>
+                          <td style={{ fontSize: '12px' }}>{new Date(i.incident_date).toLocaleString()}</td>
+                          <td><span className="badge badge-success" style={{ fontSize: '10px' }}>{i.incident_type}</span></td>
+                          <td style={{ fontSize: '12px', fontWeight: 700 }}>{i.approx_affected_titulars || 0}</td>
+                          <td>
+                            <select 
+                              value={i.status} 
+                              onChange={e => handleUpdateIncidentStatus(i.id, e.target.value)}
+                              style={{ background: '#0a0a14', color: 'white', border: '1px solid var(--border-color)', borderRadius: '4px', fontSize: '11px', padding: '3px' }}
+                            >
+                              <option value="DETECTED">Detectado</option>
+                              <option value="UNDER_ANALYSIS">Bajo Análisis</option>
+                              <option value="MITIGATED">Mitigado</option>
+                              <option value="REPORTED_AND_CLOSED">Reportado & Cerrado</option>
+                            </select>
+                          </td>
+                          <td>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '3px', fontSize: '10.5px' }}>
+                              <span>DPA: {i.requires_agency_notification ? '🔴 Requerido' : '🟢 No requiere'}</span>
+                              <span>Clientes: {i.requires_titulars_notification ? '🟠 Requerido' : '🟢 No requiere'}</span>
+                            </div>
+                          </td>
+                          <td>
+                            <button 
+                              className="btn-action" 
+                              style={{ padding: '3px 8px', fontSize: '10.5px', background: 'rgba(99,102,241,0.12)' }}
+                              onClick={() => handleGenerateIncidentNotice(i)}
+                            >
+                              Generar Oficios
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              ) : (
+                <p style={{ margin: 0, fontSize: '13px', color: 'var(--text-secondary)' }}>No hay incidentes de seguridad registrados en la bitácora legal.</p>
+              )}
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  // Render Sub-Views (Capa 3)
+  const renderRemediation = () => {
+    return (
+      <div>
+        <header className="page-header">
+          <h1 className="page-title">🛠️ Centro de Remedición & Herramientas Activas</h1>
+          <p className="page-subtitle">Instale el CMP, procese solicitudes de usuarios, firme SCCs para proveedores internacionales y actualice su política de privacidad.</p>
+        </header>
+
+        {/* Capa 3 Local Sub-tab Nav */}
+        <div style={{ display: 'flex', gap: '10px', marginBottom: '25px', borderBottom: '1px solid var(--border-color)', paddingBottom: '10px', flexWrap: 'wrap' }}>
+          <button 
+            className="btn-action" 
+            style={{ 
+              background: remediationSubTab === 'cmp' ? 'var(--color-primary)' : 'rgba(255,255,255,0.01)',
+              color: remediationSubTab === 'cmp' ? 'white' : 'var(--text-secondary)',
+              border: remediationSubTab === 'cmp' ? '1px solid var(--color-primary)' : '1px solid var(--border-color)'
+            }}
+            onClick={() => setRemediationSubTab('cmp')}
+          >
+            🍪 CMP & Consentimientos
+          </button>
+          <button 
+            className="btn-action" 
+            style={{ 
+              background: remediationSubTab === 'arco' ? 'var(--color-primary)' : 'rgba(255,255,255,0.01)',
+              color: remediationSubTab === 'arco' ? 'white' : 'var(--text-secondary)',
+              border: remediationSubTab === 'arco' ? '1px solid var(--color-primary)' : '1px solid var(--border-color)'
+            }}
+            onClick={() => setRemediationSubTab('arco')}
+          >
+            📨 Solicitudes ARCO+
+          </button>
+          <button 
+            className="btn-action" 
+            style={{ 
+              background: remediationSubTab === 'transfers' ? 'var(--color-primary)' : 'rgba(255,255,255,0.01)',
+              color: remediationSubTab === 'transfers' ? 'white' : 'var(--text-secondary)',
+              border: remediationSubTab === 'transfers' ? '1px solid var(--color-primary)' : '1px solid var(--border-color)'
+            }}
+            onClick={() => setRemediationSubTab('transfers')}
+          >
+            ✈️ Regularización TID (Art. 28)
+          </button>
+          <button 
+            className="btn-action" 
+            style={{ 
+              background: remediationSubTab === 'policies' ? 'var(--color-primary)' : 'rgba(255,255,255,0.01)',
+              color: remediationSubTab === 'policies' ? 'white' : 'var(--text-secondary)',
+              border: remediationSubTab === 'policies' ? '1px solid var(--color-primary)' : '1px solid var(--border-color)'
+            }}
+            onClick={() => setRemediationSubTab('policies')}
+          >
+            📄 Políticas & Oficios
+          </button>
+        </div>
+
+        {/* Sub-tab: CMP & Consent Logs */}
+        {remediationSubTab === 'cmp' && (
+          <div className="dashboard-grid">
+            <div className="card col-12">
+              <h3 style={{ margin: '0 0 10px 0', fontSize: '15px', fontWeight: 600 }}>Configuración del Banner del CMP</h3>
+              <p style={{ fontSize: '13px', color: 'var(--text-secondary)', marginBottom: '15px' }}>Personaliza las alertas que visualiza el cliente al ingresar a tu portal.</p>
+              
+              <form onSubmit={handleSaveConfig} style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '15px' }}>
+                <div>
+                  <label className="form-label">Título del Banner</label>
+                  <input type="text" className="input-text" style={{ width: '100%' }} value={configBannerTitle} onChange={e => setConfigBannerTitle(e.target.value)} required />
+                </div>
+                <div>
+                  <label className="form-label">Mensaje Informativo (Consentimiento)</label>
+                  <textarea className="input-text" style={{ width: '100%', resize: 'vertical' }} rows={2} value={configBannerDesc} onChange={e => setConfigBannerDesc(e.target.value)} required />
+                </div>
+                <div className="col-12" style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '10px' }}>
+                  <button type="submit" className="btn-save" disabled={isSavingConfig}>
+                    {isSavingConfig ? 'Guardando...' : 'Aplicar Cambios del CMP'}
+                  </button>
+                </div>
+              </form>
+            </div>
+
+            <div className="card col-12">
+              <h3 style={{ margin: '0 0 5px 0', fontSize: '15px', fontWeight: 600 }}>Instalación del SDK Widget (CMP)</h3>
+              <p style={{ fontSize: '12.5px', color: 'var(--text-secondary)', marginBottom: '15px' }}>Copia e inserta esta etiqueta en el <code>&lt;head&gt;</code> de tu sitio web de producción.</p>
+              <div style={{ background: '#0a0a14', padding: '12px 16px', borderRadius: '6px', fontFamily: 'monospace', fontSize: '12px', border: '1px solid var(--border-color)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <code>&lt;script src="http://localhost:3000/widget.js" async&gt;&lt;/script&gt;</code>
+                <button 
+                  className="btn-action" 
+                  style={{ padding: '2px 8px', fontSize: '10px' }}
+                  onClick={() => {
+                    navigator.clipboard.writeText('<script src="http://localhost:3000/widget.js" async></script>');
+                    showToast('Código copiado al portapapeles.', 'success');
+                  }}
+                >
+                  Copiar Código
+                </button>
+              </div>
+            </div>
+
+            <div className="card col-12">
+              <h3 style={{ margin: '0 0 10px 0', fontSize: '15px', fontWeight: 600 }}>Registro Histórico de Consentimientos</h3>
+              <p style={{ fontSize: '13px', color: 'var(--text-secondary)', marginBottom: '15px' }}>Logs auditables de consentimientos registrados por usuarios en el CMP.</p>
+              {consentLogs.length > 0 ? (
+                <div style={{ overflowX: 'auto' }}>
+                  <table className="transfers-table">
+                    <thead>
+                      <tr>
+                        <th>ID de Sesión</th>
+                        <th>IP (Masked)</th>
+                        <th>Esenciales</th>
+                        <th>Analíticas</th>
+                        <th>Marketing</th>
+                        <th>Fecha de Aceptación</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {consentLogs.map(log => (
+                        <tr key={log.id}>
+                          <td style={{ fontFamily: 'monospace', fontSize: '11px' }}>{log.user_cookie_id?.substring(0, 15)}...</td>
+                          <td style={{ fontSize: '12px' }}>{log.ip_masked}</td>
+                          <td><span className="badge badge-success">{log.essential_accepted ? 'Aceptado' : 'Rechazado'}</span></td>
+                          <td><span className={log.analytical_accepted ? 'badge badge-success' : 'badge badge-leve'}>{log.analytical_accepted ? 'Aceptado' : 'Rechazado'}</span></td>
+                          <td><span className={log.marketing_accepted ? 'badge badge-success' : 'badge badge-leve'}>{log.marketing_accepted ? 'Aceptado' : 'Rechazado'}</span></td>
+                          <td style={{ fontSize: '11px' }}>{new Date(log.created_at).toLocaleString()}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              ) : (
+                <p style={{ margin: 0, fontSize: '13px', color: 'var(--text-secondary)' }}>Esperando logs de consentimientos...</p>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* Sub-tab: ARCO+ Inbox */}
+        {remediationSubTab === 'arco' && (
+          <div className="dashboard-grid">
+            <div className="card col-12">
+              <h3 style={{ margin: '0 0 10px 0', fontSize: '15px', fontWeight: 600 }}>Bandeja Administrativa ARCO+</h3>
+              <p style={{ fontSize: '13px', color: 'var(--text-secondary)', marginBottom: '15px' }}>Bandeja legal para responder requerimientos del titular de datos dentro de los plazos de la ley.</p>
+              
+              {arcoTickets.length > 0 ? (
+                <div style={{ overflowX: 'auto' }}>
+                  <table className="transfers-table">
+                    <thead>
+                      <tr>
+                        <th>Solicitante</th>
+                        <th>Derecho</th>
+                        <th>Detalle de Solicitud</th>
+                        <th>Fecha Ingreso</th>
+                        <th>Plazo Legal</th>
+                        <th>Estado</th>
+                        <th>Acción</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {arcoTickets.map(t => (
+                        <tr key={t.id}>
+                          <td>
+                            <div style={{ display: 'flex', flexDirection: 'column' }}>
+                              <span style={{ fontWeight: 600, fontSize: '13px' }}>{t.requester_name}</span>
+                              <span style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>{t.requester_email}</span>
+                            </div>
+                          </td>
+                          <td><span className="badge badge-success">{t.request_type}</span></td>
+                          <td style={{ fontSize: '12px', maxWidth: '280px', whiteSpace: 'normal', wordBreak: 'break-word' }}>{t.request_details}</td>
+                          <td style={{ fontSize: '11.5px' }}>{new Date(t.created_at).toLocaleDateString()}</td>
+                          <td>{getDeadlineBadge(t)}</td>
+                          <td>
+                            <span className={`badge ${t.status === 'Resuelto' ? 'badge-success' : t.status === 'En Revisión' ? 'badge-grave' : 'badge-leve'}`}>
+                              {t.status}
+                            </span>
+                          </td>
+                          <td>
+                            {t.status !== 'Resuelto' ? (
+                              <button 
+                                className="btn-save" 
+                                style={{ padding: '4px 10px', fontSize: '11px' }}
+                                onClick={() => handleResolveArco(t.id)}
+                              >
+                                Resolver
+                              </button>
+                            ) : (
+                              <span style={{ color: 'var(--text-secondary)', fontSize: '12px' }}>✓ Archivado</span>
+                            )}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              ) : (
+                <p style={{ margin: 0, fontSize: '13px', color: 'var(--text-secondary)' }}>No hay solicitudes de derechos ARCO+ registradas.</p>
+              )}
+            </div>
+
+            <div className="card col-12">
+              <h3 style={{ margin: '0 0 10px 0', fontSize: '15px', fontWeight: 600 }}>Pestaña Pública de Ejercicio ARCO+</h3>
+              <p style={{ fontSize: '13px', color: 'var(--text-secondary)', marginBottom: '15px' }}>El widget CMP despliega de forma nativa este portal para tus clientes. Si prefieres incrustarlo en una página de tu web, copia este enlace.</p>
+              <div style={{ background: '#0a0a14', padding: '12px 16px', borderRadius: '6px', fontFamily: 'monospace', fontSize: '12px', border: '1px solid var(--border-color)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <code>http://localhost:3000/mock-site/arco-portal</code>
+                <button 
+                  className="btn-action" 
+                  style={{ padding: '2px 8px', fontSize: '10px' }}
+                  onClick={() => {
+                    navigator.clipboard.writeText('http://localhost:3000/mock-site/arco-portal');
+                    showToast('Enlace copiado al portapapeles.', 'success');
+                  }}
+                >
+                  Copiar Enlace
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Sub-tab: TID & Foreign Providers */}
+        {remediationSubTab === 'transfers' && (
+          <div className="dashboard-grid">
+            <div className="card col-12">
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px', flexWrap: 'wrap', gap: '10px' }}>
+                <div>
+                  <h3 style={{ margin: 0, fontSize: '15px', fontWeight: 600 }}>Matriz de Transferencias Internacionales (TID)</h3>
+                  <p style={{ margin: '2px 0 0 0', fontSize: '13px', color: 'var(--text-secondary)' }}>Auditoría y regularización de proveedores extranjeros bajo el Art. 28 de la Ley N° 21.719.</p>
+                </div>
+                <button className="btn-save" onClick={() => { setIsAddingTransfer(true); setWizardStep(1); }}>
+                  <Plus size={14} />
+                  <span style={{ marginLeft: '6px' }}>Agregar Proveedor</span>
+                </button>
+              </div>
+
+              {isAddingTransfer ? (
+                <div style={{ background: 'rgba(255,255,255,0.01)', border: '1px dashed var(--border-color)', padding: '16px', borderRadius: '8px', marginBottom: '20px' }}>
+                  <h4 style={{ margin: '0 0 15px 0', fontSize: '14px', fontWeight: 600 }}>Formulario de Registro (Paso {wizardStep} de 2)</h4>
+                  <form onSubmit={handleCreateTransfer}>
+                    {wizardStep === 1 ? (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                        <div>
+                          <label className="form-label">Nombre del Proveedor (ej: Salesforce, Stripe)</label>
+                          <input type="text" className="input-text" style={{ width: '100%' }} value={vendorName} onChange={e => setVendorName(e.target.value)} required />
+                        </div>
+                        <div>
+                          <label className="form-label">País de Destino (Destinatario)</label>
+                          <select className="input-text" style={{ width: '100%', background: '#0a0a14' }} value={destCountry} onChange={e => setDestCountry(e.target.value)}>
+                            {countries.map(c => (
+                              <option key={c.code} value={c.code}>{c.name} ({c.adequacy})</option>
+                            ))}
+                          </select>
+                        </div>
+                        <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '10px' }}>
+                          <button type="button" className="btn-save" onClick={() => setWizardStep(2)}>Siguiente</button>
+                        </div>
+                      </div>
+                    ) : (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                        <div>
+                          <label className="form-label">Categorías de Datos Transferidas</label>
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', background: 'black', padding: '10px', borderRadius: '4px' }}>
+                            {['Datos de navegación (cookies/IP)', 'Nombres / Identidad', 'Correo electrónico', 'Datos financieros/tarjetas'].map(cat => {
+                              const hasCat = selectedCategories.includes(cat);
+                              return (
+                                <label key={cat} style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', cursor: 'pointer' }}>
+                                  <input 
+                                    type="checkbox" 
+                                    checked={hasCat} 
+                                    onChange={() => {
+                                      if (hasCat) setSelectedCategories(prev => prev.filter(c => c !== cat));
+                                      else setSelectedCategories(prev => [...prev, cat]);
+                                    }}
+                                  />
+                                  <span>{cat}</span>
+                                </label>
+                              );
+                            })}
+                          </div>
+                        </div>
+                        <div style={{ display: 'flex', gap: '15px' }}>
+                          <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', fontSize: '13px' }}>
+                            <input type="checkbox" checked={signedScc} onChange={e => setSignedScc(e.target.checked)} />
+                            <span>¿Firmó Cláusulas Contractuales Tipo (SCC)?</span>
+                          </label>
+                        </div>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '15px' }}>
+                          <button type="button" className="btn-action" onClick={() => setWizardStep(1)}>Atrás</button>
+                          <button type="submit" className="btn-save">Registrar Proveedor</button>
+                        </div>
+                      </div>
+                    )}
+                  </form>
+                </div>
+              ) : null}
+
+              {transfers.length > 0 ? (
+                <div style={{ overflowX: 'auto' }}>
+                  <table className="transfers-table">
+                    <thead>
+                      <tr>
+                        <th>Proveedor</th>
+                        <th>País Destinatario</th>
+                        <th>Categoría de Datos</th>
+                        <th>Adecuación</th>
+                        <th>Garantía Firmada (SCC)</th>
+                        <th>Acuerdo (DPA)</th>
+                        <th>Acción</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {transfers.map(t => {
+                        const isEditing = editingRowId === t.id;
+                        return (
+                          <tr key={t.id}>
+                            <td style={{ fontWeight: 600, fontSize: '13px' }}>{t.provider_name}</td>
+                            <td style={{ fontSize: '13px' }}>{t.country}</td>
+                            <td style={{ fontSize: '12px' }}>{t.data_categories?.join(', ')}</td>
+                            <td>
+                              <span className={`badge ${t.adequacy_status === 'Adecuado' ? 'badge-success' : 'badge-grave'}`}>
+                                {t.adequacy_status}
+                              </span>
+                            </td>
+                            <td>
+                              {isEditing ? (
+                                <input 
+                                  type="checkbox" 
+                                  checked={editFields.has_scc || false}
+                                  onChange={e => setEditFields({ ...editFields, has_scc: e.target.checked })}
+                                />
+                              ) : (
+                                <span style={{ color: t.has_scc ? 'var(--color-success)' : 'var(--color-danger)', fontWeight: 600 }}>
+                                  {t.has_scc ? '✓ Firmado' : '✗ Faltante'}
+                                </span>
+                              )}
+                            </td>
+                            <td>
+                              {isEditing ? (
+                                <input 
+                                  type="checkbox" 
+                                  checked={editFields.has_dpa || false}
+                                  onChange={e => setEditFields({ ...editFields, has_dpa: e.target.checked })}
+                                />
+                              ) : (
+                                <span style={{ color: t.has_dpa ? 'var(--color-success)' : 'var(--color-danger)', fontWeight: 600 }}>
+                                  {t.has_dpa ? '✓ Firmado' : '✗ Faltante'}
+                                </span>
+                              )}
+                            </td>
+                            <td>
+                              <div style={{ display: 'flex', gap: '8px' }}>
+                                {isEditing ? (
+                                  <>
+                                    <button 
+                                      className="btn-save" 
+                                      style={{ padding: '2px 8px', fontSize: '11px' }}
+                                      onClick={() => {
+                                        handleUpdateTransfer(t.id, editFields);
+                                        setEditingRowId(null);
+                                      }}
+                                    >
+                                      Guardar
+                                    </button>
+                                    <button className="btn-action" style={{ padding: '2px 8px', fontSize: '11px' }} onClick={() => setEditingRowId(null)}>
+                                      Cancelar
+                                    </button>
+                                  </>
+                                ) : (
+                                  <>
+                                    <button 
+                                      className="btn-action" 
+                                      style={{ padding: '2px 8px', fontSize: '11.0px' }}
+                                      onClick={() => {
+                                        setEditingRowId(t.id);
+                                        setEditFields({ has_scc: t.has_scc, has_dpa: t.has_dpa });
+                                      }}
+                                    >
+                                      Editar
+                                    </button>
+                                    <button className="btn-action" style={{ padding: '2px 8px', fontSize: '11.0px', color: 'var(--color-danger)' }} onClick={() => handleDeleteTransfer(t.id)}>
+                                      Eliminar
+                                    </button>
+                                    {!t.has_scc && (
+                                      <button className="btn-save" style={{ padding: '2px 8px', fontSize: '10.5px' }} onClick={() => handleGenerateScc(t)}>
+                                        Generar SCC
+                                      </button>
+                                    )}
+                                  </>
+                                )}
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              ) : (
+                <p style={{ margin: 0, fontSize: '13px', color: 'var(--text-secondary)' }}>No hay transferencias registradas.</p>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* Sub-tab: Policy & Documents Generator */}
+        {remediationSubTab === 'policies' && (
+          <div className="dashboard-grid">
+            <div className="card col-12">
+              <h3 style={{ margin: '0 0 10px 0', fontSize: '15px', fontWeight: 600 }}>Configuración de Cláusulas (Art. 14 ter)</h3>
+              <p style={{ fontSize: '13px', color: 'var(--text-secondary)', marginBottom: '15px' }}>Completa los datos de tu política de privacidad obligatoria bajo la ley de privacidad chilena.</p>
+              
+              <form onSubmit={handleSaveConfig} style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '15px' }}>
+                <div>
+                  <label className="form-label">Nombre del DPO / Representante Legal</label>
+                  <input type="text" className="input-text" style={{ width: '100%' }} value={configRepresentative} onChange={e => setConfigRepresentative(e.target.value)} required />
+                </div>
+                <div>
+                  <label className="form-label">Email de contacto DPO</label>
+                  <input type="email" className="input-text" style={{ width: '100%' }} value={configEmail} onChange={e => setConfigEmail(e.target.value)} required />
+                </div>
+                <div>
+                  <label className="form-label">Plazos de Retención de Datos</label>
+                  <input type="text" className="input-text" style={{ width: '100%' }} value={configRetention} onChange={e => setConfigRetention(e.target.value)} placeholder="ej. 24 meses desde el último contacto" required />
+                </div>
+                <div>
+                  <label className="form-label">Canales de Atención Derechos ARCO+</label>
+                  <input type="text" className="input-text" style={{ width: '100%' }} value={configChannels} onChange={e => setConfigChannels(e.target.value)} placeholder="ej. Correo del DPO y formulario público" required />
+                </div>
+                <div className="col-12">
+                  <label className="form-label">Finalidades Declaradas del Tratamiento</label>
+                  <textarea className="input-text" style={{ width: '100%' }} rows={3} value={configPurposes} onChange={e => setConfigPurposes(e.target.value)} required />
+                </div>
+                <div className="col-12">
+                  <label className="form-label">Nombre de la Organización</label>
+                  <input type="text" className="input-text" style={{ width: '100%' }} value={configCompanyName} onChange={e => setConfigCompanyName(e.target.value)} required />
+                </div>
+                <div className="col-12" style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '10px' }}>
+                  <button type="submit" className="btn-save" disabled={isSavingConfig}>
+                    {isSavingConfig ? 'Guardando...' : 'Guardar y Generar Textos'}
+                  </button>
+                </div>
+              </form>
+            </div>
+
+            {config && (
+              <div className="card col-12">
+                <h3 style={{ margin: '0 0 10px 0', fontSize: '15px', fontWeight: 600 }}>Texto de Política de Privacidad Auto-Generado</h3>
+                <p style={{ fontSize: '13px', color: 'var(--text-secondary)', marginBottom: '15px' }}>Copia y publica esta política legal de cumplimiento en tu sitio web.</p>
+                <div style={{ background: '#0a0a14', padding: '16px', borderRadius: '8px', border: '1px solid var(--border-color)', fontSize: '12.5px', lineHeight: 1.5, maxHeight: '300px', overflowY: 'auto' }}>
+                  <strong>POLÍTICA DE PRIVACIDAD Y TRATAMIENTO DE DATOS PERSONALES</strong><br />
+                  Empresa responsable: {config.company_name}<br />
+                  Versión: {config.policy_version}<br /><br />
+                  1. IDENTIFICACIÓN: El representante legal a cargo de la protección de sus datos es {config.policy_content?.representative} con correo de contacto {config.policy_content?.representative_email}.<br /><br />
+                  2. FINALIDADES: Los datos recopilados a través de nuestros formularios web se utilizarán estrictamente para: {config.policy_content?.purposes}.<br /><br />
+                  3. RETENCIÓN: Conservaremos sus datos personales durante un periodo máximo de: {config.policy_content?.retention}.<br /><br />
+                  4. CANALES DE EJERCICIO ARCO+: De acuerdo con la Ley N° 21.719, usted tiene derecho a Acceder, Rectificar, Cancelar, Oponerse y Portar sus datos personales. Puede ejercer sus derechos a través de: {config.policy_content?.channels}.
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
     );
   };
 
@@ -791,14 +1763,14 @@ export default function App() {
             alignItems: 'center',
             gap: '8px',
             fontSize: '13px',
-            fontWeight: 500,
-            animation: 'slideIn 0.3s ease'
+            fontWeight: 600
           }}>
-            <Shield size={14} />
+            <Shield size={16} />
             <span>{toast.message}</span>
           </div>
         ))}
       </div>
+
       {/* Sidebar Navigation */}
       <aside className="sidebar">
         <div className="brand">
@@ -810,59 +1782,27 @@ export default function App() {
         
         <nav className="nav-menu">
           <div 
-            className={`nav-item ${activeTab === 'dashboard' ? 'active' : ''}`}
-            onClick={() => { setActiveTab('dashboard'); fetchConsentsStats(); fetchArcoTickets(); }}
-          >
-            <Activity size={16} />
-            <span>Vista General</span>
-          </div>
-          
-          <div 
             className={`nav-item ${activeTab === 'scanner' ? 'active' : ''}`}
             onClick={() => { setActiveTab('scanner'); fetchLatestScan(); }}
           >
             <Search size={16} />
-            <span>Crawler Auditor</span>
+            <span>🔍 1. Escáner & Auditoría</span>
           </div>
           
           <div 
-            className={`nav-item ${activeTab === 'consents' ? 'active' : ''}`}
-            onClick={() => { setActiveTab('consents'); fetchConsentLogs(); }}
+            className={`nav-item ${activeTab === 'diagnosis' ? 'active' : ''}`}
+            onClick={() => { setActiveTab('diagnosis'); handleFetchDiagnosis(); fetchIncidents(); }}
           >
-            <UserCheck size={16} />
-            <span>Logs de Consentimiento</span>
+            <Activity size={16} />
+            <span>📊 2. Diagnóstico & Plan</span>
           </div>
           
           <div 
-            className={`nav-item ${activeTab === 'arco' ? 'active' : ''}`}
-            onClick={() => { setActiveTab('arco'); fetchArcoTickets(); }}
-          >
-            <Clock size={16} />
-            <span>Bandeja ARCO+</span>
-          </div>
-          
-          <div 
-            className={`nav-item ${activeTab === 'transfers' ? 'active' : ''}`}
-            onClick={() => { setActiveTab('transfers'); fetchTransfers(); fetchCountries(); }}
-          >
-            <ExternalLink size={16} />
-            <span>Transf. Internacionales</span>
-          </div>
-
-          <div 
-            className={`nav-item ${activeTab === 'incidents' ? 'active' : ''}`}
-            onClick={() => { setActiveTab('incidents'); fetchIncidents(); }}
-          >
-            <AlertTriangle size={16} />
-            <span>Bitácora de Brechas</span>
-          </div>
-
-          <div 
-            className={`nav-item ${activeTab === 'config' ? 'active' : ''}`}
-            onClick={() => { setActiveTab('config'); fetchConfig(); }}
+            className={`nav-item ${activeTab === 'remediation' ? 'active' : ''}`}
+            onClick={() => { setActiveTab('remediation'); fetchConsentLogs(); fetchArcoTickets(); fetchTransfers(); fetchConfig(); }}
           >
             <Settings size={16} />
-            <span>Configuración de Política</span>
+            <span>🛠️ 3. Centro Remedición</span>
           </div>
         </nav>
         
@@ -873,2521 +1813,96 @@ export default function App() {
 
       {/* Main Workspace */}
       <main className="main-workspace">
-        
-        {/* TAB 1: DASHBOARD */}
-        {activeTab === 'dashboard' && (
-          <div>
-            <header className="page-header">
-              <h1 className="page-title">Panel de Control de Privacidad</h1>
-              <p className="page-subtitle">Monitoreo de cumplimiento normativo y logs en tiempo real para {config?.company_name || 'localhost'}.</p>
-            </header>
+        {activeTab === 'scanner' && renderScanner()}
+        {activeTab === 'diagnosis' && renderDiagnosis()}
+        {activeTab === 'remediation' && renderRemediation()}
 
-            <div className="dashboard-grid">
-              
-              {/* Compliance Score Widget */}
-              <div className="card col-4">
-                <h3 style={{ margin: '0 0 20px 0', fontSize: '16px', fontWeight: 600 }}>Nivel de Cumplimiento</h3>
-                {latestScan ? (
-                  <div>
-                    {latestScan.isSimulated && (
-                      <div style={{ fontSize: '11px', color: 'var(--color-warning)', background: 'rgba(245,158,11,0.08)', padding: '6px 10px', borderRadius: '4px', marginBottom: '12px', textAlign: 'center' }}>
-                        ⚠️ Evaluación Preliminar Estimada
-                      </div>
-                    )}
-                    <div className="score-container">
-                      <svg className="score-svg">
-                        <circle className="score-bg-circle" cx="70" cy="70" r="58" />
-                        <circle 
-                          className="score-fill-circle" 
-                          cx="70" 
-                          cy="70" 
-                          r="58" 
-                          strokeDasharray={364.4}
-                          strokeDashoffset={364.4 - (364.4 * latestScan.score) / 100}
-                          style={{
-                            stroke: latestScan.score >= 80 ? 'var(--color-success)' : latestScan.score >= 50 ? 'var(--color-warning)' : 'var(--color-danger)'
-                          }}
-                        />
-                      </svg>
-                      <div className="score-text">
-                        <span className="score-num">{latestScan.score}%</span>
-                        <span className="score-label">Score</span>
-                      </div>
-                    </div>
-                    <div style={{ textAlign: 'center' }}>
-                      <span className={`badge ${latestScan.score >= 80 ? 'badge-success' : latestScan.score >= 50 ? 'badge-leve' : 'badge-gravisima'}`}>
-                        {latestScan.score >= 80 ? 'Cumplimiento Alto' : latestScan.score >= 50 ? 'Cumplimiento Medio' : 'Requiere Acción Crítica'}
-                      </span>
-                      <p style={{ fontSize: '12px', color: 'var(--text-secondary)', marginTop: '10px' }}>
-                        Última auditoría realizada al sitio:<br />
-                        <span style={{ color: 'var(--text-primary)', wordBreak: 'break-all' }}>{latestScan.url}</span>
-                      </p>
-                    </div>
-                  </div>
-                ) : (
-                  <div className="empty-state">
-                    <Search size={32} />
-                    <p>No hay escaneos registrados.</p>
-                    <button className="btn-scan" style={{ margin: '10px auto 0 auto' }} onClick={() => setActiveTab('scanner')}>Escanear Ahora</button>
-                  </div>
-                )}
+        {/* Modal: SCC Agreement Generator Viewer */}
+        {isGeneratingScc && (
+          <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.85)', zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px' }}>
+            <div className="card" style={{ maxWidth: '750px', width: '100%', padding: '0', display: 'flex', flexDirection: 'column' }}>
+              <div style={{ padding: '20px', borderBottom: '1px solid var(--border-color)' }}>
+                <h3 style={{ margin: 0, fontSize: '17px', fontWeight: 600 }}>Borrador Cláusulas Contractuales Tipo (SCC - Art. 28)</h3>
               </div>
-
-              {/* Consent Stats */}
-              <div className="card col-4">
-                <h3 style={{ margin: '0 0 10px 0', fontSize: '16px', fontWeight: 600 }}>Volumen de Consentimientos</h3>
-                <p style={{ fontSize: '13px', color: 'var(--text-secondary)', margin: '0 0 20px 0' }}>Estadísticas de aceptación de cookies por categorías.</p>
-                {consentsStats && consentsStats.total > 0 ? (
-                  <div>
-                    <div style={{ fontSize: '32px', fontWeight: 700, margin: '10px 0' }}>
-                      {consentsStats.total} <span style={{ fontSize: '14px', fontWeight: 500, color: 'var(--text-secondary)' }}>usuarios registrados</span>
-                    </div>
-                    
-                    <div className="bar-chart">
-                      <div className="bar-row">
-                        <span className="bar-label">Esenciales</span>
-                        <div className="bar-track">
-                          <div className="bar-fill" style={{ width: '100%', background: 'var(--color-success)' }}></div>
-                        </div>
-                        <span className="bar-value">{consentsStats.total}</span>
-                      </div>
-                      
-                      <div className="bar-row">
-                        <span className="bar-label">Analíticas</span>
-                        <div className="bar-track">
-                          <div className="bar-fill" style={{ width: `${(consentsStats.breakdown.analytical / consentsStats.total) * 100}%` }}></div>
-                        </div>
-                        <span className="bar-value">{consentsStats.breakdown.analytical}</span>
-                      </div>
-
-                      <div className="bar-row">
-                        <span className="bar-label">Marketing</span>
-                        <div className="bar-track">
-                          <div className="bar-fill" style={{ width: `${(consentsStats.breakdown.marketing / consentsStats.total) * 100}%`, background: 'linear-gradient(90deg, #f59e0b, #ef4444)' }}></div>
-                        </div>
-                        <span className="bar-value">{consentsStats.breakdown.marketing}</span>
-                      </div>
-                    </div>
-                  </div>
-                ) : (
-                  <div className="empty-state">
-                    <Sliders size={32} />
-                    <p>Esperando registros de consentimientos...</p>
-                  </div>
-                )}
+              <div style={{ padding: '20px', overflowY: 'auto', maxHeight: '420px' }}>
+                <textarea 
+                  className="form-textarea" 
+                  readOnly 
+                  rows={15} 
+                  value={generatedSccText}
+                  style={{ width: '100%', fontFamily: 'monospace', fontSize: '12px', background: '#0a0a14', color: '#c0c0d0', padding: '12px', border: '1px solid var(--border-color)', borderRadius: '6px' }}
+                />
               </div>
-
-              {/* ARCO+ Urgency Alert */}
-              <div className="card col-4">
-                <h3 style={{ margin: '0 0 10px 0', fontSize: '16px', fontWeight: 600 }}>Solicitudes ARCO+ Activas</h3>
-                <p style={{ fontSize: '13px', color: 'var(--text-secondary)', margin: '0 0 20px 0' }}>Tareas pendientes que requieren respuesta legal rápida.</p>
-                
-                {arcoTickets.filter(t => t.status !== 'Resuelto').length > 0 ? (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px', background: 'rgba(239, 68, 68, 0.08)', border: '1px solid rgba(239, 68, 68, 0.2)', padding: '12px', borderRadius: '10px' }}>
-                      <AlertTriangle color="var(--color-danger)" size={20} />
-                      <div>
-                        <div style={{ fontSize: '14px', fontWeight: 600 }}>
-                          {arcoTickets.filter(t => t.status !== 'Resuelto').length} solicitudes pendientes
-                        </div>
-                        <div style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>
-                          Atención inmediata obligatoria bajo multas de Ley N° 21.719.
-                        </div>
-                      </div>
-                    </div>
-
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', maxHeight: '120px', overflowY: 'auto' }}>
-                      {arcoTickets.filter(t => t.status !== 'Resuelto').map(t => (
-                        <div key={t.id} style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', padding: '8px', background: 'rgba(255,255,255,0.02)', borderRadius: '6px' }}>
-                          <span><strong>{t.request_type}</strong> - {t.requester_name}</span>
-                          {getDeadlineBadge(t)}
-                        </div>
-                      ))}
-                    </div>
-
-                    <button className="btn-action btn-action-primary" style={{ width: '100%', marginTop: '10px' }} onClick={() => setActiveTab('arco')}>
-                      Ver Bandeja de Entrada
-                    </button>
-                  </div>
-                ) : (
-                  <div className="empty-state" style={{ padding: '20px' }}>
-                    <CheckCircle color="var(--color-success)" size={32} />
-                    <p style={{ margin: '10px 0 0 0' }}>Bandeja ARCO+ vacía. ¡Excelente gestión!</p>
-                  </div>
-                )}
-              </div>
-
-              {/* Demo Section details / Link to mock */}
-              <div className="card col-12" style={{ borderLeft: '4px solid var(--color-primary)' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '16px' }}>
-                  <div>
-                    <h3 style={{ margin: '0 0 6px 0', fontSize: '16px', fontWeight: 600 }}>Integración y Pruebas del Widget CMP</h3>
-                    <p style={{ margin: 0, fontSize: '13px', color: 'var(--text-secondary)' }}>
-                      Hemos habilitado un sitio de prueba simulando la web de su negocio donde se inyecta el widget. Cargue y simule interacciones para auditar cookies y ARCO+.
-                    </p>
-                  </div>
-                  <a href="/mock-site/index.html" target="_blank" className="btn-scan" style={{ textDecoration: 'none' }}>
-                    <span>Abrir Sitio de Prueba</span>
-                    <ExternalLink size={14} />
-                  </a>
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* TAB 2: CRAWLER AUDITOR */}
-        {activeTab === 'scanner' && (
-          <div>
-            <header className="page-header">
-              <h1 className="page-title">Crawler Auditor Ley N° 21.719</h1>
-              <p className="page-subtitle">Simule o audite en vivo cualquier URL para verificar brechas de cumplimiento, scripts de terceros invasivos y opt-ins ausentes.</p>
-            </header>
-
-            <div id="scanner-input-card" className="card" style={{ marginBottom: '24px' }}>
-              <form onSubmit={handleScan}>
-                <label className="form-label">Ingresa la URL del sitio web a Auditar</label>
-                <div className="scan-input-group">
-                  <input 
-                    type="text" 
-                    className="input-text" 
-                    value={scanUrl} 
-                    onChange={e => setScanUrl(e.target.value)} 
-                    placeholder="ej. misitio.cl o localhost:3000/mock-site/index.html"
-                    disabled={isScanning}
-                  />
-                  <button type="submit" className="btn-scan" disabled={isScanning}>
-                    {isScanning ? (
-                      <>
-                        <RefreshCw className="loader" size={16} />
-                        <span>Analizando...</span>
-                      </>
-                    ) : (
-                      <>
-                        <Search size={16} />
-                        <span>Iniciar Auditoría</span>
-                      </>
-                    )}
-                  </button>
-                </div>
-              </form>
-              <div style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>
-                <strong>Tip:</strong> Puedes ingresar la URL del sitio mock provisto <code>localhost:3000/mock-site/index.html</code> para simular el diagnóstico y ver cómo reacciona el escáner a los scripts de seguimiento activos.
-              </div>
-            </div>
-
-            {latestScan && (
-              <>
-                {latestScan.isSimulated && (
-                  <div className="card" style={{ 
-                    marginBottom: '20px', 
-                    background: 'rgba(245, 158, 11, 0.05)', 
-                    borderLeft: '4px solid var(--color-warning)',
-                    padding: '12px 16px',
-                    borderRadius: '6px'
-                  }}>
-                    <span style={{ fontWeight: 600, color: 'var(--color-warning)', display: 'flex', alignItems: 'center', gap: '6px', fontSize: '13.5px' }}>
-                      ⚠️ Nota de Conexión: Evaluación Técnica Estimada
-                    </span>
-                    <p style={{ margin: '4px 0 0 0', fontSize: '12.5px', color: 'var(--text-secondary)' }}>
-                      El sitio web de destino bloqueó el rastreador automatizado o no se pudo establecer una conexión directa. 
-                      Hemos realizado una evaluación de cumplimiento estimada con base en la estructura de dominio y políticas estándar detectadas en {latestScan.url}.
-                    </p>
-                  </div>
-                )}
-                <div className="dashboard-grid">
-                
-                {/* Score and stats */}
-                <div className="card col-4" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
-                  <div className="score-container">
-                    <svg className="score-svg">
-                      <circle className="score-bg-circle" cx="70" cy="70" r="58" />
-                      <circle 
-                        className="score-fill-circle" 
-                        cx="70" 
-                        cy="70" 
-                        r="58" 
-                        strokeDasharray={364.4}
-                        strokeDashoffset={364.4 - (364.4 * latestScan.score) / 100}
-                        style={{
-                          stroke: latestScan.score >= 80 ? 'var(--color-success)' : latestScan.score >= 50 ? 'var(--color-warning)' : 'var(--color-danger)'
-                        }}
-                      />
-                    </svg>
-                    <div className="score-text">
-                      <span className="score-num">{latestScan.score}%</span>
-                      <span className="score-label">Score</span>
-                    </div>
-                  </div>
-                  <div style={{ textAlign: 'center', marginTop: '10px' }}>
-                    <h3>Reporte de Auditoría</h3>
-                    <p style={{ fontSize: '11px', color: 'var(--color-primary)', fontWeight: 'bold', margin: '4px 0 8px 0', wordBreak: 'break-all' }}>
-                      {latestScan.url}
-                    </p>
-                    <p style={{ fontSize: '13px', color: 'var(--text-secondary)' }}>
-                      Hallazgos detectados:<br />
-                      <span className="badge badge-gravisima" style={{ margin: '4px' }}>{latestScan.severityCounts.gravisima} Gravísimas</span>
-                      <span className="badge badge-grave" style={{ margin: '4px' }}>{latestScan.severityCounts.grave} Graves</span>
-                      <span className="badge badge-leve" style={{ margin: '4px' }}>{latestScan.severityCounts.leve} Leves</span>
-                    </p>
-                  </div>
-                </div>
-
-                {/* Findings list */}
-                <div className="card col-8">
-                  <h3 style={{ margin: '0 0 20px 0', fontSize: '18px', fontWeight: 600 }}>
-                    Brechas de Cumplimiento Identificadas para: <span style={{ color: 'var(--color-primary)', wordBreak: 'break-all' }}>{latestScan.url}</span>
-                  </h3>
-                  {latestScan.findings.length > 0 ? (
-                    <div className="findings-list">
-                      {latestScan.findings.map(finding => (
-                        <div key={finding.id} className="finding-item">
-                          <div className="finding-severity">
-                            <span className={`badge ${finding.severity === 'Gravísima' ? 'badge-gravisima' : finding.severity === 'Grave' ? 'badge-grave' : 'badge-leve'}`}>
-                              {finding.severity}
-                            </span>
-                          </div>
-                          <div className="finding-content">
-                            <h4 className="finding-title">{finding.description}</h4>
-                            <p className="finding-desc">{finding.details}</p>
-                            <p className="finding-recom">
-                              <strong>💡 Recomendación Ley N° 21.719:</strong> {finding.recommendation}
-                            </p>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  ) : (
-                    <div className="empty-state">
-                      <CheckCircle color="var(--color-success)" size={48} />
-                      <p style={{ marginTop: '12px', fontSize: '15px', color: 'var(--text-primary)', fontWeight: 600 }}>¡Felicitaciones! Cumplimiento del 100%.</p>
-                      <p style={{ margin: 0 }}>No se encontraron brechas de consentimiento ni trackers desprotegidos.</p>
-                    </div>
-                  )}
-                </div>
-
-              </div>
-
-              {/* Plan de Acción de Mitigación */}
-              {latestScan.actionPlan && latestScan.actionPlan.length > 0 && (
-                <div className="card" style={{ marginTop: '24px' }}>
-                  <h3 style={{ margin: '0 0 20px 0', fontSize: '18px', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <Sliders size={20} color="var(--color-primary)" />
-                    <span>Plan de Acción de Mitigación (Cumplimiento Ley N° 21.719)</span>
-                  </h3>
-                  
-                  {/* Mapa de Alcance y Cobertura del Escaneo */}
-                  {((latestScan.pagesAnalyzed && latestScan.pagesAnalyzed.length > 0) || (latestScan.pagesSkipped && latestScan.pagesSkipped.length > 0)) && (
-                    <div style={{ 
-                      marginBottom: '24px', 
-                      padding: '16px', 
-                      background: 'rgba(255, 255, 255, 0.02)', 
-                      borderRadius: '8px', 
-                      border: '1px solid var(--border-color)', 
-                      fontSize: '13px' 
-                    }}>
-                      <div style={{ fontWeight: 600, fontSize: '14.5px', marginBottom: '12px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                        <span>🗺️ Mapa de Cobertura y Alcance del Escaneo</span>
-                        <span className="badge badge-success" style={{ fontSize: '11px' }}>
-                          Límite Seguro: 15 páginas
-                        </span>
-                      </div>
-                      
-                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px', flexWrap: 'wrap' }}>
-                        {/* Páginas Auditadas */}
-                        {latestScan.pagesAnalyzed && latestScan.pagesAnalyzed.length > 0 && (
-                          <div>
-                            <span style={{ fontWeight: 600, color: 'var(--color-success)', display: 'flex', alignItems: 'center', gap: '4px', marginBottom: '8px' }}>
-                              🟢 Páginas Auditadas ({latestScan.pagesAnalyzed.length})
-                            </span>
-                            <div style={{ maxHeight: '180px', overflowY: 'auto', background: 'rgba(0,0,0,0.15)', padding: '10px', borderRadius: '6px' }}>
-                              <ul style={{ margin: 0, paddingLeft: 0, listStyle: 'none', color: 'var(--text-secondary)', display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                                {latestScan.pagesAnalyzed.map((p, idx) => (
-                                  <li key={idx} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px', borderBottom: '1px solid rgba(255,255,255,0.03)', paddingBottom: '4px' }}>
-                                    <span style={{ wordBreak: 'break-all', fontSize: '11.5px' }}>
-                                      <span style={{ color: 'var(--color-success)', marginRight: '4px' }}>✓</span> {p}
-                                    </span>
-                                    <button 
-                                      className="btn-action" 
-                                      style={{ padding: '2px 8px', fontSize: '10px', whiteSpace: 'nowrap', border: 'none', height: '22px', display: 'flex', alignItems: 'center' }}
-                                      onClick={() => {
-                                        setScanUrl(p);
-                                        showToast(`URL cargada en buscador: ${p}`, 'info');
-                                        document.getElementById('scanner-input-card')?.scrollIntoView({ behavior: 'smooth' });
-                                      }}
-                                    >
-                                      🔍 Re-auditar
-                                    </button>
-                                  </li>
-                                ))}
-                              </ul>
-                            </div>
-                          </div>
-                        )}
-
-                        {/* Páginas Fuera de Alcance / Omitidas */}
-                        {latestScan.pagesSkipped && latestScan.pagesSkipped.length > 0 && (
-                          <div>
-                            <span style={{ fontWeight: 600, color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: '4px', marginBottom: '8px' }}>
-                              ⚪ Páginas Fuera de Alcance ({latestScan.pagesSkipped.length})
-                            </span>
-                            <div style={{ maxHeight: '180px', overflowY: 'auto', background: 'rgba(0,0,0,0.15)', padding: '10px', borderRadius: '6px' }}>
-                              <ul style={{ margin: 0, paddingLeft: 0, listStyle: 'none', color: 'var(--text-secondary)', display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                                {latestScan.pagesSkipped.map((p, idx) => (
-                                  <li key={idx} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px', borderBottom: '1px solid rgba(255,255,255,0.03)', paddingBottom: '4px' }} title="Omitido para prevenir bloqueo de IP">
-                                    <span style={{ wordBreak: 'break-all', fontSize: '11.5px', opacity: 0.85 }}>
-                                      <span style={{ color: 'var(--text-secondary)', marginRight: '4px' }}>👁️‍🗨️</span> {p}
-                                    </span>
-                                    <button 
-                                      className="btn-action" 
-                                      style={{ padding: '2px 8px', fontSize: '10px', whiteSpace: 'nowrap', border: 'none', height: '22px', display: 'flex', alignItems: 'center', opacity: 1, background: 'rgba(99,102,241,0.15)', color: 'var(--color-primary)' }}
-                                      onClick={() => {
-                                        setScanUrl(p);
-                                        showToast(`URL cargada en buscador: ${p}`, 'info');
-                                        document.getElementById('scanner-input-card')?.scrollIntoView({ behavior: 'smooth' });
-                                      }}
-                                    >
-                                      🚀 Auditar
-                                    </button>
-                                  </li>
-                                ))}
-                              </ul>
-                            </div>
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  )}
-
-                  <div className="action-plan-timeline" style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-                    {latestScan.actionPlan.map((step) => (
-                      <div key={step.step} className="action-step-item" style={{
-                        display: 'flex',
-                        borderLeft: `4px solid ${step.priority === 'Alta' ? 'var(--color-danger)' : step.priority === 'Media' ? 'var(--color-warning)' : 'var(--color-success)'}`,
-                        background: 'rgba(255, 255, 255, 0.02)',
-                        padding: '20px',
-                        borderRadius: '0 12px 12px 0',
-                        gap: '16px'
-                      }}>
-                        <div style={{
-                          minWidth: '32px',
-                          height: '32px',
-                          borderRadius: '50%',
-                          background: 'var(--color-primary-light)',
-                          color: 'var(--color-primary)',
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          fontWeight: 'bold',
-                          fontSize: '14px'
-                        }}>
-                          {step.step}
-                        </div>
-                        <div style={{ flex: 1 }}>
-                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '8px', marginBottom: '8px' }}>
-                            <h4 style={{ margin: 0, fontSize: '15px', fontWeight: 600 }}>{step.title}</h4>
-                            <div style={{ display: 'flex', gap: '8px' }}>
-                              <span className={`badge ${step.priority === 'Alta' ? 'badge-gravisima' : step.priority === 'Media' ? 'badge-grave' : 'badge-leve'}`}>
-                                Prioridad {step.priority}
-                              </span>
-                              <span style={{
-                                fontSize: '11px',
-                                padding: '3px 8px',
-                                background: 'rgba(255, 255, 255, 0.05)',
-                                borderRadius: '4px',
-                                border: '1px solid rgba(255, 255, 255, 0.1)',
-                                color: 'var(--text-secondary)'
-                              }}>
-                                ⏱️ Esfuerzo: {step.estimatedEffort}
-                              </span>
-                            </div>
-                          </div>
-                          <p style={{ margin: '0 0 12px 0', fontSize: '13px', color: 'var(--text-secondary)' }}>{step.description}</p>
-                          <div style={{
-                            padding: '12px 16px',
-                            background: 'rgba(0, 0, 0, 0.2)',
-                            borderRadius: '8px',
-                            border: '1px solid rgba(255, 255, 255, 0.05)',
-                            fontSize: '12px',
-                            fontFamily: 'monospace',
-                            color: 'var(--text-primary)',
-                            whiteSpace: 'pre-wrap',
-                            wordBreak: 'break-word'
-                          }}>
-                            <strong>Recomendación Técnica:</strong><br/>
-                            {step.details}
-                          </div>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-              </>
-            )}
-          </div>
-        )}
-
-        {/* TAB 3: CONSENT LOGS */}
-        {activeTab === 'consents' && (
-          <div>
-            <header className="page-header">
-              <h1 className="page-title">Historial y Logs de Consentimiento</h1>
-              <p className="page-subtitle">Registro de auditoría del consentimiento de cookies. La Ley exige mantener trazabilidad para el deber de prueba.</p>
-            </header>
-
-            <div className="card">
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
-                <h3 style={{ margin: 0, fontSize: '18px', fontWeight: 600 }}>Registro Histórico (Consent Audit Trail)</h3>
-                <button className="btn-action" onClick={fetchConsentLogs} style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                  <RefreshCw size={12} /> Refrescar
-                </button>
-              </div>
-
-              {consentLogs.length > 0 ? (
-                <div className="table-container">
-                  <table className="logs-table">
-                    <thead>
-                      <tr>
-                        <th>ID</th>
-                        <th>Dominio</th>
-                        <th>Hash IP (Anonimizado)</th>
-                        <th>Consentimientos Guardados</th>
-                        <th>Versión Política</th>
-                        <th>Timestamp (Fecha)</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {consentLogs.map(log => (
-                        <tr key={log.id}>
-                          <td><code>#{log.id}</code></td>
-                          <td>{log.domain}</td>
-                          <td><code>{log.ip_hash}</code></td>
-                          <td>
-                            <div className="consent-types-list">
-                              <span className={`type-pill ${log.consent_types.essential ? 'type-pill-active' : 'type-pill-inactive'}`}>
-                                Esenciales
-                              </span>
-                              <span className={`type-pill ${log.consent_types.analytical ? 'type-pill-active' : 'type-pill-inactive'}`}>
-                                Analítica
-                              </span>
-                              <span className={`type-pill ${log.consent_types.marketing ? 'type-pill-active' : 'type-pill-inactive'}`}>
-                                Marketing
-                              </span>
-                            </div>
-                          </td>
-                          <td><span className="badge badge-leve">{log.policy_version}</span></td>
-                          <td>{new Date(log.timestamp).toLocaleString('es-CL')}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              ) : (
-                <div className="empty-state">
-                  <UserCheck size={48} />
-                  <p style={{ marginTop: '12px' }}>Aún no se registran interacciones en el widget del sitio de prueba.</p>
-                  <p style={{ fontSize: '13px' }}>Abra el <a href="/mock-site/index.html" target="_blank" style={{ color: 'var(--color-accent)' }}>Sitio de Prueba</a> y haga clic en 'Aceptar Todo' en el banner para registrar consentimientos.</p>
-                </div>
-              )}
-            </div>
-          </div>
-        )}
-
-        {/* TAB 4: ARCO+ BANDERA INBOX */}
-        {activeTab === 'arco' && (
-          <div>
-            <header className="page-header">
-              <h1 className="page-title">Gestión de Solicitudes ARCO+</h1>
-              <p className="page-subtitle">Canal para resolver derechos de Acceso, Rectificación, Supresión, Oposición, Portabilidad y Bloqueo Temporal (Art. 4, 10 y 11 de la Ley).</p>
-            </header>
-
-            <div className="card">
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
-                <h3 style={{ margin: 0, fontSize: '18px', fontWeight: 600 }}>Tickets de Derechos de Titulares</h3>
-                <button className="btn-action" onClick={fetchArcoTickets} style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                  <RefreshCw size={12} /> Refrescar
-                </button>
-              </div>
-
-              {arcoTickets.length > 0 ? (
-                <div className="tickets-grid">
-                  {arcoTickets.map(ticket => {
-                    const isBloqueo = ticket.request_type === 'Bloqueo';
-                    return (
-                      <div key={ticket.id} className="ticket-card" style={{ borderLeft: isBloqueo && ticket.status !== 'Resuelto' ? '4px solid var(--color-danger)' : '1px solid var(--border-color)' }}>
-                        <div className="ticket-header">
-                          <div>
-                            <h4 className="ticket-title">
-                              Derecho de {ticket.request_type} - {ticket.requester_name}
-                            </h4>
-                            <div className="ticket-meta">
-                              <span>📧 {ticket.requester_email}</span>
-                              <span>🌐 {ticket.domain}</span>
-                              <span>📅 Solicitado: {new Date(ticket.created_at).toLocaleDateString('es-CL')}</span>
-                            </div>
-                          </div>
-                          <div>
-                            {getDeadlineBadge(ticket)}
-                          </div>
-                        </div>
-
-                        <div className="ticket-details">
-                          <strong>Detalle de la solicitud:</strong><br />
-                          {ticket.details}
-                        </div>
-
-                        <div className="ticket-footer">
-                          <div className="ticket-time-limit">
-                            {isBloqueo ? (
-                              <span className="limit-urgent" style={{ fontSize: '11px', display: 'flex', alignItems: 'center', gap: '4px' }}>
-                                <AlertTriangle size={12} /> <strong>Atención Plazo Legal Corto:</strong> 2 días hábiles máximo para Bloqueo Temporal.
-                              </span>
-                            ) : (
-                              <span className="limit-safe" style={{ fontSize: '11px', display: 'flex', alignItems: 'center', gap: '4px', color: 'var(--text-secondary)' }}>
-                                <Calendar size={12} /> 30 días corridos para resolver otros derechos ARCO+.
-                              </span>
-                            )}
-                          </div>
-
-                          <div className="ticket-actions">
-                            {ticket.status !== 'Pendiente' && ticket.status !== 'Resuelto' && (
-                              <button 
-                                className="btn-action" 
-                                onClick={() => handleUpdateTicketStatus(ticket.id, 'Pendiente')}
-                              >
-                                Volver a Pendiente
-                              </button>
-                            )}
-                            
-                            {ticket.status === 'Pendiente' && (
-                              <button 
-                                className="btn-action" 
-                                onClick={() => handleUpdateTicketStatus(ticket.id, 'En Proceso')}
-                                style={{ borderColor: 'var(--color-warning)', color: 'var(--color-warning)' }}
-                              >
-                                Procesar Solicitud
-                              </button>
-                            )}
-
-                            {ticket.status !== 'Resuelto' && (
-                              <button 
-                                className="btn-action btn-action-primary" 
-                                onClick={() => handleUpdateTicketStatus(ticket.id, 'Resuelto')}
-                              >
-                                Resolver y Notificar
-                              </button>
-                            )}
-
-                            {ticket.status === 'Resuelto' && (
-                              <span style={{ fontSize: '12px', color: 'var(--color-success)', display: 'flex', alignItems: 'center', gap: '4px' }}>
-                                <CheckCircle size={12} /> Resuelto el {ticket.resolved_at ? new Date(ticket.resolved_at).toLocaleDateString('es-CL') : ''}
-                              </span>
-                            )}
-                          </div>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              ) : (
-                <div className="empty-state">
-                  <Clock size={48} />
-                  <p style={{ marginTop: '12px' }}>Aún no se reciben solicitudes de titulares (ARCO+).</p>
-                  <p style={{ fontSize: '13px' }}>Abra el <a href="/mock-site/index.html" target="_blank" style={{ color: 'var(--color-accent)' }}>Sitio de Prueba</a>, abra el portal de privacidad haciendo clic en el escudo flotante y envíe un requerimiento.</p>
-                </div>
-              )}
-            </div>
-          </div>
-        )}
-
-        {/* TAB 5: POLICY CONFIGURATION */}
-        {activeTab === 'config' && (
-          <div>
-            <header className="page-header">
-              <h1 className="page-title">Gestión de la Política de Privacidad Dinámica</h1>
-              <p className="page-subtitle">Redacte y actualice el texto de su política. Los cambios se reflejarán instantáneamente en el widget de consentimiento del cliente.</p>
-            </header>
-
-            <div className="card">
-              <form onSubmit={handleSaveConfig} className="form-grid">
-                
-                <h3 className="form-group-full" style={{ margin: '0 0 10px 0', borderBottom: '1px solid var(--border-color)', paddingBottom: '10px' }}>
-                  Datos Corporativos (Obligaciones Art. 14 ter)
-                </h3>
-
-                <div>
-                  <label className="form-label">Razón Social o Nombre del Responsable</label>
-                  <input 
-                    type="text" 
-                    className="input-text" 
-                    value={configCompanyName} 
-                    onChange={e => setConfigCompanyName(e.target.value)} 
-                    required 
-                    style={{ width: '100%' }}
-                  />
-                </div>
-
-                <div>
-                  <label className="form-label">Versión de la Política</label>
-                  <input 
-                    type="text" 
-                    className="input-text" 
-                    value={configVersion} 
-                    onChange={e => setConfigVersion(e.target.value)} 
-                    required 
-                    style={{ width: '100%' }}
-                  />
-                </div>
-
-                <div>
-                  <label className="form-label">Representante de Datos / Delegado (DPO)</label>
-                  <input 
-                    type="text" 
-                    className="input-text" 
-                    value={configRepresentative} 
-                    onChange={e => setConfigRepresentative(e.target.value)} 
-                    required
-                    style={{ width: '100%' }}
-                  />
-                </div>
-
-                <div>
-                  <label className="form-label">Correo de contacto DPO</label>
-                  <input 
-                    type="email" 
-                    className="input-text" 
-                    value={configEmail} 
-                    onChange={e => setConfigEmail(e.target.value)} 
-                    required
-                    style={{ width: '100%' }}
-                  />
-                </div>
-
-                <div className="form-group-full">
-                  <label className="form-label">Finalidades de Tratamiento</label>
-                  <textarea 
-                    className="form-textarea" 
-                    rows={3} 
-                    value={configPurposes} 
-                    onChange={e => setConfigPurposes(e.target.value)} 
-                    required
-                  ></textarea>
-                </div>
-
-                <div className="form-group-full">
-                  <label className="form-label">Tiempo de Retención / Conservación</label>
-                  <textarea 
-                    className="form-textarea" 
-                    rows={2} 
-                    value={configRetention} 
-                    onChange={e => setConfigRetention(e.target.value)} 
-                    required
-                  ></textarea>
-                </div>
-
-                <div className="form-group-full">
-                  <label className="form-label">Canales para Ejercicio de Derechos (ARCO+)</label>
-                  <textarea 
-                    className="form-textarea" 
-                    rows={2} 
-                    value={configChannels} 
-                    onChange={e => setConfigChannels(e.target.value)} 
-                    required
-                  ></textarea>
-                </div>
-
-                <h3 className="form-group-full" style={{ margin: '20px 0 10px 0', borderBottom: '1px solid var(--border-color)', paddingBottom: '10px' }}>
-                  Ajustes Visuales del Widget Banner
-                </h3>
-
-                <div>
-                  <label className="form-label font-bold">Título del Banner</label>
-                  <input 
-                    type="text" 
-                    className="input-text" 
-                    value={configBannerTitle} 
-                    onChange={e => setConfigBannerTitle(e.target.value)} 
-                    required
-                    style={{ width: '100%' }}
-                  />
-                </div>
-
-                <div className="form-group-full">
-                  <label className="form-label">Descripción del Banner</label>
-                  <textarea 
-                    className="form-textarea" 
-                    rows={3} 
-                    value={configBannerDesc} 
-                    onChange={e => setConfigBannerDesc(e.target.value)} 
-                    required
-                  ></textarea>
-                </div>
-
-                <div className="form-group-full" style={{ marginTop: '10px' }}>
-                  <button type="submit" className="btn-save" disabled={isSavingConfig}>
-                    {isSavingConfig ? 'Guardando...' : 'Guardar y Publicar Política'}
-                  </button>
-                </div>
-
-              </form>
-            </div>
-          </div>
-        )}
-
-        {/* TAB 6: INTERNATIONAL TRANSFERS (TID) */}
-        {activeTab === 'transfers' && (
-          <div>
-            <header className="page-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '15px' }}>
-              <div>
-                <h1 className="page-title">Gestión de Transferencias Internacionales (TID)</h1>
-                <p className="page-subtitle">Monitoreo de flujos transfronterizos y evaluación de riesgo legal bajo los Artículos 27 y 28 de la Ley N° 21.719.</p>
-              </div>
-              <div style={{ display: 'flex', gap: '10px' }}>
-                <button 
-                  className="btn-action" 
-                  onClick={() => setIsDiscoveryOpen(!isDiscoveryOpen)}
-                  style={{ background: isDiscoveryOpen ? 'var(--color-primary)' : 'rgba(255,255,255,0.05)', color: 'white', display: 'flex', alignItems: 'center', gap: '6px' }}
-                >
-                  🔍 {isDiscoveryOpen ? 'Cerrar Discovery' : 'Shadow IT Hunter'}
-                </button>
-                <button 
-                  className="btn-action" 
-                  onClick={() => setIsResourcesOpen(!isResourcesOpen)}
-                  style={{ background: isResourcesOpen ? 'var(--color-primary)' : 'rgba(255,255,255,0.05)', color: 'white', display: 'flex', alignItems: 'center', gap: '6px' }}
-                >
-                  📚 {isResourcesOpen ? 'Cerrar Recursos' : 'Centro de Recursos'}
-                </button>
-              </div>
-            </header>
-
-            {/* SECCIÓN 1: SHADOW IT HUNTER (CUESTIONARIO Y DISCOVERY) */}
-            {isDiscoveryOpen && (
-              <div className="card" style={{ marginBottom: '24px', border: '1px solid rgba(99, 102, 241, 0.2)', animation: 'slideDown 0.3s ease' }}>
-                <h3 style={{ margin: '0 0 10px 0', fontSize: '17px', fontWeight: 600, color: 'var(--color-primary)' }}>Shadow IT Hunter: Cuestionario de Descubrimiento</h3>
-                <p style={{ fontSize: '13px', color: 'var(--text-secondary)', marginBottom: '20px' }}>
-                  El Shadow IT Hunter te ayuda a identificar flujos de datos al extranjero no declarados. Despliega las categorías y selecciona los servicios que utiliza tu organización para importarlos a la matriz.
-                </p>
-
-                {/* Accordion Categories */}
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginBottom: '20px' }}>
-                  {/* Category 1: Infraestructura */}
-                  <div style={{ border: '1px solid var(--border-color)', borderRadius: '8px', overflow: 'hidden' }}>
-                    <div 
-                      onClick={() => setActiveAccordion(activeAccordion === 'nube' ? null : 'nube')}
-                      style={{ padding: '14px 18px', background: 'rgba(255,255,255,0.02)', cursor: 'pointer', display: 'flex', justifyContent: 'space-between', fontWeight: 600, fontSize: '14px' }}
-                    >
-                      <span>🌐 Acordeón 1: Infraestructura y Nube (Hosting / Datacenters)</span>
-                      <span>{activeAccordion === 'nube' ? '▲' : '▼'}</span>
-                    </div>
-                    {activeAccordion === 'nube' && (
-                      <div style={{ padding: '16px', background: 'rgba(0,0,0,0.1)', display: 'flex', flexDirection: 'column', gap: '16px' }}>
-                        {['aws', 'gcp', 'azure', 'digitalocean'].map(key => {
-                          const item = discoveryState[key];
-                          return (
-                            <div key={key} style={{ padding: '12px', background: 'rgba(255,255,255,0.02)', borderRadius: '6px' }}>
-                              <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', fontWeight: 600, fontSize: '13px' }}>
-                                <input 
-                                  type="checkbox" 
-                                  checked={item.used}
-                                  onChange={e => setDiscoveryState({
-                                    ...discoveryState,
-                                    [key]: { ...item, used: e.target.checked }
-                                  })}
-                                />
-                                {item.vendorName}
-                              </label>
-                              {item.used && (
-                                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginTop: '12px', paddingLeft: '22px' }}>
-                                  <div>
-                                    <label className="form-label" style={{ fontSize: '11px' }}>Nombre</label>
-                                    <input 
-                                      type="text" 
-                                      className="input-text" 
-                                      style={{ padding: '6px' }}
-                                      value={item.vendorName}
-                                      onChange={e => setDiscoveryState({
-                                        ...discoveryState,
-                                        [key]: { ...item, vendorName: e.target.value }
-                                      })}
-                                    />
-                                  </div>
-                                  <div>
-                                    <label className="form-label" style={{ fontSize: '11px' }}>País Servidores</label>
-                                    <select 
-                                      className="input-text" 
-                                      style={{ padding: '6px' }}
-                                      value={item.country}
-                                      onChange={e => setDiscoveryState({
-                                        ...discoveryState,
-                                        [key]: { ...item, country: e.target.value }
-                                      })}
-                                    >
-                                      {countries.map(c => (
-                                        <option key={c.country_code} value={c.country_code}>{c.country_name}</option>
-                                      ))}
-                                    </select>
-                                  </div>
-                                </div>
-                              )}
-                            </div>
-                          );
-                        })}
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Category 2: Marketing */}
-                  <div style={{ border: '1px solid var(--border-color)', borderRadius: '8px', overflow: 'hidden' }}>
-                    <div 
-                      onClick={() => setActiveAccordion(activeAccordion === 'mkt' ? null : 'mkt')}
-                      style={{ padding: '14px 18px', background: 'rgba(255,255,255,0.02)', cursor: 'pointer', display: 'flex', justifyContent: 'space-between', fontWeight: 600, fontSize: '14px' }}
-                    >
-                      <span>✉️ Acordeón 2: CRM, Marketing y Ventas</span>
-                      <span>{activeAccordion === 'mkt' ? '▲' : '▼'}</span>
-                    </div>
-                    {activeAccordion === 'mkt' && (
-                      <div style={{ padding: '16px', background: 'rgba(0,0,0,0.1)', display: 'flex', flexDirection: 'column', gap: '16px' }}>
-                        {['hubspot', 'salesforce', 'mailchimp', 'activecampaign', 'sendgrid'].map(key => {
-                          const item = discoveryState[key];
-                          return (
-                            <div key={key} style={{ padding: '12px', background: 'rgba(255,255,255,0.02)', borderRadius: '6px' }}>
-                              <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', fontWeight: 600, fontSize: '13px' }}>
-                                <input 
-                                  type="checkbox" 
-                                  checked={item.used}
-                                  onChange={e => setDiscoveryState({
-                                    ...discoveryState,
-                                    [key]: { ...item, used: e.target.checked }
-                                  })}
-                                />
-                                {item.vendorName}
-                              </label>
-                              {item.used && (
-                                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginTop: '12px', paddingLeft: '22px' }}>
-                                  <div>
-                                    <label className="form-label" style={{ fontSize: '11px' }}>Nombre</label>
-                                    <input 
-                                      type="text" 
-                                      className="input-text" 
-                                      style={{ padding: '6px' }}
-                                      value={item.vendorName}
-                                      onChange={e => setDiscoveryState({
-                                        ...discoveryState,
-                                        [key]: { ...item, vendorName: e.target.value }
-                                      })}
-                                    />
-                                  </div>
-                                  <div>
-                                    <label className="form-label" style={{ fontSize: '11px' }}>País Servidores</label>
-                                    <select 
-                                      className="input-text" 
-                                      style={{ padding: '6px' }}
-                                      value={item.country}
-                                      onChange={e => setDiscoveryState({
-                                        ...discoveryState,
-                                        [key]: { ...item, country: e.target.value }
-                                      })}
-                                    >
-                                      {countries.map(c => (
-                                        <option key={c.country_code} value={c.country_code}>{c.country_name}</option>
-                                      ))}
-                                    </select>
-                                  </div>
-                                </div>
-                              )}
-                            </div>
-                          );
-                        })}
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Category 3: Operaciones y RRHH */}
-                  <div style={{ border: '1px solid var(--border-color)', borderRadius: '8px', overflow: 'hidden' }}>
-                    <div 
-                      onClick={() => setActiveAccordion(activeAccordion === 'ops' ? null : 'ops')}
-                      style={{ padding: '14px 18px', background: 'rgba(255,255,255,0.02)', cursor: 'pointer', display: 'flex', justifyContent: 'space-between', fontWeight: 600, fontSize: '14px' }}
-                    >
-                      <span>🛠️ Acordeón 3: Operaciones y Recursos Humanos</span>
-                      <span>{activeAccordion === 'ops' ? '▲' : '▼'}</span>
-                    </div>
-                    {activeAccordion === 'ops' && (
-                      <div style={{ padding: '16px', background: 'rgba(0,0,0,0.1)', display: 'flex', flexDirection: 'column', gap: '16px' }}>
-                        {['google_workspace', 'office_365', 'zoom', 'workday', 'bamboohr'].map(key => {
-                          const item = discoveryState[key];
-                          return (
-                            <div key={key} style={{ padding: '12px', background: 'rgba(255,255,255,0.02)', borderRadius: '6px' }}>
-                              <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', fontWeight: 600, fontSize: '13px' }}>
-                                <input 
-                                  type="checkbox" 
-                                  checked={item.used}
-                                  onChange={e => setDiscoveryState({
-                                    ...discoveryState,
-                                    [key]: { ...item, used: e.target.checked }
-                                  })}
-                                />
-                                {item.vendorName}
-                              </label>
-                              {item.used && (
-                                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginTop: '12px', paddingLeft: '22px' }}>
-                                  <div>
-                                    <label className="form-label" style={{ fontSize: '11px' }}>Nombre</label>
-                                    <input 
-                                      type="text" 
-                                      className="input-text" 
-                                      style={{ padding: '6px' }}
-                                      value={item.vendorName}
-                                      onChange={e => setDiscoveryState({
-                                        ...discoveryState,
-                                        [key]: { ...item, vendorName: e.target.value }
-                                      })}
-                                    />
-                                  </div>
-                                  <div>
-                                    <label className="form-label" style={{ fontSize: '11px' }}>País Servidores</label>
-                                    <select 
-                                      className="input-text" 
-                                      style={{ padding: '6px' }}
-                                      value={item.country}
-                                      onChange={e => setDiscoveryState({
-                                        ...discoveryState,
-                                        [key]: { ...item, country: e.target.value }
-                                      })}
-                                    >
-                                      {countries.map(c => (
-                                        <option key={c.country_code} value={c.country_code}>{c.country_name}</option>
-                                      ))}
-                                    </select>
-                                  </div>
-                                </div>
-                              )}
-                            </div>
-                          );
-                        })}
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Category 4: Analytics */}
-                  <div style={{ border: '1px solid var(--border-color)', borderRadius: '8px', overflow: 'hidden' }}>
-                    <div 
-                      onClick={() => setActiveAccordion(activeAccordion === 'analytics' ? null : 'analytics')}
-                      style={{ padding: '14px 18px', background: 'rgba(255,255,255,0.02)', cursor: 'pointer', display: 'flex', justifyContent: 'space-between', fontWeight: 600, fontSize: '14px' }}
-                    >
-                      <span>📊 Acordeón 4: Analítica Web y Chatbots</span>
-                      <span>{activeAccordion === 'analytics' ? '▲' : '▼'}</span>
-                    </div>
-                    {activeAccordion === 'analytics' && (
-                      <div style={{ padding: '16px', background: 'rgba(0,0,0,0.1)', display: 'flex', flexDirection: 'column', gap: '16px' }}>
-                        {['google_analytics', 'meta_pixel', 'hotjar', 'zendesk', 'intercom'].map(key => {
-                          const item = discoveryState[key];
-                          return (
-                            <div key={key} style={{ padding: '12px', background: 'rgba(255,255,255,0.02)', borderRadius: '6px' }}>
-                              <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', fontWeight: 600, fontSize: '13px' }}>
-                                <input 
-                                  type="checkbox" 
-                                  checked={item.used}
-                                  onChange={e => setDiscoveryState({
-                                    ...discoveryState,
-                                    [key]: { ...item, used: e.target.checked }
-                                  })}
-                                />
-                                {item.vendorName}
-                              </label>
-                              {item.used && (
-                                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginTop: '12px', paddingLeft: '22px' }}>
-                                  <div>
-                                    <label className="form-label" style={{ fontSize: '11px' }}>Nombre</label>
-                                    <input 
-                                      type="text" 
-                                      className="input-text" 
-                                      style={{ padding: '6px' }}
-                                      value={item.vendorName}
-                                      onChange={e => setDiscoveryState({
-                                        ...discoveryState,
-                                        [key]: { ...item, vendorName: e.target.value }
-                                      })}
-                                    />
-                                  </div>
-                                  <div>
-                                    <label className="form-label" style={{ fontSize: '11px' }}>País Servidores</label>
-                                    <select 
-                                      className="input-text" 
-                                      style={{ padding: '6px' }}
-                                      value={item.country}
-                                      onChange={e => setDiscoveryState({
-                                        ...discoveryState,
-                                        [key]: { ...item, country: e.target.value }
-                                      })}
-                                    >
-                                      {countries.map(c => (
-                                        <option key={c.country_code} value={c.country_code}>{c.country_name}</option>
-                                      ))}
-                                    </select>
-                                  </div>
-                                </div>
-                              )}
-                            </div>
-                          );
-                        })}
-                      </div>
-                    )}
-                  </div>
-                </div>
-
-                <div style={{ textAlign: 'right' }}>
-                  <button className="btn-save" onClick={handleImportDiscovery}>
-                    Importar hallazgos del Cuestionario al Mapa de Transferencias
-                  </button>
-                </div>
-              </div>
-            )}
-
-            {/* SECCIÓN 2: CENTRO DE RECURSOS Y GUÍAS OPERATIVAS */}
-            {isResourcesOpen && (
-              <div className="card" style={{ marginBottom: '24px', border: '1px solid rgba(16, 185, 129, 0.2)', animation: 'slideDown 0.3s ease' }}>
-                <h3 style={{ margin: '0 0 10px 0', fontSize: '17px', fontWeight: 600, color: 'var(--color-success)' }}>Centro de Guías y Recursos Operativos (Ley N° 21.719)</h3>
-                
-                {/* Accordions */}
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginBottom: '20px' }}>
-                  <details style={{ border: '1px solid var(--border-color)', borderRadius: '6px', padding: '12px' }}>
-                    <summary style={{ cursor: 'pointer', fontWeight: 600, fontSize: '13.5px' }}>🛡️ ¿Qué exige la Ley sobre Transferencias Internacionales (TID)?</summary>
-                    <p style={{ margin: '8px 0 0 0', fontSize: '13px', color: 'var(--text-secondary)', lineHeight: 1.5 }}>
-                      Los artículos 27 y 28 de la Ley N° 21.719 regulan el flujo de datos fuera de Chile. Solo se permite transferir datos a países que posean un nivel adecuado de protección legal, o bien, si se garantizan contractualmente los derechos de los titulares mediante la firma de Cláusulas Contractuales Tipo (SCC).
-                    </p>
-                  </details>
-
-                  <details style={{ border: '1px solid var(--border-color)', borderRadius: '6px', padding: '12px' }}>
-                    <summary style={{ cursor: 'pointer', fontWeight: 600, fontSize: '13.5px' }}>🌿 Árbol de Decisión Contractual (Licitud)</summary>
-                    <div style={{ margin: '8px 0 0 0', fontSize: '13px', color: 'var(--text-secondary)', padding: '10px', background: 'rgba(0,0,0,0.2)', borderRadius: '4px' }}>
-                      <code style={{ fontSize: '11px', whiteSpace: 'pre-wrap' }}>
-{`¿El país de servidores es considerado Seguro/Adecuado?
-  ├── SI ──> [CUMPLIMIENTO DIRECTO] Mecanismo: ADEQUATE_COUNTRY (ej. España, Alemania)
-  └── NO ──> ¿Se han firmado Cláusulas Tipo (SCC) con el proveedor?
-               ├── SI ──> [CONFORME CON CONTRATO] Mecanismo: STANDARD_CLAUSES + Firma
-               └── NO ──> [RIESGO CRÍTICO 🔴] El flujo viola el Art. 27.`}
-                      </code>
-                    </div>
-                  </details>
-
-                  <details style={{ border: '1px solid var(--border-color)', borderRadius: '6px', padding: '12px' }}>
-                    <summary style={{ cursor: 'pointer', fontWeight: 600, fontSize: '13.5px' }}>📈 Protocolo de Regularización Rápido en 3 Clics</summary>
-                    <ol style={{ margin: '8px 0 0 0', paddingLeft: '20px', fontSize: '13px', color: 'var(--text-secondary)', lineHeight: 1.6 }}>
-                      <li>Identifica proveedores no conformes en la tabla (semáforo en 🔴).</li>
-                      <li>Haz clic en <strong>Generar Anexo SCC / DPA</strong> en la fila del proveedor para redactar el contrato.</li>
-                      <li>Firma el anexo con tu proveedor, arrastra y suelta el PDF firmado sobre su celda en la tabla para marcarlo como 🟢 Conforme.</li>
-                    </ol>
-                  </details>
-                </div>
-
-                {/* Downloads Buttons */}
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px' }}>
-                  <button 
-                    className="btn-action"
-                    onClick={() => {
-                      // Generate CSV format questionnaire template
-                      const headers = ['Categoria', 'Proveedor de Muestra', 'Servidores (Muestra)', 'Datos (Separados por coma)'];
-                      const data = [
-                        ['Infraestructura', 'AWS', 'US', 'Datos Identificatorios,Financieros'],
-                        ['CRM/Marketing', 'HubSpot', 'US', 'Datos Identificatorios,Navegación'],
-                        ['Analitica', 'Google Analytics', 'US', 'Cookies/Navegación']
-                      ];
-                      const csvContent = [headers, ...data].map(e => e.map(val => `"${val}"`).join(",")).join("\n");
-                      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-                      const link = document.createElement("a");
-                      link.href = URL.createObjectURL(blob);
-                      link.setAttribute("download", "cuestionario_deteccion_transferencias.csv");
-                      document.body.appendChild(link);
-                      link.click();
-                      document.body.removeChild(link);
-                      showToast('Borrador de Cuestionario de Detección descargado.', 'success');
-                    }}
-                  >
-                    📥 Cuestionario de Detección (CSV)
-                  </button>
-                  <button 
-                    className="btn-action"
-                    onClick={() => {
-                      // Export Matrix to CSV
-                      const headers = ['Proveedor', 'Pais Destino', 'Categorias', 'Mecanismo Legal', 'Estado de Firma', 'Enlace Contrato'];
-                      const data = transfers.map(t => {
-                        const categories = Array.isArray(t.data_categories) 
-                          ? t.data_categories 
-                          : typeof t.data_categories === 'string'
-                            ? JSON.parse(t.data_categories)
-                            : [];
-                        return [
-                          t.vendor_name,
-                          t.destination_country,
-                          categories.join('; '),
-                          t.transfer_mechanism,
-                          t.signature_status,
-                          t.scc_document_url || 'N/A'
-                        ];
-                      });
-                      const csvContent = [headers, ...data].map(e => e.map(val => `"${val}"`).join(",")).join("\n");
-                      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-                      const link = document.createElement("a");
-                      link.href = URL.createObjectURL(blob);
-                      link.setAttribute("download", "matriz_transferencias_ley21719.csv");
-                      document.body.appendChild(link);
-                      link.click();
-                      document.body.removeChild(link);
-                      showToast('Matriz de Transferencias exportada con éxito.', 'success');
-                    }}
-                  >
-                    📊 Exportar Matriz (Excel / CSV)
-                  </button>
-                  <button 
-                    className="btn-action"
-                    onClick={() => {
-                      // Download blank scc markdown draft
-                      const blankScc = `# MODELO DE CLÁUSULAS CONTRACTUALES TIPO (SCC)\nPara regular la transferencia de datos conforme a la Ley N° 21.719 de Chile...\n`;
-                      const blob = new Blob([blankScc], { type: 'text/plain;charset=utf-8;' });
-                      const link = document.createElement("a");
-                      link.href = URL.createObjectURL(blob);
-                      link.setAttribute("download", "scc_modelo_draft_ley21719.md");
-                      document.body.appendChild(link);
-                      link.click();
-                      document.body.removeChild(link);
-                      showToast('Borrador contractual de Cláusulas Tipo descargado.', 'success');
-                    }}
-                  >
-                    ✍️ Descargar Plantilla SCC (Markdown)
-                  </button>
-                </div>
-              </div>
-            )}
-
-            {/* WIZARD: AGREGAR FLUJO */}
-            {isAddingTransfer ? (
-              <div className="card">
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
-                  <h3 style={{ margin: 0, fontSize: '18px', fontWeight: 600 }}>Asistente: Registrar Flujo Internacional</h3>
-                  <button className="btn-action" onClick={() => { setIsAddingTransfer(false); setWizardStep(1); }}>
-                    Volver al Listado
-                  </button>
-                </div>
-
-                {/* Steps Indicator */}
-                <div style={{ display: 'flex', gap: '8px', marginBottom: '24px' }}>
-                  <div style={{ flex: 1, height: '4px', background: 'var(--color-primary)', opacity: wizardStep >= 1 ? 1 : 0.2, borderRadius: '2px' }}></div>
-                  <div style={{ flex: 1, height: '4px', background: 'var(--color-primary)', opacity: wizardStep >= 2 ? 1 : 0.2, borderRadius: '2px' }}></div>
-                  <div style={{ flex: 1, height: '4px', background: 'var(--color-primary)', opacity: wizardStep >= 3 ? 1 : 0.2, borderRadius: '2px' }}></div>
-                </div>
-
-                <form onSubmit={handleCreateTransfer}>
-                  {/* STEP 1: VENDOR & COUNTRY */}
-                  {wizardStep === 1 && (
-                    <div>
-                      <h4 style={{ margin: '0 0 16px 0', fontSize: '15px' }}>Paso 1: Proveedor y Destino</h4>
-                      <div className="form-group-full">
-                        <label className="form-label">Nombre del Proveedor (ej: Google Cloud, AWS, Mailchimp)</label>
-                        <input 
-                          type="text" 
-                          className="input-text" 
-                          value={vendorName} 
-                          onChange={e => setVendorName(e.target.value)} 
-                          required 
-                          placeholder="Amazon Web Services"
-                        />
-                      </div>
-                      
-                      <div className="form-group-full" style={{ marginTop: '16px' }}>
-                        <label className="form-label">País de Destino (Servidores)</label>
-                        <select 
-                          className="input-text" 
-                          value={destCountry} 
-                          onChange={e => setDestCountry(e.target.value)}
-                        >
-                          {countries.map(c => (
-                            <option key={c.country_code} value={c.country_code}>
-                              {c.country_name} ({c.is_adequate ? 'Adecuado 🟢' : 'No Adecuado 🔴'})
-                            </option>
-                          ))}
-                        </select>
-                        {/* live helper note */}
-                        {(() => {
-                          const selected = countries.find(c => c.country_code === destCountry);
-                          if (!selected) return null;
-                          return (
-                            <div style={{ 
-                              marginTop: '8px', 
-                              padding: '10px 12px', 
-                              background: selected.is_adequate ? 'rgba(16, 185, 129, 0.05)' : 'rgba(239, 68, 68, 0.05)',
-                              borderLeft: `3px solid ${selected.is_adequate ? 'var(--color-success)' : 'var(--color-danger)'}`,
-                              borderRadius: '4px',
-                              fontSize: '12.5px'
-                            }}>
-                              <strong>Evaluación Normativa:</strong> {selected.notes}
-                            </div>
-                          );
-                        })()}
-                      </div>
-
-                      <div style={{ marginTop: '24px', textAlign: 'right' }}>
-                        <button 
-                          type="button" 
-                          className="btn-action" 
-                          disabled={!vendorName}
-                          onClick={() => setWizardStep(2)}
-                        >
-                          Siguiente Paso
-                        </button>
-                      </div>
-                    </div>
-                  )}
-
-                  {/* STEP 2: DATA CATEGORIES */}
-                  {wizardStep === 2 && (
-                    <div>
-                      <h4 style={{ margin: '0 0 16px 0', fontSize: '15px' }}>Paso 2: Categorías de Datos Personales Transferidos</h4>
-                      <p style={{ fontSize: '13px', color: 'var(--text-secondary)', marginBottom: '16px' }}>
-                        Selecciona todos los tipos de datos que este proveedor recopila o almacena fuera de Chile.
-                      </p>
-                      
-                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: '12px' }}>
-                        {['Nombres / Identidad', 'Correo electrónico', 'Dirección física', 'Teléfono', 'Datos de navegación (cookies/IP)', 'Datos financieros/tarjetas', 'Historial de compras'].map(cat => {
-                          const isSelected = selectedCategories.includes(cat);
-                          return (
-                            <label key={cat} style={{ 
-                              display: 'flex', 
-                              alignItems: 'center', 
-                              gap: '10px', 
-                              padding: '12px', 
-                              background: isSelected ? 'rgba(99, 102, 241, 0.05)' : 'rgba(255,255,255,0.02)',
-                              border: `1px solid ${isSelected ? 'var(--color-primary)' : 'rgba(255,255,255,0.05)'}`,
-                              borderRadius: '8px',
-                              cursor: 'pointer',
-                              fontSize: '13px'
-                            }}>
-                              <input 
-                                type="checkbox" 
-                                checked={isSelected} 
-                                onChange={() => {
-                                  if (isSelected) {
-                                    setSelectedCategories(selectedCategories.filter(c => c !== cat));
-                                  } else {
-                                    setSelectedCategories([...selectedCategories, cat]);
-                                  }
-                                }}
-                              />
-                              <span>{cat}</span>
-                            </label>
-                          );
-                        })}
-                      </div>
-
-                      <div style={{ marginTop: '24px', display: 'flex', justifyContent: 'space-between' }}>
-                        <button type="button" className="btn-action" onClick={() => setWizardStep(1)}>Atrás</button>
-                        <button 
-                          type="button" 
-                          className="btn-action" 
-                          disabled={selectedCategories.length === 0}
-                          onClick={() => {
-                            // Autodetect mechanism recommendation
-                            const selected = countries.find(c => c.country_code === destCountry);
-                            if (selected && selected.is_adequate) {
-                              setMechanism('ADEQUATE_COUNTRY');
-                            } else {
-                              setMechanism('STANDARD_CLAUSES');
-                            }
-                            setWizardStep(3);
-                          }}
-                        >
-                          Siguiente Paso
-                        </button>
-                      </div>
-                    </div>
-                  )}
-
-                  {/* STEP 3: MECHANISMS & CONFIRMATION */}
-                  {wizardStep === 3 && (
-                    <div>
-                      <h4 style={{ margin: '0 0 16px 0', fontSize: '15px' }}>Paso 3: Mecanismo de Transferencia Legítimo</h4>
-                      <div className="form-group-full">
-                        <label className="form-label">Mecanismo Utilizado (Licitud de Transferencia)</label>
-                        <select 
-                          className="input-text" 
-                          value={mechanism} 
-                          onChange={e => setMechanism(e.target.value)}
-                        >
-                          <option value="STANDARD_CLAUSES">Cláusulas Contractuales Tipo (SCC)</option>
-                          <option value="ADEQUATE_COUNTRY">Nivel de Adecuación del País Destino</option>
-                          <option value="BCR">Normas Corporativas Vinculantes (BCR)</option>
-                          <option value="CONSENT_EXCEPTIONAL">Consentimiento Excepcional del Titular</option>
-                          <option value="OTHER">Otro Mecanismo Autorizado</option>
-                        </select>
-                      </div>
-
-                      {mechanism === 'STANDARD_CLAUSES' && (
-                        <div style={{ marginTop: '16px', padding: '16px', background: 'rgba(255,255,255,0.02)', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.05)' }}>
-                          <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', fontSize: '13px' }}>
-                            <input 
-                              type="checkbox" 
-                              checked={signedScc} 
-                              onChange={e => setSignedScc(e.target.checked)}
-                            />
-                            <strong>He firmado las Cláusulas Contractuales Tipo (SCC) con este proveedor</strong>
-                          </label>
-                          <p style={{ margin: '4px 0 12px 22px', fontSize: '12px', color: 'var(--text-secondary)' }}>
-                            La firma del anexo de cláusulas es obligatoria para transferir datos de forma lícita a países no adecuados.
-                          </p>
-
-                          {signedScc && (
-                            <div className="form-group-full" style={{ marginLeft: '22px' }}>
-                              <label className="form-label">URL del Documento de Cláusulas Firmado (Opcional)</label>
-                              <input 
-                                type="text" 
-                                className="input-text" 
-                                value={sccUrl} 
-                                onChange={e => setSccUrl(e.target.value)} 
-                                placeholder="ej. https://dropbox.com/s/scc-signed-aws.pdf"
-                              />
-                            </div>
-                          )}
-                        </div>
-                      )}
-
-                      <div style={{ marginTop: '24px', display: 'flex', justifyContent: 'space-between' }}>
-                        <button type="button" className="btn-action" onClick={() => setWizardStep(2)}>Atrás</button>
-                        <button type="submit" className="btn-save">Registrar y Validar Flujo</button>
-                      </div>
-                    </div>
-                  )}
-                </form>
-              </div>
-            ) : generatedSccText ? (
-              /* CASE 2: SCC CONTRACT DISPLAY */
-              <div className="card">
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
-                  <h3 style={{ margin: 0, fontSize: '18px', fontWeight: 600 }}>Cláusulas Contractuales Tipo (SCC) Generadas</h3>
-                  <button className="btn-action" onClick={() => setGeneratedSccText('')}>Volver</button>
-                </div>
-                <p style={{ fontSize: '13px', color: 'var(--text-secondary)', marginBottom: '16px' }}>
-                  Copia o descarga este anexo contractual para su firma y posterior adjunto en la plataforma.
-                </p>
-                <div style={{ marginBottom: '20px' }}>
-                  <textarea 
-                    className="form-textarea" 
-                    rows={15} 
-                    readOnly 
-                    value={generatedSccText}
-                    style={{ fontFamily: 'monospace', fontSize: '12px', background: 'rgba(0,0,0,0.3)', color: 'var(--text-primary)' }}
-                  ></textarea>
-                </div>
-                <div style={{ display: 'flex', gap: '12px' }}>
-                  <button 
-                    className="btn-save" 
-                    onClick={() => {
-                      navigator.clipboard.writeText(generatedSccText);
-                      alert('Contrato copiado al portapapeles.');
-                    }}
-                  >
-                    Copiar Contrato
-                  </button>
-                  <button 
-                    className="btn-action" 
-                    onClick={() => {
-                      const element = document.createElement("a");
-                      const file = new Blob([generatedSccText], {type: 'text/plain'});
-                      element.href = URL.createObjectURL(file);
-                      element.download = "scc-clausulas-tipo-ley21719.md";
-                      document.body.appendChild(element);
-                      element.click();
-                      document.body.removeChild(element);
-                    }}
-                  >
-                    Descargar en Markdown
-                  </button>
-                </div>
-              </div>
-            ) : isGeneratingScc ? (
-              /* CASE 3: SCC BUILDER FORM */
-              <div className="card">
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
-                  <h3 style={{ margin: 0, fontSize: '18px', fontWeight: 600 }}>SCC Builder: Generador de Cláusulas Contractuales Tipo</h3>
-                  <button className="btn-action" onClick={() => setIsGeneratingScc(false)}>Volver</button>
-                </div>
-                
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px' }}>
-                  {/* Exportador */}
-                  <div style={{ paddingRight: '15px', borderRight: '1px solid var(--border-color)' }}>
-                    <h4 style={{ margin: '0 0 16px 0', fontSize: '14px', color: 'var(--color-primary)' }}>Exportador (Tú / Chile)</h4>
-                    <div className="form-group-full">
-                      <label className="form-label">Razón Social</label>
-                      <input 
-                        type="text" 
-                        className="input-text" 
-                        value={sccExporterName} 
-                        onChange={e => setSccExporterName(e.target.value)} 
-                        placeholder="ej: Mi Empresa SpA"
-                      />
-                    </div>
-                    <div className="form-group-full" style={{ marginTop: '12px' }}>
-                      <label className="form-label">RUT</label>
-                      <input 
-                        type="text" 
-                        className="input-text" 
-                        value={sccExporterRut} 
-                        onChange={e => setSccExporterRut(e.target.value)} 
-                        placeholder="ej: 76.123.456-7"
-                      />
-                    </div>
-                    <div className="form-group-full" style={{ marginTop: '12px' }}>
-                      <label className="form-label">Dirección Legal</label>
-                      <input 
-                        type="text" 
-                        className="input-text" 
-                        value={sccExporterAddress} 
-                        onChange={e => setSccExporterAddress(e.target.value)} 
-                        placeholder="Santiago, Chile"
-                      />
-                    </div>
-                  </div>
-
-                  {/* Importador */}
-                  <div>
-                    <h4 style={{ margin: '0 0 16px 0', fontSize: '14px', color: 'var(--color-primary)' }}>Importador (Proveedor Extranjero)</h4>
-                    <div className="form-group-full">
-                      <label className="form-label">Razón Social del Proveedor</label>
-                      <input 
-                        type="text" 
-                        className="input-text" 
-                        value={sccImporterName} 
-                        onChange={e => setSccImporterName(e.target.value)} 
-                        placeholder="ej: Amazon Web Services Inc."
-                      />
-                    </div>
-                    <div className="form-group-full" style={{ marginTop: '12px' }}>
-                      <label className="form-label">País Destinatario</label>
-                      <select 
-                        className="input-text" 
-                        value={destCountry} 
-                        onChange={e => setDestCountry(e.target.value)}
-                      >
-                        {countries.map(c => (
-                          <option key={c.country_code} value={c.country_name}>{c.country_name}</option>
-                        ))}
-                      </select>
-                    </div>
-                    <div className="form-group-full" style={{ marginTop: '12px' }}>
-                      <label className="form-label">Dirección / Sede Principal</label>
-                      <input 
-                        type="text" 
-                        className="input-text" 
-                        value={sccImporterAddress} 
-                        onChange={e => setSccImporterAddress(e.target.value)} 
-                        placeholder="Seattle, USA"
-                      />
-                    </div>
-                  </div>
-                </div>
-
-                <div style={{ marginTop: '24px', textAlign: 'right' }}>
-                  <button 
-                    className="btn-save"
-                    disabled={!sccExporterName || !sccExporterRut || !sccExporterAddress || !sccImporterName || !sccImporterAddress}
-                    onClick={handleGenerateScc}
-                  >
-                    Redactar y Crear Contrato
-                  </button>
-                </div>
-              </div>
-            ) : (
-              /* CASE 4: MATRIZ DE TRANSACCIONES (TABLE VIEW) */
-              <div className="card">
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', flexWrap: 'wrap', gap: '10px' }}>
-                  <h3 style={{ margin: 0, fontSize: '18px', fontWeight: 600 }}>Matriz de Proveedores y Mapeo TID</h3>
-                  <button className="btn-save" onClick={() => { setIsAddingTransfer(true); setWizardStep(1); }}>
-                    + Registrar Flujo Manual
-                  </button>
-                </div>
-
-                {transfers.length > 0 ? (
-                  <div className="table-container">
-                    <table className="logs-table">
-                      <thead>
-                        <tr>
-                          <th>Proveedor</th>
-                          <th>País Destino</th>
-                          <th>Categorías de Datos</th>
-                          <th>Mecanismo Legal</th>
-                          <th>Estado de Firma</th>
-                          <th>Riesgo Legal</th>
-                          <th>Acciones</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {transfers.map((t) => {
-                          const categories = Array.isArray(t.data_categories) 
-                            ? t.data_categories 
-                            : typeof t.data_categories === 'string'
-                              ? JSON.parse(t.data_categories)
-                              : [];
-                          const risk = getRiskStatus(t, countries);
-                          const isEditing = editingRowId === t.id;
-
-                          return (
-                            <tr key={t.id} style={{ background: isEditing ? 'rgba(99,102,241,0.05)' : 'transparent' }}>
-                              {/* VENDOR NAME */}
-                              <td>
-                                {isEditing ? (
-                                  <input 
-                                    type="text" 
-                                    className="input-text" 
-                                    style={{ padding: '4px', fontSize: '12px' }}
-                                    value={editFields.vendor_name}
-                                    onChange={e => setEditFields({ ...editFields, vendor_name: e.target.value })}
-                                  />
-                                ) : (
-                                  <span 
-                                    style={{ cursor: 'pointer', borderBottom: '1px dotted rgba(255,255,255,0.3)' }}
-                                    onClick={() => { setEditingRowId(t.id); setEditFields({ ...t, data_categories: categories }); }}
-                                    title="Haz clic para editar"
-                                  >
-                                    <strong>{t.vendor_name}</strong>
-                                  </span>
-                                )}
-                              </td>
-
-                              {/* COUNTRY */}
-                              <td>
-                                {isEditing ? (
-                                  <select 
-                                    className="input-text" 
-                                    style={{ padding: '4px', fontSize: '12px', width: '120px' }}
-                                    value={editFields.destination_country}
-                                    onChange={e => {
-                                      const countrySelected = e.target.value;
-                                      const selectedObj = countries.find(c => c.country_code === countrySelected || c.country_name === countrySelected);
-                                      const isAdequate = selectedObj ? selectedObj.is_adequate : false;
-                                      
-                                      // Reactive recommendation
-                                      let recMechanism = editFields.transfer_mechanism;
-                                      if (isAdequate) {
-                                        recMechanism = 'ADEQUATE_COUNTRY';
-                                      } else if (editFields.transfer_mechanism === 'ADEQUATE_COUNTRY') {
-                                        recMechanism = 'STANDARD_CLAUSES';
-                                      }
-
-                                      setEditFields({ 
-                                        ...editFields, 
-                                        destination_country: countrySelected,
-                                        transfer_mechanism: recMechanism
-                                      });
-                                    }}
-                                  >
-                                    {countries.map(c => (
-                                      <option key={c.country_code} value={c.country_code}>{c.country_name}</option>
-                                    ))}
-                                  </select>
-                                ) : (
-                                  <span>{t.destination_country}</span>
-                                )}
-                              </td>
-
-                              {/* CATEGORIES */}
-                              <td>
-                                {isEditing ? (
-                                  <div style={{ display: 'flex', flexDirection: 'column', gap: '3px', maxHeight: '100px', overflowY: 'auto', padding: '4px', border: '1px solid var(--border-color)', borderRadius: '4px' }}>
-                                    {['Nombres / Identidad', 'Correo electrónico', 'Dirección física', 'Teléfono', 'Datos de navegación (cookies/IP)', 'Datos financieros/tarjetas'].map(cat => {
-                                      const isSel = editFields.data_categories?.includes(cat);
-                                      return (
-                                        <label key={cat} style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '11px', cursor: 'pointer' }}>
-                                          <input 
-                                            type="checkbox" 
-                                            checked={isSel} 
-                                            onChange={() => {
-                                              const updated = isSel 
-                                                ? editFields.data_categories.filter((c: string) => c !== cat)
-                                                : [...(editFields.data_categories || []), cat];
-                                              setEditFields({ ...editFields, data_categories: updated });
-                                            }}
-                                          />
-                                          <span>{cat}</span>
-                                        </label>
-                                      );
-                                    })}
-                                  </div>
-                                ) : (
-                                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
-                                    {categories.map((cat: string) => (
-                                      <span key={cat} className="badge badge-leve" style={{ fontSize: '10px' }}>{cat}</span>
-                                    ))}
-                                  </div>
-                                )}
-                              </td>
-
-                              {/* MECHANISM */}
-                              <td>
-                                {isEditing ? (
-                                  <select 
-                                    className="input-text" 
-                                    style={{ padding: '4px', fontSize: '12px', width: '130px' }}
-                                    value={editFields.transfer_mechanism}
-                                    onChange={e => setEditFields({ ...editFields, transfer_mechanism: e.target.value })}
-                                  >
-                                    <option value="STANDARD_CLAUSES">Cláusulas Tipo (SCC)</option>
-                                    <option value="ADEQUATE_COUNTRY">País Adecuado</option>
-                                    <option value="BCR">Normas BCR</option>
-                                    <option value="CONSENT_EXCEPTIONAL">Excepción Consent.</option>
-                                    <option value="OTHER">Otro Mecanismo</option>
-                                  </select>
-                                ) : (
-                                  <code style={{ fontSize: '11px' }}>{t.transfer_mechanism}</code>
-                                )}
-                              </td>
-
-                              {/* SIGNATURE STATUS */}
-                              <td>
-                                {isEditing ? (
-                                  <select 
-                                    className="input-text" 
-                                    style={{ padding: '4px', fontSize: '12px', width: '110px' }}
-                                    value={editFields.signature_status}
-                                    onChange={e => {
-                                      const statusVal = e.target.value;
-                                      setEditFields({ 
-                                        ...editFields, 
-                                        signature_status: statusVal,
-                                        has_signed_scc: statusVal === 'SIGNED'
-                                      });
-                                    }}
-                                  >
-                                    <option value="PENDING">Pendiente</option>
-                                    <option value="SENT">Enviado</option>
-                                    <option value="SIGNED">Firmado/Conforme</option>
-                                  </select>
-                                ) : (
-                                  <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                                    {(() => {
-                                      const status = t.signature_status || 'PENDING';
-                                      if (status === 'SIGNED') {
-                                        return (
-                                          <span className="badge badge-leve" style={{ color: 'var(--color-success)', background: 'rgba(16,185,129,0.1)' }}>
-                                            🟢 Firmado/Conforme
-                                          </span>
-                                        );
-                                      } else if (status === 'SENT') {
-                                        return (
-                                          <span className="badge badge-leve" style={{ color: 'var(--color-warning)', background: 'rgba(245,158,11,0.1)' }}>
-                                            🟡 Enviado
-                                          </span>
-                                        );
-                                      } else {
-                                        return (
-                                          <span className="badge badge-leve" style={{ color: 'var(--color-danger)', background: 'rgba(239,68,68,0.1)' }}>
-                                            🔴 Pendiente
-                                          </span>
-                                        );
-                                      }
-                                    })()}
-
-                                    {/* Mock file drop zone (only shown if not signed yet) */}
-                                    {t.signature_status !== 'SIGNED' && (
-                                      <div 
-                                        className={`drop-zone-mini ${isDragging === t.id ? 'dragging' : ''}`}
-                                        onDragOver={e => { e.preventDefault(); setIsDragging(t.id); }}
-                                        onDragLeave={() => setIsDragging(null)}
-                                        onDrop={e => {
-                                          e.preventDefault();
-                                          setIsDragging(null);
-                                          const file = e.dataTransfer.files[0];
-                                          if (file) handleFileDrop(t.id, file.name);
-                                        }}
-                                        style={{
-                                          border: '1px dashed rgba(255,255,255,0.2)',
-                                          padding: '4px 6px',
-                                          borderRadius: '4px',
-                                          fontSize: '10px',
-                                          textAlign: 'center',
-                                          cursor: 'pointer',
-                                          background: isDragging === t.id ? 'rgba(99, 102, 241, 0.1)' : 'transparent',
-                                          transition: 'all 0.2s ease'
-                                        }}
-                                        onClick={() => {
-                                          const fileInput = document.createElement('input');
-                                          fileInput.type = 'file';
-                                          fileInput.accept = '.pdf';
-                                          fileInput.onchange = (e: any) => {
-                                            const file = e.target.files[0];
-                                            if (file) handleFileDrop(t.id, file.name);
-                                          };
-                                          fileInput.click();
-                                        }}
-                                      >
-                                        📁 Subir PDF firmado
-                                      </div>
-                                    )}
-
-                                    {t.scc_document_url && (
-                                      <a href={t.scc_document_url} target="_blank" rel="noreferrer" style={{ fontSize: '11px', color: 'var(--color-primary)', textDecoration: 'underline', marginTop: '2px' }}>
-                                        Ver Evidencia Contrato 🔗
-                                      </a>
-                                    )}
-                                  </div>
-                                )}
-                              </td>
-
-                              {/* DYNAMIC RISK LIGHT */}
-                              <td>
-                                <span className={`badge ${risk.badgeClass}`} style={{ fontSize: '11px' }}>
-                                  {risk.text}
-                                </span>
-                                {/* suggestion pop-up helper if high risk */}
-                                {risk.status.includes('No Conforme') && (
-                                  <div style={{ fontSize: '9.5px', color: 'var(--color-danger)', marginTop: '4px', maxWidth: '140px', lineHeight: 1.2 }}>
-                                    ⚠️ Requiere firmar Cláusulas Tipo (SCC) para operar lícitamente.
-                                  </div>
-                                )}
-                              </td>
-
-                              {/* ACTIONS */}
-                              <td>
-                                {isEditing ? (
-                                  <div style={{ display: 'flex', gap: '4px' }}>
-                                    <button 
-                                      className="btn-save" 
-                                      style={{ padding: '4px 8px', fontSize: '11px' }}
-                                      onClick={() => handleSaveInlineEdit(t.id, editFields)}
-                                    >
-                                      Guardar
-                                    </button>
-                                    <button 
-                                      className="btn-action" 
-                                      style={{ padding: '4px 8px', fontSize: '11px' }}
-                                      onClick={() => setEditingRowId(null)}
-                                    >
-                                      X
-                                    </button>
-                                  </div>
-                                ) : (
-                                  <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                                    <button 
-                                      className="btn-action" 
-                                      style={{ padding: '4px 8px', fontSize: '11px' }}
-                                      onClick={() => { setEditingRowId(t.id); setEditFields({ ...t, data_categories: categories }); }}
-                                    >
-                                      ✏️ Editar
-                                    </button>
-                                    <button 
-                                      className="btn-action" 
-                                      style={{ padding: '4px 8px', fontSize: '11px', background: 'rgba(99,102,241,0.1)', color: 'var(--color-primary)' }}
-                                      onClick={() => {
-                                        setSccImporterName(t.vendor_name);
-                                        const countryObj = countries.find(c => c.country_code === t.destination_country || c.country_name === t.destination_country);
-                                        setDestCountry(countryObj ? countryObj.country_name : 'Estados Unidos');
-                                        setSelectedCategories(categories);
-                                        setSccExporterName(config?.company_name || '');
-                                        setSccExporterAddress(config?.policy_content.representative || '');
-                                        setIsGeneratingScc(true);
-                                      }}
-                                    >
-                                      📜 Crear SCC
-                                    </button>
-                                    <button 
-                                      className="btn-action" 
-                                      onClick={() => handleDeleteTransfer(t.id)}
-                                      style={{ padding: '4px 8px', fontSize: '11px', background: 'rgba(239, 68, 68, 0.1)', color: 'var(--color-danger)', border: 'none' }}
-                                    >
-                                      Eliminar
-                                    </button>
-                                  </div>
-                                )}
-                              </td>
-                            </tr>
-                          );
-                        })}
-                      </tbody>
-                    </table>
-                  </div>
-                ) : (
-                  <div className="empty-state">
-                    <ExternalLink size={48} color="var(--text-secondary)" />
-                    <p style={{ marginTop: '12px', fontSize: '15px', color: 'var(--text-primary)', fontWeight: 600 }}>
-                      No se han registrado flujos transfronterizos.
-                    </p>
-                    <p style={{ margin: 0 }}>
-                      Registra los servicios extranjeros o usa la herramienta <strong>Shadow IT Hunter</strong> arriba para descubrir y cargar proveedores.
-                    </p>
-                  </div>
-                )}
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* TAB 7: SECURITY INCIDENTS */}
-        {activeTab === 'incidents' && (
-          <div>
-            <header className="page-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '15px' }}>
-              <div>
-                <h1 className="page-title">Gestión de Contingencias y Brechas de Seguridad</h1>
-                <p className="page-subtitle">Monitoreo legal y bitácora de vulneraciones de seguridad de la información (Art. 14 sexies de la Ley N° 21.719).</p>
-              </div>
-              {!isAddingIncident && (
-                 <div style={{ display: 'flex', gap: '10px' }}>
-                   <button 
-                     className="btn-action" 
-                     style={{ display: 'flex', alignItems: 'center', gap: '8px', background: 'rgba(99, 102, 241, 0.1)', color: 'var(--color-primary)', border: '1px solid var(--color-primary)' }}
-                     onClick={handleScanVulnerabilities}
-                     disabled={isScanningVulnerabilities}
-                   >
-                     {isScanningVulnerabilities ? (
-                       <>
-                         <RefreshCw className="loader" size={16} />
-                         <span>Analizando Seguridad...</span>
-                       </>
-                     ) : (
-                       <>
-                         <Shield size={16} />
-                         <span>Auditar Vulnerabilidades</span>
-                       </>
-                     )}
-                   </button>
-
-                   <button 
-                     className="btn-save" 
-                     style={{ display: 'flex', alignItems: 'center', gap: '8px' }}
-                     onClick={() => setIsAddingIncident(true)}
-                   >
-                     <AlertTriangle size={16} />
-                     <span>Reportar Brecha / Incidente</span>
-                   </button>
-                 </div>
-               )}
-            </header>
-
-            {/* KPI Cards (Bitácora Principal) */}
-            {!isAddingIncident && (
-              <>
-                <div className="stats-row" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '20px', marginBottom: '24px' }}>
-                  <div className="card text-center" style={{ padding: '16px 20px' }}>
-                    <p style={{ margin: 0, fontSize: '12px', color: 'var(--text-secondary)' }}>Total Brechas Registradas</p>
-                    <h3 style={{ margin: '8px 0 0 0', fontSize: '32px', fontWeight: 700, color: 'var(--color-primary)' }}>{incidents.length}</h3>
-                  </div>
-                  <div className="card text-center" style={{ padding: '16px 20px' }}>
-                    <p style={{ margin: 0, fontSize: '12px', color: 'var(--text-secondary)' }}>Casos Activos (Investigación)</p>
-                    <h3 style={{ margin: '8px 0 0 0', fontSize: '32px', fontWeight: 700, color: 'var(--color-warning)' }}>
-                      {incidents.filter(i => ['DETECTED', 'UNDER_ANALYSIS'].includes(i.status)).length}
-                    </h3>
-                  </div>
-                  <div className="card text-center" style={{ padding: '16px 20px' }}>
-                    <p style={{ margin: 0, fontSize: '12px', color: 'var(--text-secondary)' }}>Casos Mitigados y Cerrados</p>
-                    <h3 style={{ margin: '8px 0 0 0', fontSize: '32px', fontWeight: 700, color: 'var(--color-success)' }}>
-                      {incidents.filter(i => ['MITIGATED', 'REPORTED_AND_CLOSED'].includes(i.status)).length}
-                    </h3>
-                  </div>
-                </div>
-
-                {/* Programador de Escaneos Automáticos */}
-                <div className="card" style={{ marginBottom: '24px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '14px 20px', background: 'rgba(255,255,255,0.01)', border: '1px dashed var(--border-color)' }}>
-                  <div>
-                    <span style={{ fontWeight: 600, fontSize: '14px', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                      ⏰ Auditoría Semanal Automática de Brechas
-                    </span>
-                    <p style={{ margin: '2px 0 0 0', fontSize: '12px', color: 'var(--text-secondary)' }}>
-                      Ejecuta escaneos proactivos automáticos de puertos y cabeceras los lunes a las 08:00 AM y envía reportes consolidados al DPO.
-                    </p>
-                  </div>
-                  <label className="switch" style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}>
-                    <input 
-                      type="checkbox" 
-                      checked={weeklyCronEnabled}
-                      onChange={e => {
-                        const val = e.target.checked;
-                        setWeeklyCronEnabled(val);
-                        localStorage.setItem('weekly_security_cron', String(val));
-                        showToast(val ? 'Auditoría semanal programada con éxito.' : 'Auditoría automática desactivada.', 'info');
-                      }}
-                    />
-                    <span className="slider round"></span>
-                    <span style={{ fontSize: '13px', fontWeight: 600, color: weeklyCronEnabled ? 'var(--color-success)' : 'var(--text-secondary)' }}>
-                      {weeklyCronEnabled ? 'Activo' : 'Inactivo'}
-                    </span>
-                  </label>
-                </div>
-
-                {/* Amenazas Potenciales Detectadas */}
-                {scanVulnerabilitiesResult && (
-                  <div className="card" style={{ marginBottom: '24px', border: '1px solid rgba(239, 68, 68, 0.2)', background: 'rgba(239, 68, 68, 0.01)' }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid var(--border-color)', paddingBottom: '10px', marginBottom: '15px' }}>
-                      <h3 style={{ margin: 0, fontSize: '15px', fontWeight: 600, color: 'var(--color-danger)', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                        🚨 Amenazas y Brechas Potenciales Detectadas (Score: {scanVulnerabilitiesResult.score}%)
-                      </h3>
-                      <button className="btn-action" style={{ fontSize: '11px', padding: '2px 8px' }} onClick={() => setScanVulnerabilitiesResult(null)}>
-                        Descartar Vista
-                      </button>
-                    </div>
-
-                    {scanVulnerabilitiesResult.vulnerabilities.length > 0 ? (
-                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '16px' }}>
-                        {scanVulnerabilitiesResult.vulnerabilities.map((vul: any) => (
-                          <div key={vul.id} style={{ 
-                            border: `1px solid ${vul.severity === 'CRITICAL' ? 'rgba(239, 68, 68, 0.3)' : vul.severity === 'HIGH' ? 'rgba(245, 158, 11, 0.3)' : 'rgba(234, 179, 8, 0.3)'}`,
-                            borderRadius: '8px',
-                            padding: '12px 14px',
-                            background: 'rgba(0, 0, 0, 0.15)',
-                            display: 'flex',
-                            flexDirection: 'column',
-                            justifyContent: 'space-between',
-                            gap: '10px'
-                          }}>
-                            <div>
-                              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
-                                <span style={{ fontWeight: 600, fontSize: '13px' }}>{vul.title}</span>
-                                <span className={`badge ${vul.severity === 'CRITICAL' ? 'badge-gravisima' : vul.severity === 'HIGH' ? 'badge-grave' : 'badge-leve'}`} style={{ fontSize: '9px', textTransform: 'uppercase' }}>
-                                  {vul.severity}
-                                </span>
-                              </div>
-                              <p style={{ margin: 0, fontSize: '11.5px', color: 'var(--text-secondary)', lineHeight: 1.4 }}>{vul.description}</p>
-                              <p style={{ margin: '6px 0 0 0', fontSize: '11px', color: 'var(--color-primary)' }}><strong>Recomendación:</strong> {vul.recommendation}</p>
-                            </div>
-                            
-                            <button 
-                              className="btn-save" 
-                              style={{ width: '100%', fontSize: '10.5px', padding: '6px 0', background: 'rgba(99, 102, 241, 0.15)', border: '1px solid var(--color-primary)', color: 'white', cursor: 'pointer' }}
-                              onClick={() => handlePromoteVulnerability(vul)}
-                            >
-                              🛡️ Convertir en Incidente Oficial
-                            </button>
-                          </div>
-                        ))}
-                      </div>
-                    ) : (
-                      <p style={{ margin: 0, fontSize: '13px', color: 'var(--color-success)', fontWeight: 600 }}>
-                        🟢 ¡Excelente! No se detectaron vulnerabilidades críticas ni puertos expuestos en este escaneo.
-                      </p>
-                    )}
-                  </div>
-                )}
-              </>
-            )}
-
-            {/* WIZARD FORM: REPORT AN INCIDENT */}
-            {isAddingIncident ? (
-              <div className="card" style={{ maxWidth: '800px', margin: '0 auto' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', borderBottom: '1px solid var(--border-color)', paddingBottom: '10px' }}>
-                  <h3 style={{ margin: 0, fontSize: '18px', fontWeight: 600 }}>Reportar Nuevo Incidente de Seguridad</h3>
-                  <button className="btn-action" onClick={() => setIsAddingIncident(false)}>Cancelar</button>
-                </div>
-
-                {/* Stepper progress indicator */}
-                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '30px', position: 'relative' }}>
-                  <div style={{ position: 'absolute', top: '15px', left: 0, right: 0, height: '2px', background: 'var(--border-color)', zIndex: 1 }}></div>
-                  <div style={{ position: 'absolute', top: '15px', left: 0, width: `${((wizardIncidentStep - 1) / 3) * 100}%`, height: '2px', background: 'var(--color-primary)', zIndex: 2, transition: 'width 0.3s ease' }}></div>
-                  
-                  {[1, 2, 3, 4].map(step => (
-                    <div key={step} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', zIndex: 3, cursor: 'pointer' }} onClick={() => setWizardIncidentStep(step)}>
-                      <div style={{
-                        width: '32px',
-                        height: '32px',
-                        borderRadius: '50%',
-                        background: wizardIncidentStep === step ? 'var(--color-primary)' : wizardIncidentStep > step ? 'var(--color-success)' : 'var(--bg-card)',
-                        color: wizardIncidentStep >= step ? '#fff' : 'var(--text-secondary)',
-                        border: wizardIncidentStep === step ? '2px solid var(--color-primary)' : '2px solid var(--border-color)',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        fontWeight: 'bold',
-                        fontSize: '13px'
-                      }}>
-                        {wizardIncidentStep > step ? '✓' : step}
-                      </div>
-                      <span style={{ fontSize: '11px', marginTop: '6px', color: wizardIncidentStep === step ? 'var(--text-primary)' : 'var(--text-secondary)' }}>
-                        {step === 1 ? 'Datos' : step === 2 ? 'Impacto' : step === 3 ? 'Riesgo Legal' : 'Mitigación'}
-                      </span>
-                    </div>
-                  ))}
-                </div>
-
-                <form onSubmit={handleCreateIncident}>
-                  {/* STEP 1: BASIC DETAILS */}
-                  {wizardIncidentStep === 1 && (
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-                      <div>
-                        <label className="form-label">Título descriptivo del incidente</label>
-                        <input 
-                          type="text" 
-                          className="input-text" 
-                          placeholder="ej. Acceso no autorizado a BBDD de clientes" 
-                          value={incidentTitle} 
-                          onChange={e => setIncidentTitle(e.target.value)} 
-                          required 
-                          style={{ width: '100%' }}
-                        />
-                      </div>
-                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
-                        <div>
-                          <label className="form-label">Fecha y Hora de Detección</label>
-                          <input 
-                            type="datetime-local" 
-                            className="input-text" 
-                            value={incidentDate} 
-                            onChange={e => setIncidentDate(e.target.value)} 
-                            required 
-                            style={{ width: '100%' }}
-                          />
-                        </div>
-                        <div>
-                          <label className="form-label">Tipo de Vulneración</label>
-                          <select 
-                            className="input-text" 
-                            value={incidentType} 
-                            onChange={e => setIncidentType(e.target.value)}
-                            style={{ width: '100%', height: '42px' }}
-                          >
-                            <option value="DATA_LEAK">Filtración de Datos (Fuga)</option>
-                            <option value="RANSOMWARE_HACK">Secuestro de BBDD / Ransomware</option>
-                            <option value="LOST_DEVICE">Pérdida/Robo de Dispositivo Físico</option>
-                            <option value="UNAUTHORIZED_ACCESS">Acceso No Autorizado</option>
-                            <option value="HUMAN_ERROR">Error Humano / Envío Erróneo</option>
-                            <option value="OTHER">Otro Incidente de Ciberseguridad</option>
-                          </select>
-                        </div>
-                      </div>
-                    </div>
-                  )}
-
-                  {/* STEP 2: IMPACT & CATEGORIES */}
-                  {wizardIncidentStep === 2 && (
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-                      <label className="form-label">Categorías de Datos Involucrados</label>
-                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', background: 'rgba(255,255,255,0.02)', padding: '16px', borderRadius: '8px' }}>
-                        {[
-                          { id: 'general_contact', label: 'Datos de Contacto General (Emails, Teléfonos)' },
-                          { id: 'financial', label: 'Datos Bancarios u Obligaciones Financieras' },
-                          { id: 'sensitive', label: 'Datos Sensibles (Salud, Biométricos, Afiliación)' },
-                          { id: 'minors_under_14', label: 'Datos de Menores de 14 años' },
-                          { id: 'identity', label: 'Datos de Identidad (RUT, Claves de Acceso)' }
-                        ].map(cat => (
-                          <label key={cat.id} style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', fontSize: '13px' }}>
-                            <input 
-                              type="checkbox" 
-                              checked={affectedCategories.includes(cat.label)}
-                              onChange={e => {
-                                if (e.target.checked) {
-                                  setAffectedCategories([...affectedCategories, cat.label]);
-                                } else {
-                                  setAffectedCategories(affectedCategories.filter(c => c !== cat.label));
-                                }
-                              }}
-                            />
-                            <span>{cat.label}</span>
-                          </label>
-                        ))}
-                      </div>
-                      <div>
-                        <label className="form-label">Número aproximado de titulares (personas) afectados</label>
-                        <input 
-                          type="number" 
-                          className="input-text" 
-                          min={0}
-                          placeholder="ej. 500" 
-                          value={approxAffectedTitulars || ''} 
-                          onChange={e => setApproxAffectedTitulars(parseInt(e.target.value) || 0)} 
-                          required 
-                          style={{ width: '100%' }}
-                        />
-                      </div>
-                    </div>
-                  )}
-
-                  {/* STEP 3: AUTOMATIC LEGAL ASSESSMENT */}
-                  {wizardIncidentStep === 3 && (
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-                      <h4 style={{ margin: '0 0 10px 0', fontSize: '14.5px', fontWeight: 600 }}>Veredicto Automático de Obligación Legal (Ley N° 21.719):</h4>
-                      
-                      {/* Agency notification evaluation */}
-                      {['DATA_LEAK', 'RANSOMWARE_HACK', 'UNAUTHORIZED_ACCESS', 'LOST_DEVICE'].includes(incidentType) || approxAffectedTitulars > 0 ? (
-                        <div style={{ 
-                          padding: '16px', 
-                          background: 'rgba(239, 68, 68, 0.05)', 
-                          borderLeft: '4px solid var(--color-danger)', 
-                          borderRadius: '6px'
-                        }}>
-                          <span style={{ fontWeight: 600, color: 'var(--color-danger)', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                            ⚠️ EXIGIBLE: Notificación Obligatoria a la Agencia de Protección de Datos
-                          </span>
-                          <p style={{ margin: '6px 0 0 0', fontSize: '12.5px', color: 'var(--text-secondary)' }}>
-                            El Art. 14 sexies de la Ley establece que ante cualquier vulneración de seguridad que comprometa la integridad, confidencialidad o disponibilidad de datos, se debe informar formalmente a la Agencia en un plazo prudente.
-                          </p>
-                        </div>
-                      ) : (
-                        <div style={{ 
-                          padding: '16px', 
-                          background: 'rgba(34, 197, 94, 0.05)', 
-                          borderLeft: '4px solid var(--color-success)', 
-                          borderRadius: '6px'
-                        }}>
-                          <span style={{ fontWeight: 600, color: 'var(--color-success)', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                            🟢 No Exigible Urgente: Notificación a la Agencia bajo Análisis
-                          </span>
-                          <p style={{ margin: '6px 0 0 0', fontSize: '12.5px', color: 'var(--text-secondary)' }}>
-                            Dado el tipo de incidente clasificado, no existe sospecha inmediata de pérdida masiva. Sin embargo, la DPO sugiere documentar para la bitácora auditable.
-                          </p>
-                        </div>
-                      )}
-
-                      {/* Titulars notification evaluation */}
-                      {affectedCategories.some(c => c.includes('Bancario') || c.includes('Sensible') || c.includes('Menor')) ? (
-                        <div style={{ 
-                          padding: '16px', 
-                          background: 'rgba(245, 158, 11, 0.05)', 
-                          borderLeft: '4px solid var(--color-warning)', 
-                          borderRadius: '6px'
-                        }}>
-                          <span style={{ fontWeight: 600, color: 'var(--color-warning)', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                            🚨 OBLIGATORIO: Comunicación Transparente a los Titulares Afectados
-                          </span>
-                          <p style={{ margin: '6px 0 0 0', fontSize: '12.5px', color: 'var(--text-secondary)' }}>
-                            La ley exige notificar directamente a los usuarios si el incidente compromete información de naturaleza financiera, datos de menores de 14 años o datos sensibles, con el fin de que puedan tomar medidas de resguardo.
-                          </p>
-                        </div>
-                      ) : (
-                        <div style={{ 
-                          padding: '16px', 
-                          background: 'rgba(255, 255, 255, 0.02)', 
-                          borderLeft: '4px solid var(--text-secondary)', 
-                          borderRadius: '6px'
-                        }}>
-                          <span style={{ fontWeight: 600, color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                            ⚪ Exento: Sin obligación legal de alertar a titulares
-                          </span>
-                          <p style={{ margin: '6px 0 0 0', fontSize: '12.5px', color: 'var(--text-secondary)' }}>
-                            No se detectó afectación a categorías sensibles de información. No se requiere alertar de forma pública o masiva a los usuarios finales.
-                          </p>
-                        </div>
-                      )}
-                    </div>
-                  )}
-
-                  {/* STEP 4: MITIGATION MEASURES & DESCRIPTION */}
-                  {wizardIncidentStep === 4 && (
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-                      <div>
-                        <label className="form-label">Descripción de la vulneración y efectos previstos</label>
-                        <textarea 
-                          className="form-textarea" 
-                          rows={3} 
-                          placeholder="Detallar qué falló, cómo ingresaron o qué causó la fuga..." 
-                          value={descriptionAndEffects} 
-                          onChange={e => setDescriptionAndEffects(e.target.value)}
-                          required
-                        ></textarea>
-                      </div>
-                      <div>
-                        <label className="form-label">Medidas correctivas y de mitigación adoptadas</label>
-                        <textarea 
-                          className="form-textarea" 
-                          rows={3} 
-                          placeholder="ej. Aislamiento de base de datos, revocación de credenciales comprometidas y actualización de parches de seguridad." 
-                          value={mitigationMeasures} 
-                          onChange={e => setMitigationMeasures(e.target.value)}
-                          required
-                        ></textarea>
-                      </div>
-                      <div>
-                        <label className="form-label">Estado Inicial del Caso</label>
-                        <select 
-                          className="input-text" 
-                          value={incidentStatus} 
-                          onChange={e => setIncidentStatus(e.target.value)}
-                          style={{ width: '100%', height: '42px' }}
-                        >
-                          <option value="DETECTED">Detectado (Análisis Inicial)</option>
-                          <option value="UNDER_ANALYSIS">Bajo Análisis Forense</option>
-                          <option value="MITIGATED">Mitigado y Contenido</option>
-                          <option value="REPORTED_AND_CLOSED">Reportado a la Agencia y Cerrado</option>
-                        </select>
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Wizard Controls Footer */}
-                  <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '30px', borderTop: '1px solid var(--border-color)', paddingTop: '15px' }}>
-                    <div>
-                      {wizardIncidentStep > 1 && (
-                        <button type="button" className="btn-action" onClick={() => setWizardIncidentStep(wizardIncidentStep - 1)}>
-                          Atrás
-                        </button>
-                      )}
-                    </div>
-                    <div>
-                      {wizardIncidentStep < 4 ? (
-                        <button type="button" className="btn-save" onClick={() => setWizardIncidentStep(wizardIncidentStep + 1)}>
-                          Siguiente
-                        </button>
-                      ) : (
-                        <button type="submit" className="btn-save">
-                          Registrar Incidente en Bitácora
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                </form>
-              </div>
-            ) : (
-              /* INCIDENTS TABLE VIEW */
-              <div className="card">
-                <h3 style={{ margin: '0 0 20px 0', fontSize: '16px', fontWeight: 600 }}>Bitácora Histórica Auditada de Vulneraciones</h3>
-                {incidents.length > 0 ? (
-                  <div className="table-responsive">
-                    <table className="data-table">
-                      <thead>
-                        <tr>
-                          <th>Fecha Detección</th>
-                          <th>Incidente / Tipo</th>
-                          <th>Afectados Est.</th>
-                          <th>Categorías Comprometidas</th>
-                          <th>Riesgo / Avisos</th>
-                          <th>Estado</th>
-                          <th>Acciones</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {incidents.map((incident) => {
-                          const categories = Array.isArray(incident.affected_data_categories) 
-                            ? incident.affected_data_categories 
-                            : JSON.parse(incident.affected_data_categories || '[]');
-
-                          return (
-                            <tr key={incident.id}>
-                              <td style={{ whiteSpace: 'nowrap' }}>
-                                {new Date(incident.incident_date).toLocaleDateString('es-CL', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
-                              </td>
-                              <td>
-                                <div style={{ fontWeight: 600 }}>{incident.incident_title}</div>
-                                <div style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>
-                                  {incident.incident_type === 'DATA_LEAK' ? 'Fuga de Datos' :
-                                   incident.incident_type === 'RANSOMWARE_HACK' ? 'Ataque Ransomware' :
-                                   incident.incident_type === 'LOST_DEVICE' ? 'Dispositivo Extraviado' :
-                                   incident.incident_type === 'UNAUTHORIZED_ACCESS' ? 'Acceso No Autorizado' :
-                                   incident.incident_type === 'HUMAN_ERROR' ? 'Error Humano' : 'Otro'}
-                                </div>
-                              </td>
-                              <td style={{ fontWeight: 600 }}>
-                                {incident.approx_affected_titulars.toLocaleString()} pers.
-                              </td>
-                              <td>
-                                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
-                                  {categories.map((cat: string, idx: number) => (
-                                    <span key={idx} style={{ 
-                                      fontSize: '10px', 
-                                      background: 'rgba(255,255,255,0.05)', 
-                                      padding: '2px 6px', 
-                                      borderRadius: '4px',
-                                      color: (cat.includes('Sensible') || cat.includes('Bancario') || cat.includes('Menor')) ? 'var(--color-warning)' : 'var(--text-secondary)'
-                                    }}>
-                                      {cat}
-                                    </span>
-                                  ))}
-                                </div>
-                              </td>
-                              <td>
-                                <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                                  {incident.requires_agency_notification && (
-                                    <span className={`badge ${incident.agency_notified_at ? 'badge-success' : 'badge-gravisima'}`} style={{ fontSize: '10px' }}>
-                                      {incident.agency_notified_at ? 'Agencia Notificada ✓' : 'Falta Aviso Agencia ⚠️'}
-                                    </span>
-                                  )}
-                                  {incident.requires_titulars_notification && (
-                                    <span className={`badge ${incident.titulars_notified_at ? 'badge-success' : 'badge-grave'}`} style={{ fontSize: '10px' }}>
-                                      {incident.titulars_notified_at ? 'Clientes Notificados ✓' : 'Falta Aviso Clientes 🚨'}
-                                    </span>
-                                  )}
-                                  {!incident.requires_agency_notification && !incident.requires_titulars_notification && (
-                                    <span style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>Sin Avisos Obligatorios</span>
-                                  )}
-                                </div>
-                              </td>
-                              <td>
-                                <select 
-                                  value={incident.status}
-                                  onChange={(e) => handleUpdateIncidentStatus(incident.id, e.target.value)}
-                                  style={{ 
-                                    padding: '4px 8px', 
-                                    fontSize: '12px', 
-                                    borderRadius: '4px',
-                                    background: incident.status === 'REPORTED_AND_CLOSED' ? 'rgba(34,197,94,0.1)' : incident.status === 'MITIGATED' ? 'rgba(99,102,241,0.1)' : 'rgba(239,68,68,0.1)',
-                                    color: incident.status === 'REPORTED_AND_CLOSED' ? 'var(--color-success)' : incident.status === 'MITIGATED' ? 'var(--color-primary)' : 'var(--color-danger)',
-                                    border: '1px solid currentColor',
-                                    fontWeight: 600,
-                                    cursor: 'pointer'
-                                  }}
-                                >
-                                  <option value="DETECTED" style={{ background: 'var(--bg-card)', color: '#fff' }}>Detectado</option>
-                                  <option value="UNDER_ANALYSIS" style={{ background: 'var(--bg-card)', color: '#fff' }}>En Análisis</option>
-                                  <option value="MITIGATED" style={{ background: 'var(--bg-card)', color: '#fff' }}>Mitigado</option>
-                                  <option value="REPORTED_AND_CLOSED" style={{ background: 'var(--bg-card)', color: '#fff' }}>Reportado y Cerrado</option>
-                                </select>
-                              </td>
-                              <td>
-                                <button 
-                                  className="btn-action" 
-                                  style={{ padding: '4px 8px', fontSize: '11px', display: 'flex', alignItems: 'center', gap: '4px' }}
-                                  onClick={() => handleGenerateIncidentNotice(incident)}
-                                >
-                                  📄 Generar Oficios
-                                </button>
-                              </td>
-                            </tr>
-                          );
-                        })}
-                      </tbody>
-                    </table>
-                  </div>
-                ) : (
-                  <div className="empty-state" style={{ padding: '40px 20px' }}>
-                    <Shield size={48} style={{ color: 'var(--text-secondary)', marginBottom: '15px' }} />
-                    <p style={{ margin: 0, fontSize: '14px', color: 'var(--text-secondary)' }}>No se registran incidentes ni brechas de seguridad en la bitácora.</p>
-                    <button className="btn-scan" style={{ marginTop: '15px' }} onClick={() => setIsAddingIncident(true)}>
-                      Reportar Primer Incidente
-                    </button>
-                  </div>
-                )}
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* MODAL: GENERADOR DE COMUNICADOS DE INCIDENTES */}
-        {isGeneratingNotice && selectedIncidentForNotice && (
-          <div style={{
-            position: 'fixed',
-            top: 0,
-            left: 0,
-            right: 0,
-            bottom: 0,
-            background: 'rgba(0, 0, 0, 0.75)',
-            backdropFilter: 'blur(5px)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            zIndex: 10000,
-            padding: '20px',
-            animation: 'fadeIn 0.2s ease'
-          }}>
-            <div style={{
-              background: 'var(--bg-card)',
-              border: '1px solid var(--border-color)',
-              borderRadius: '12px',
-              width: '100%',
-              maxWidth: '1000px',
-              maxHeight: '90vh',
-              display: 'flex',
-              flexDirection: 'column',
-              boxShadow: '0 8px 32px rgba(0,0,0,0.5)'
-            }}>
-              <div style={{
-                padding: '16px 20px',
-                borderBottom: '1px solid var(--border-color)',
-                display: 'flex',
-                justifyContent: 'space-between',
-                alignItems: 'center'
-              }}>
-                <div>
-                  <h3 style={{ margin: 0, fontSize: '18px', fontWeight: 600 }}>Generador de Comunicados Oficiales</h3>
-                  <p style={{ margin: '2px 0 0 0', fontSize: '12px', color: 'var(--text-secondary)' }}>
-                    Documentos redactados bajo el Art. 14 sexies de la Ley N° 21.719 para: <strong>{selectedIncidentForNotice.incident_title}</strong>
-                  </p>
-                </div>
+              <div style={{ padding: '20px', borderTop: '1px solid var(--border-color)', display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>
                 <button 
                   className="btn-action" 
                   onClick={() => {
-                    setIsGeneratingNotice(false);
-                    setSelectedIncidentForNotice(null);
+                    navigator.clipboard.writeText(generatedSccText);
+                    showToast('Contrato copiado al portapapeles.', 'success');
                   }}
                 >
-                  Cerrar
+                  Copiar Contrato
                 </button>
+                <button className="btn-save" onClick={() => setIsGeneratingScc(false)}>Cerrar</button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Modal: Incident Notice visors */}
+        {isGeneratingNotice && selectedIncidentForNotice && (
+          <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.85)', zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px' }}>
+            <div className="card" style={{ maxWidth: '850px', width: '100%', padding: '0', display: 'flex', flexDirection: 'column', height: '90vh' }}>
+              <div style={{ padding: '16px 20px', borderBottom: '1px solid var(--border-color)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <div>
+                  <h3 style={{ margin: 0, fontSize: '16px', fontWeight: 600 }}>Borrador de Oficios Legales (Incidente: {selectedIncidentForNotice.incident_title})</h3>
+                  <span style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>Generados automáticamente bajo los Artículos 14 sexies de la Ley N° 21.719</span>
+                </div>
+                <button className="btn-action" onClick={() => { setIsGeneratingNotice(false); setSelectedIncidentForNotice(null); }}>Cerrar</button>
               </div>
 
-              <div style={{
-                padding: '20px',
-                overflowY: 'auto',
-                display: 'grid',
-                gridTemplateColumns: '1fr 1fr',
-                gap: '20px',
-                background: 'var(--bg-app)'
-              }}>
-                {/* Agencia Notice Card */}
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+              <div style={{ display: 'flex', flexGrow: 1, overflow: 'hidden', padding: '20px', gap: '20px' }}>
+                <div style={{ width: '50%', display: 'flex', flexDirection: 'column', gap: '10px' }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <span style={{ fontWeight: 600, color: 'var(--color-danger)', fontSize: '13.5px' }}>
-                      📄 Oficio de Notificación a la Agencia (DPA)
-                    </span>
+                    <span style={{ fontSize: '12px', fontWeight: 600, color: 'var(--color-danger)' }}>📄 OFICIO DE NOTIFICACIÓN A LA AGENCIA</span>
                     <button 
-                      className="btn-action" 
-                      style={{ padding: '2px 8px', fontSize: '11px' }}
+                      className="btn-action" style={{ padding: '2px 8px', fontSize: '10px' }}
                       onClick={() => {
                         navigator.clipboard.writeText(agencyNoticeText);
-                        showToast('Oficio técnico copiado al portapapeles.', 'success');
+                        showToast('Oficio a la Agencia copiado.', 'success');
                       }}
-                    >
-                      📋 Copiar Oficio
-                    </button>
+                    >Copiar</button>
                   </div>
-                  <textarea
-                    className="form-textarea"
-                    readOnly
-                    rows={16}
-                    value={agencyNoticeText}
-                    style={{ fontFamily: 'monospace', fontSize: '11.5px', background: '#0a0a14', color: '#c0c0d0', lineHeight: 1.4 }}
-                  ></textarea>
+                  <textarea 
+                    className="form-textarea" readOnly rows={16} value={agencyNoticeText}
+                    style={{ flexGrow: 1, fontFamily: 'monospace', fontSize: '11.5px', background: '#0a0a14', color: '#c0c0d0', lineHeight: 1.4 }}
+                  />
                 </div>
 
-                {/* Titulars Notice Card */}
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                <div style={{ width: '50%', display: 'flex', flexDirection: 'column', gap: '10px' }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <span style={{ fontWeight: 600, color: 'var(--color-primary)', fontSize: '13.5px' }}>
-                      ✉️ Comunicación Transparente a Titulares (Clientes)
-                    </span>
+                    <span style={{ fontSize: '12px', fontWeight: 600, color: 'var(--color-warning)' }}>📧 COMUNICACIÓN PARA CLIENTES AFECTADOS</span>
                     <button 
-                      className="btn-action" 
-                      style={{ padding: '2px 8px', fontSize: '11px' }}
+                      className="btn-action" style={{ padding: '2px 8px', fontSize: '10px' }}
                       onClick={() => {
                         navigator.clipboard.writeText(titularsNoticeText);
-                        showToast('Comunicación a clientes copiada.', 'success');
+                        showToast('Comunicado a clientes copiado.', 'success');
                       }}
-                    >
-                      📋 Copiar Mensaje
-                    </button>
+                    >Copiar</button>
                   </div>
-                  <textarea
-                    className="form-textarea"
-                    readOnly
-                    rows={16}
-                    value={titularsNoticeText}
-                    style={{ fontFamily: 'monospace', fontSize: '11.5px', background: '#0a0a14', color: '#c0c0d0', lineHeight: 1.4 }}
-                  ></textarea>
+                  <textarea 
+                    className="form-textarea" readOnly rows={16} value={titularsNoticeText}
+                    style={{ flexGrow: 1, fontFamily: 'monospace', fontSize: '11.5px', background: '#0a0a14', color: '#c0c0d0', lineHeight: 1.4 }}
+                  />
                 </div>
               </div>
 
-              <div style={{
-                padding: '16px 20px',
-                borderTop: '1px solid var(--border-color)',
-                display: 'flex',
-                justifyContent: 'flex-end',
-                background: 'var(--bg-card)',
-                borderRadius: '0 0 12px 12px'
-              }}>
-                <button 
-                  className="btn-save" 
-                  onClick={() => {
-                    setIsGeneratingNotice(false);
-                    setSelectedIncidentForNotice(null);
-                  }}
-                >
-                  Entendido y Cerrar
-                </button>
+              <div style={{ padding: '16px 20px', borderTop: '1px solid var(--border-color)', display: 'flex', justifyContent: 'flex-end', background: 'var(--bg-card)', borderRadius: '0 0 12px 12px' }}>
+                <button className="btn-save" onClick={() => { setIsGeneratingNotice(false); setSelectedIncidentForNotice(null); }}>Entendido y Cerrar</button>
               </div>
             </div>
           </div>
         )}
-
       </main>
     </div>
   );

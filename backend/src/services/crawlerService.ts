@@ -320,7 +320,6 @@ export async function runAudit(url: string): Promise<AuditResult> {
   };
 }
 
-// Generates simulated report when a external fetch fails (e.g. testing offline)
 function generateFallbackAudit(url: string, errMsg: string): AuditResult {
   const isHealthy = url.includes('compliance-perfect') || url.includes('cumple');
   
@@ -337,7 +336,7 @@ function generateFallbackAudit(url: string, errMsg: string): AuditResult {
     };
   }
 
-  // Generate a pseudo-random hash from the domain name to make the results unique per domain!
+  // Generate a pseudo-random hash from the domain name
   let hash = 0;
   for (let i = 0; i < url.length; i++) {
     hash = url.charCodeAt(i) + ((hash << 5) - hash);
@@ -347,7 +346,6 @@ function generateFallbackAudit(url: string, errMsg: string): AuditResult {
   // Score between 45 and 85
   const score = 45 + (absHash % 41);
 
-  // Pool of possible findings
   const findingsPool: AuditFinding[] = [
     {
       id: 'unconsented_scripts',
@@ -391,26 +389,20 @@ function generateFallbackAudit(url: string, errMsg: string): AuditResult {
     }
   ];
 
-  // Select findings based on hash
   const selectedFindings: AuditFinding[] = [];
   
   if (score < 60) {
-    // Low score: 3 findings
-    selectedFindings.push(findingsPool[0]); // scripts
-    selectedFindings.push(findingsPool[1]); // missing opt-in
-    selectedFindings.push(findingsPool[4]); // missing privacy link
+    selectedFindings.push(findingsPool[0]);
+    selectedFindings.push(findingsPool[1]);
+    selectedFindings.push(findingsPool[4]);
   } else if (score < 75) {
-    // Medium score: 2 findings
-    selectedFindings.push(findingsPool[0]); // scripts
-    selectedFindings.push(findingsPool[3]); // incomplete policy content
+    selectedFindings.push(findingsPool[0]);
+    selectedFindings.push(findingsPool[3]);
   } else {
-    // High score: 1 finding
-    selectedFindings.push(findingsPool[1]); // missing opt-in
+    selectedFindings.push(findingsPool[1]);
   }
 
   const actionPlan = generateActionPlan(selectedFindings);
-
-  // Normalize url trailing slashes to build mock unvisited links
   const baseSlash = url.endsWith('/') ? url.slice(0, -1) : url;
 
   return {
@@ -429,12 +421,10 @@ function generateFallbackAudit(url: string, errMsg: string): AuditResult {
   };
 }
 
-// Generates step-by-step mitigation plans based on Law N° 21.719 rules
 function generateActionPlan(findings: AuditFinding[]): ActionStep[] {
   const plan: ActionStep[] = [];
   let stepCounter = 1;
 
-  // 1. Missing Privacy Link (Gravísima)
   if (findings.some(f => f.id === 'missing_privacy_link')) {
     plan.push({
       step: stepCounter++,
@@ -442,11 +432,10 @@ function generateActionPlan(findings: AuditFinding[]): ActionStep[] {
       description: 'El sitio web carece de un enlace directo a las políticas de tratamiento de datos personales.',
       priority: 'Alta',
       estimatedEffort: '30 mins',
-      details: 'Añadir un enlace permanente titulado "Política de Privacidad" en el pie de página (footer) de tu sitio web, visible en todas las páginas internas. Debe enlazar a una página dedicada (/privacidad) que contenga los textos de cumplimiento.'
+      details: 'Añadir un enlace permanente titulado "Política de Privacidad" en el pie de página (footer) de tu sitio web, visible en todas las páginas internas.'
     });
   }
 
-  // 2. Incomplete Policy Content (Grave)
   if (findings.some(f => f.id === 'incomplete_policy_content')) {
     plan.push({
       step: stepCounter++,
@@ -454,11 +443,10 @@ function generateActionPlan(findings: AuditFinding[]): ActionStep[] {
       description: 'La Política de Privacidad carece de cláusulas obligatorias exigidas por ley chilena (identificación, finalidades, plazos o derechos).',
       priority: 'Media',
       estimatedEffort: '4 horas',
-      details: 'Actualiza el texto en tu página de Política de Privacidad incluyendo explícitamente: Razón Social y RUT de la empresa, finalidades específicas del tratamiento de los datos recolectados, tiempos de retención definidos (ej. 24 meses) y los canales donde los usuarios pueden ejercer sus derechos ARCO+.'
+      details: 'Actualiza el texto en tu página de Política de Privacidad incluyendo explícitamente: Razón Social y RUT, finalidades específicas del tratamiento, plazos de conservación y medios para ARCO+.'
     });
   }
 
-  // 3. Prechecked opt-in (Gravísima)
   if (findings.some(f => f.id === 'prechecked_opt_in')) {
     plan.push({
       step: stepCounter++,
@@ -466,11 +454,10 @@ function generateActionPlan(findings: AuditFinding[]): ActionStep[] {
       description: 'Se encontraron casillas de consentimiento pre-seleccionadas que asumen aceptación sin acción afirmativa.',
       priority: 'Alta',
       estimatedEffort: '30 mins',
-      details: 'Edita el código HTML/React de tus formularios y remueve el atributo "checked" o la propiedad que autoselecciona la casilla. La casilla de aceptación de políticas debe estar vacía para que el usuario la marque manualmente.'
+      details: 'Edita el código de tus formularios y remueve la propiedad que autoselecciona la casilla. Debe estar vacía para que el usuario la marque manualmente.'
     });
   }
 
-  // 4. Missing opt-in checkbox (Grave)
   if (findings.some(f => f.id === 'missing_opt_in')) {
     plan.push({
       step: stepCounter++,
@@ -478,49 +465,44 @@ function generateActionPlan(findings: AuditFinding[]): ActionStep[] {
       description: 'Se detectaron formularios que recolectan datos sin consentimiento explícito e inequívoco.',
       priority: 'Alta',
       estimatedEffort: '2 horas',
-      details: 'Agrega un campo de tipo checkbox obligatorio al final de cada formulario antes del botón de enviar. Ejemplo de texto: "Acepto el tratamiento de mis datos personales de acuerdo con la Política de Privacidad." (La palabra Política de Privacidad debe ser un enlace).'
+      details: 'Agrega un campo de tipo checkbox obligatorio al final de cada formulario antes del botón de enviar.'
     });
   }
 
-  // 5. Block scripts (Grave)
   if (findings.some(f => f.id === 'unconsented_scripts')) {
     plan.push({
       step: stepCounter++,
       title: 'Implementar Bloqueo de Scripts Invasivos (CMP)',
-      description: 'Se detectó que scripts de seguimiento (Google Analytics, Meta Pixel, etc.) se cargan automáticamente en el navegador sin autorización.',
+      description: 'Se detectó que scripts de seguimiento se cargan automáticamente en el navegador sin autorización.',
       priority: 'Alta',
       estimatedEffort: '1 hora',
-      details: 'Inserta el script de cumplimiento CMP de PrivacyTech en la cabecera (<head>) del sitio. Modifica las etiquetas de scripts invasivos cambiando type="text/javascript" por type="text/plain" y añadiendo data-category="analytics" o data-category="marketing" para que el widget CMP los retenga hasta el opt-in del usuario.'
+      details: 'Inserta el script de cumplimiento CMP de PrivacyTech en la cabecera del sitio.'
     });
   }
 
-  // 6. Transversal - DPO and ARCO+ Channel
   plan.push({
     step: stepCounter++,
     title: 'Habilitar Portal de Derechos ARCO+ (Acceso, Rectificación, Bloqueo)',
     description: 'La Ley N° 21.719 exige la existencia de un canal expedito para que las personas soliciten la gestión de sus datos.',
     priority: 'Media',
     estimatedEffort: '2 horas',
-    details: 'Activa y publica en tu sitio el enlace al formulario interactivo ARCO+ provisto por el Widget de PrivacyTech. Asegúrate de configurar en tu dashboard un correo administrativo para recibir notificaciones y responder solicitudes en un plazo máximo de 30 días corridos.'
+    details: 'Activa y publica en tu sitio el enlace al formulario interactivo ARCO+ provisto por el Widget de PrivacyTech.'
   });
 
-  // If compliant, add a preventative step
-  if (plan.length === 1) { // Only DPO step is present
+  if (plan.length === 1) {
     plan.unshift({
       step: stepCounter++,
       title: 'Monitoreo Continuo y Auditorías Periódicas',
       description: 'Tu sitio web actual cuenta con un nivel óptimo de cumplimiento de la Ley N° 21.719.',
       priority: 'Baja',
       estimatedEffort: 'Continuo',
-      details: 'Realiza un escaneo semanal automático para garantizar que nuevos formularios creados por tu equipo de marketing o nuevos plugins agregados al CMS sigan las mismas directrices de consentimiento previo.'
+      details: 'Realiza un escaneo semanal automático para garantizar que nuevos formularios o plugins sigan las mismas directrices de consentimiento previo.'
     });
   }
 
-  // Sort by priority (Alta -> Media -> Baja)
   const priorityOrder = { 'Alta': 1, 'Media': 2, 'Baja': 3 };
   plan.sort((a, b) => priorityOrder[a.priority] - priorityOrder[b.priority]);
   
-  // Re-enumerate steps
   plan.forEach((item, index) => {
     item.step = index + 1;
   });

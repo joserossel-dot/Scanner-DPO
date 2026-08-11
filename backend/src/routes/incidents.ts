@@ -305,4 +305,38 @@ router.post('/scan-vulnerabilities', adminCors, async (req, res) => {
   }
 });
 
+// POST /api/incidents/assess-risk - Sandbox Legal Risk Assessor
+router.post('/assess-risk', adminCors, async (req, res) => {
+  const { incident_type, affected_data_categories, approx_affected_titulars } = req.body;
+  
+  const requiresAgencyNotification = 
+    ['DATA_LEAK', 'RANSOMWARE_HACK', 'UNAUTHORIZED_ACCESS', 'LOST_DEVICE'].includes(incident_type) || 
+    (approx_affected_titulars && Number(approx_affected_titulars) > 0);
+
+  const sensitiveKeywords = ['bancarios', 'financiera', 'financieros', 'sensibles', 'sensible', 'menores', '14 años'];
+  const categoriesStr = Array.isArray(affected_data_categories) 
+    ? affected_data_categories.join(' ').toLowerCase()
+    : String(affected_data_categories || '').toLowerCase();
+
+  const requiresTitularsNotification = sensitiveKeywords.some(keyword => 
+    categoriesStr.includes(keyword)
+  );
+
+  let fineRange = 'Sin multa directa (Preventivo)';
+  if (requiresAgencyNotification && requiresTitularsNotification) {
+    fineRange = 'Multa Gravísima: Hasta 20.000 UTA (Art. 34)';
+  } else if (requiresAgencyNotification) {
+    fineRange = 'Multa Grave: Hasta 10.000 UTA (Art. 34)';
+  } else if (incident_type !== 'PREVENTIVE_ALERT') {
+    fineRange = 'Multa Leve: Amonestación o hasta 5.000 UTA';
+  }
+
+  res.json({
+    requires_agency_notification: requiresAgencyNotification,
+    requires_titulars_notification: requiresTitularsNotification,
+    legal_fine_range: fineRange,
+    assessment_date: new Date().toISOString()
+  });
+});
+
 export default router;

@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import cors from 'cors';
 import { getDb } from '../database/db.js';
-import { runAudit } from '../scanner/crawler.js';
+import { runAudit } from '../services/crawlerService.js';
 
 const router = Router();
 
