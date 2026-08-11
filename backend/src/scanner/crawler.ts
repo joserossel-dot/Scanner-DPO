@@ -29,6 +29,7 @@ export interface AuditResult {
   };
   actionPlan?: ActionStep[];
   pagesAnalyzed?: string[];
+  pagesSkipped?: string[];
   isSimulated?: boolean;
 }
 
