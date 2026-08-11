@@ -46,7 +46,14 @@ const store = {
         { id: 1, user_cookie_id: 'cookie_sess_abc', ip_masked: '186.104.22.xxx', essential_accepted: true, analytical_accepted: true, marketing_accepted: false, created_at: new Date().toISOString() }
     ],
     reports: [],
-    privacyPolicies: []
+    privacyPolicies: [],
+    riskMatrix: [
+        { id: 'risk-1', user_id: 'default', process_name: 'Recursos Humanos', identified_risk: 'Acceso no autorizado a datos de postulantes', severity: 'Grave', mitigation_control: 'Habilitar MFA en cuentas de reclutamiento y cifrado AES-256 en base de datos.', status: 'IMPLEMENTED' },
+        { id: 'risk-2', user_id: 'default', process_name: 'Marketing', identified_risk: 'Uso de cookies de rastreo sin consentimiento lícito del visitante', severity: 'Grave', mitigation_control: 'Desplegar Consent Manager (CMP) y bloquear scripts preventivamente.', status: 'IMPLEMENTED' }
+    ],
+    whistleblowerReports: [
+        { id: 'report-1', user_id: 'default', incident_description: 'Filtración de correos de clientes en foro público por ex-empleado.', reported_date: new Date().toISOString(), status: 'PENDING' }
+    ]
 };
 // Mock Pool that behaves like pg.Pool for local development
 class MockPool {
@@ -203,6 +210,73 @@ class MockPool {
         if (text.includes('FROM privacy_policies') && text.includes('user_id = $1')) {
             const policy = store.privacyPolicies?.find((p) => p.user_id === params[0]);
             return { rows: policy ? [policy] : [], rowCount: policy ? 1 : 0 };
+        }
+        if (text.includes('FROM risk_matrix') && text.includes('user_id = $1')) {
+            const list = store.riskMatrix?.filter((r) => r.user_id === params[0]) || [];
+            return { rows: list, rowCount: list.length };
+        }
+        if (text.startsWith('INSERT INTO risk_matrix')) {
+            if (!store.riskMatrix)
+                store.riskMatrix = [];
+            const newRisk = {
+                id: 'risk-' + Math.random().toString(36).substring(2, 9),
+                user_id: params[0],
+                process_name: params[1],
+                identified_risk: params[2],
+                severity: params[3],
+                mitigation_control: params[4],
+                status: params[5] || 'IMPLEMENTED',
+                created_at: new Date().toISOString()
+            };
+            store.riskMatrix.push(newRisk);
+            return { rows: [newRisk], rowCount: 1 };
+        }
+        if (text.startsWith('UPDATE risk_matrix')) {
+            const status = params[0];
+            const mitigation = params[1];
+            const id = params[2];
+            const userId = params[3];
+            const risk = store.riskMatrix?.find((r) => r.id === id && r.user_id === userId);
+            if (risk) {
+                risk.status = status;
+                risk.mitigation_control = mitigation;
+            }
+            return { rows: risk ? [risk] : [], rowCount: risk ? 1 : 0 };
+        }
+        if (text.startsWith('DELETE FROM risk_matrix')) {
+            const id = params[0];
+            const userId = params[1];
+            const beforeLength = store.riskMatrix?.length || 0;
+            store.riskMatrix = store.riskMatrix?.filter((r) => !(r.id === id && r.user_id === userId)) || [];
+            const deletedCount = beforeLength - store.riskMatrix.length;
+            return { rows: [], rowCount: deletedCount };
+        }
+        if (text.includes('FROM whistleblower_reports') && text.includes('user_id = $1')) {
+            const list = store.whistleblowerReports?.filter((w) => w.user_id === params[0]) || [];
+            return { rows: list, rowCount: list.length };
+        }
+        if (text.startsWith('INSERT INTO whistleblower_reports')) {
+            if (!store.whistleblowerReports)
+                store.whistleblowerReports = [];
+            const newReport = {
+                id: 'whistle-' + Math.random().toString(36).substring(2, 9),
+                user_id: params[0],
+                incident_description: params[1],
+                reported_date: new Date().toISOString(),
+                status: params[2] || 'PENDING'
+            };
+            store.whistleblowerReports.push(newReport);
+            return { rows: [newReport], rowCount: 1 };
+        }
+        if (text.startsWith('UPDATE whistleblower_reports')) {
+            const status = params[0];
+            const id = params[1];
+            const userId = params[2];
+            const report = store.whistleblowerReports?.find((w) => w.id === id && w.user_id === userId);
+            if (report) {
+                report.status = status;
+            }
+            return { rows: report ? [report] : [], rowCount: report ? 1 : 0 };
         }
         if (text.startsWith('INSERT INTO audit_reports')) {
             const newReport = {
@@ -486,6 +560,27 @@ export async function initDb() {
       retention_rules TEXT NOT NULL,
       policy_html TEXT NOT NULL,
       updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+    )
+  `);
+    await pool.query(`
+    CREATE TABLE IF NOT EXISTS risk_matrix (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      user_id UUID REFERENCES users(id) ON DELETE CASCADE,
+      process_name VARCHAR(255) NOT NULL,
+      identified_risk TEXT NOT NULL,
+      severity VARCHAR(50) NOT NULL,
+      mitigation_control TEXT NOT NULL,
+      status VARCHAR(50) NOT NULL DEFAULT 'IMPLEMENTED',
+      created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+    )
+  `);
+    await pool.query(`
+    CREATE TABLE IF NOT EXISTS whistleblower_reports (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      user_id UUID REFERENCES users(id) ON DELETE CASCADE,
+      incident_description TEXT NOT NULL,
+      reported_date TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+      status VARCHAR(50) NOT NULL DEFAULT 'PENDING'
     )
   `);
     console.log('✅ Tablas y esquema de PostgreSQL validados/creados.');

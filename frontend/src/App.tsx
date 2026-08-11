@@ -7,6 +7,7 @@ import ContractBuilderView from './pages/dashboard/components/ContractBuilderVie
 import LoginView from './pages/auth/LoginView';
 import RegisterView from './pages/auth/RegisterView';
 import PolicyGeneratorView from './pages/dashboard/components/PolicyGeneratorView';
+import DpoSuiteView from './pages/dashboard/components/DpoSuiteView';
 import { 
   Shield, 
   Activity, 
@@ -136,7 +137,7 @@ export function Dashboard({ token, user, onLogout }: DashboardProps) {
     return window.fetch(url, { ...options, headers });
   };
 
-  const [activeTab, setActiveTab] = useState<'scanner' | 'diagnosis' | 'remediation'>('scanner');
+  const [activeTab, setActiveTab] = useState<'scanner' | 'diagnosis' | 'remediation' | 'dpo'>('scanner');
   const [remediationSubTab, setRemediationSubTab] = useState<'cmp' | 'arco' | 'transfers' | 'policies' | 'contracts'>('cmp');
   
   // Diagnosis State (Capa 2)
@@ -1885,6 +1886,23 @@ Firmas autorizadas:
             <Settings size={16} />
             <span>🛠️ 3. Centro Remedición</span>
           </div>
+
+          <div 
+            className={`nav-item ${activeTab === 'dpo' ? 'active' : ''}`}
+            style={{ 
+              borderLeft: activeTab === 'dpo' ? '3px solid #fbbf24' : 'none',
+              background: activeTab === 'dpo' ? 'rgba(251, 191, 36, 0.05)' : 'none'
+            }}
+            onClick={() => setActiveTab('dpo')}
+          >
+            <Shield size={16} className="text-amber-400" />
+            <span className="flex items-center gap-1">
+              ⚖️ 4. DPO Suite
+              <span className="bg-gradient-to-r from-amber-500 to-yellow-500 text-slate-950 font-extrabold text-[8px] uppercase px-1 rounded border border-amber-400 shadow-sm scale-90">
+                Ent
+              </span>
+            </span>
+          </div>
         </nav>
         
         <div style={{ padding: '12px 16px', borderTop: '1px solid var(--border-color)', borderBottom: '1px solid var(--border-color)', marginBottom: '15px' }}>
@@ -1932,6 +1950,7 @@ Firmas autorizadas:
         {activeTab === 'scanner' && renderScanner()}
         {activeTab === 'diagnosis' && renderDiagnosis()}
         {activeTab === 'remediation' && renderRemediation()}
+        {activeTab === 'dpo' && <DpoSuiteView token={token} />}
 
         {/* Modal: SCC Agreement Generator Viewer */}
         {isGeneratingScc && (
