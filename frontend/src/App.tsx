@@ -1,6 +1,7 @@
 import { useState, useEffect, FormEvent } from 'react';
 import { BrowserRouter, Routes, Route, Link, useLocation, useNavigate } from 'react-router-dom';
 import LandingPage from './pages/LandingPage';
+import DiagnosticQuestionnaire from './pages/dashboard/components/DiagnosticQuestionnaire';
 import { 
   Shield, 
   Activity, 
@@ -1322,6 +1323,11 @@ Firmas autorizadas:
               ) : (
                 <p style={{ margin: 0, fontSize: '13px', color: 'var(--text-secondary)' }}>No hay incidentes de seguridad registrados en la bitácora legal.</p>
               )}
+            </div>
+
+            {/* Cuestionario Operativo Interno (Ley N° 21.719) */}
+            <div className="col-12" style={{ marginTop: '20px' }}>
+              <DiagnosticQuestionnaire />
             </div>
           </div>
         )}
