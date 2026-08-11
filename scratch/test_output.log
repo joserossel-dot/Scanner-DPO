@@ -1,0 +1,4 @@
+=== SCRIPT STARTED ===
+❌ ERROR: La variable de entorno DATABASE_URL no está configurada.
+Por favor, ejecuta el script de la siguiente manera:
+DATABASE_URL="su_cadena_de_conexion_de_neon" node scratch/test_integration.mjs

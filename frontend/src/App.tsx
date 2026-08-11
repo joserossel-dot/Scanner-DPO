@@ -149,6 +149,48 @@ export default function App() {
   const [sccImporterAddress, setSccImporterAddress] = useState('');
   const [generatedSccText, setGeneratedSccText] = useState('');
 
+  // Shadow IT Hunter State
+  const [activeAccordion, setActiveAccordion] = useState<string | null>(null);
+  const [discoveryState, setDiscoveryState] = useState<Record<string, {
+    used: boolean;
+    vendorName: string;
+    country: string;
+    categories: string[];
+  }>>({
+    aws: { used: false, vendorName: 'Amazon Web Services', country: 'US', categories: ['Infraestructura/Nube'] },
+    gcp: { used: false, vendorName: 'Google Cloud Platform', country: 'US', categories: ['Infraestructura/Nube'] },
+    azure: { used: false, vendorName: 'Microsoft Azure', country: 'US', categories: ['Infraestructura/Nube'] },
+    digitalocean: { used: false, vendorName: 'DigitalOcean', country: 'US', categories: ['Infraestructura/Nube'] },
+    
+    hubspot: { used: false, vendorName: 'HubSpot', country: 'US', categories: ['Datos de navegación (cookies/IP)', 'Nombres / Identidad'] },
+    salesforce: { used: false, vendorName: 'Salesforce', country: 'US', categories: ['Nombres / Identidad', 'Correo electrónico'] },
+    mailchimp: { used: false, vendorName: 'Mailchimp', country: 'US', categories: ['Correo electrónico', 'Nombres / Identidad'] },
+    activecampaign: { used: false, vendorName: 'ActiveCampaign', country: 'US', categories: ['Correo electrónico', 'Nombres / Identidad'] },
+    sendgrid: { used: false, vendorName: 'SendGrid', country: 'US', categories: ['Correo electrónico'] },
+
+    google_workspace: { used: false, vendorName: 'Google Workspace', country: 'US', categories: ['Correo electrónico', 'Nombres / Identidad'] },
+    office_365: { used: false, vendorName: 'Microsoft 365', country: 'US', categories: ['Correo electrónico', 'Nombres / Identidad'] },
+    zoom: { used: false, vendorName: 'Zoom Video Communications', country: 'US', categories: ['Nombres / Identidad', 'Correo electrónico'] },
+    workday: { used: false, vendorName: 'Workday', country: 'US', categories: ['Nombres / Identidad', 'Datos financieros/tarjetas'] },
+    bamboohr: { used: false, vendorName: 'BambooHR', country: 'US', categories: ['Nombres / Identidad'] },
+
+    google_analytics: { used: false, vendorName: 'Google Analytics', country: 'US', categories: ['Datos de navegación (cookies/IP)'] },
+    meta_pixel: { used: false, vendorName: 'Meta Pixel', country: 'US', categories: ['Datos de navegación (cookies/IP)'] },
+    hotjar: { used: false, vendorName: 'Hotjar', country: 'US', categories: ['Datos de navegación (cookies/IP)'] },
+    zendesk: { used: false, vendorName: 'Zendesk', country: 'US', categories: ['Nombres / Identidad', 'Correo electrónico'] },
+    intercom: { used: false, vendorName: 'Intercom', country: 'US', categories: ['Nombres / Identidad', 'Correo electrónico', 'Datos de navegación (cookies/IP)'] }
+  });
+
+  // Inline Editing state
+  const [editingRowId, setEditingRowId] = useState<string | null>(null);
+  const [editFields, setEditFields] = useState<any>({});
+
+  // Toast notifications state
+  const [toasts, setToasts] = useState<Array<{ id: string; message: string; type: 'success' | 'warning' | 'info' }>>([]);
+  const [isDiscoveryOpen, setIsDiscoveryOpen] = useState(false);
+  const [isResourcesOpen, setIsResourcesOpen] = useState(false);
+  const [isDragging, setIsDragging] = useState<string | null>(null);
+
   // Load basic statistics on mount
   useEffect(() => {
     fetchLatestScan();
@@ -230,6 +272,111 @@ export default function App() {
   };
 
   // --- Módulo 3 API Operations (TID) ---
+  // Toast notifications helper
+  const showToast = (message: string, type: 'success' | 'warning' | 'info' = 'success') => {
+    const id = Math.random().toString(36).substring(2, 9);
+    setToasts(prev => [...prev, { id, message, type }]);
+    setTimeout(() => {
+      setToasts(prev => prev.filter(t => t.id !== id));
+    }, 4000);
+  };
+
+  // Import discovery findings to database in batch
+  const handleImportDiscovery = async () => {
+    const itemsToImport = Object.entries(discoveryState).filter(([_, val]) => val.used);
+    if (itemsToImport.length === 0) {
+      showToast('No has seleccionado ningún proveedor en el cuestionario.', 'warning');
+      return;
+    }
+
+    let count = 0;
+    for (const [key, val] of itemsToImport) {
+      try {
+        // Recommend mechanism automatically based on selected country
+        const isUS = val.country === 'US';
+        const mechanismRec = isUS ? 'STANDARD_CLAUSES' : 'ADEQUATE_COUNTRY';
+        
+        const res = await fetch(`${API_BASE}/api/transfers`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            domain: 'localhost:3000',
+            vendor_name: val.vendorName,
+            destination_country: val.country,
+            data_categories: val.categories,
+            transfer_mechanism: mechanismRec,
+            has_signed_scc: !isUS, // Assume signed if not US (adequate country), else false
+            scc_document_url: null,
+            signature_status: isUS ? 'PENDING' : 'SIGNED'
+          })
+        });
+        if (res.ok) count++;
+      } catch (err) {
+        console.error(err);
+      }
+    }
+
+    if (count > 0) {
+      showToast(`¡Se importaron ${count} proveedores con éxito al Mapa de Transferencias!`, 'success');
+      fetchTransfers();
+      setIsDiscoveryOpen(false);
+      // Reset discovery checkboxes
+      setDiscoveryState(prev => {
+        const reset: any = {};
+        Object.keys(prev).forEach(k => {
+          reset[k] = { ...prev[k], used: false };
+        });
+        return reset;
+      });
+    } else {
+      showToast('Error al importar proveedores.', 'warning');
+    }
+  };
+
+  // Save inline edit field changes to database
+  const handleSaveInlineEdit = async (id: string, updatedFields: any) => {
+    try {
+      const res = await fetch(`${API_BASE}/api/transfers/${id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(updatedFields)
+      });
+      if (res.ok) {
+        showToast('Proveedor actualizado en vivo.', 'success');
+        fetchTransfers();
+        setEditingRowId(null);
+      } else {
+        showToast('Error al actualizar proveedor.', 'warning');
+      }
+    } catch (err) {
+      console.error(err);
+      showToast('Error de comunicación con el servidor.', 'warning');
+    }
+  };
+
+  // Mock PDF Drag and Drop handler
+  const handleFileDrop = async (id: string, fileName: string) => {
+    const sccUrlMock = `https://pt-evidence-vault.s3.amazonaws.com/scc_${id}_signed.pdf`;
+    try {
+      const res = await fetch(`${API_BASE}/api/transfers/${id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          has_signed_scc: true,
+          signature_status: 'SIGNED',
+          scc_document_url: sccUrlMock
+        })
+      });
+      if (res.ok) {
+        showToast(`Documento "${fileName}" cargado como evidencia de firma con éxito.`, 'success');
+        fetchTransfers();
+      }
+    } catch (err) {
+      console.error(err);
+      showToast('Error al subir el archivo.', 'warning');
+    }
+  };
+
   const fetchTransfers = async () => {
     try {
       const res = await fetch(`${API_BASE}/api/transfers?domain=localhost:3000`);
@@ -459,6 +606,35 @@ export default function App() {
 
   return (
     <div className="app-container">
+      {/* Toast Notifications */}
+      <div className="toast-container" style={{
+        position: 'fixed',
+        top: '20px',
+        right: '20px',
+        zIndex: 9999,
+        display: 'flex',
+        flexDirection: 'column',
+        gap: '10px'
+      }}>
+        {toasts.map(toast => (
+          <div key={toast.id} className={`toast toast-${toast.type}`} style={{
+            padding: '12px 20px',
+            borderRadius: '8px',
+            color: 'white',
+            background: toast.type === 'success' ? '#10b981' : toast.type === 'warning' ? '#f59e0b' : '#3b82f6',
+            boxShadow: '0 4px 12px rgba(0,0,0,0.15)',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '8px',
+            fontSize: '13px',
+            fontWeight: 500,
+            animation: 'slideIn 0.3s ease'
+          }}>
+            <Shield size={14} />
+            <span>{toast.message}</span>
+          </div>
+        ))}
+      </div>
       {/* Sidebar Navigation */}
       <aside className="sidebar">
         <div className="brand">
@@ -541,6 +717,11 @@ export default function App() {
                 <h3 style={{ margin: '0 0 20px 0', fontSize: '16px', fontWeight: 600 }}>Nivel de Cumplimiento</h3>
                 {latestScan ? (
                   <div>
+                    {latestScan.isSimulated && (
+                      <div style={{ fontSize: '11px', color: 'var(--color-warning)', background: 'rgba(245,158,11,0.08)', padding: '6px 10px', borderRadius: '4px', marginBottom: '12px', textAlign: 'center' }}>
+                        ⚠️ Evaluación Preliminar Estimada
+                      </div>
+                    )}
                     <div className="score-container">
                       <svg className="score-svg">
                         <circle className="score-bg-circle" cx="70" cy="70" r="58" />
@@ -725,6 +906,23 @@ export default function App() {
 
             {latestScan && (
               <>
+                {latestScan.isSimulated && (
+                  <div className="card" style={{ 
+                    marginBottom: '20px', 
+                    background: 'rgba(245, 158, 11, 0.05)', 
+                    borderLeft: '4px solid var(--color-warning)',
+                    padding: '12px 16px',
+                    borderRadius: '6px'
+                  }}>
+                    <span style={{ fontWeight: 600, color: 'var(--color-warning)', display: 'flex', alignItems: 'center', gap: '6px', fontSize: '13.5px' }}>
+                      ⚠️ Nota de Conexión: Evaluación Técnica Estimada
+                    </span>
+                    <p style={{ margin: '4px 0 0 0', fontSize: '12.5px', color: 'var(--text-secondary)' }}>
+                      El sitio web de destino bloqueó el rastreador automatizado o no se pudo establecer una conexión directa. 
+                      Hemos realizado una evaluación de cumplimiento estimada con base en la estructura de dominio y políticas estándar detectadas en {latestScan.url}.
+                    </p>
+                  </div>
+                )}
                 <div className="dashboard-grid">
                 
                 {/* Score and stats */}
@@ -1204,12 +1402,429 @@ export default function App() {
         {/* TAB 6: INTERNATIONAL TRANSFERS (TID) */}
         {activeTab === 'transfers' && (
           <div>
-            <header className="page-header">
-              <h1 className="page-title">Gestión de Transferencias Internacionales (TID)</h1>
-              <p className="page-subtitle">Monitoreo de flujos transfronterizos y evaluación de riesgo legal bajo los Artículos 27 y 28 de la Ley N° 21.719.</p>
+            <header className="page-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '15px' }}>
+              <div>
+                <h1 className="page-title">Gestión de Transferencias Internacionales (TID)</h1>
+                <p className="page-subtitle">Monitoreo de flujos transfronterizos y evaluación de riesgo legal bajo los Artículos 27 y 28 de la Ley N° 21.719.</p>
+              </div>
+              <div style={{ display: 'flex', gap: '10px' }}>
+                <button 
+                  className="btn-action" 
+                  onClick={() => setIsDiscoveryOpen(!isDiscoveryOpen)}
+                  style={{ background: isDiscoveryOpen ? 'var(--color-primary)' : 'rgba(255,255,255,0.05)', color: 'white', display: 'flex', alignItems: 'center', gap: '6px' }}
+                >
+                  🔍 {isDiscoveryOpen ? 'Cerrar Discovery' : 'Shadow IT Hunter'}
+                </button>
+                <button 
+                  className="btn-action" 
+                  onClick={() => setIsResourcesOpen(!isResourcesOpen)}
+                  style={{ background: isResourcesOpen ? 'var(--color-primary)' : 'rgba(255,255,255,0.05)', color: 'white', display: 'flex', alignItems: 'center', gap: '6px' }}
+                >
+                  📚 {isResourcesOpen ? 'Cerrar Recursos' : 'Centro de Recursos'}
+                </button>
+              </div>
             </header>
 
-            {/* CASE 1: ADDING TRANSFER WIZARD */}
+            {/* SECCIÓN 1: SHADOW IT HUNTER (CUESTIONARIO Y DISCOVERY) */}
+            {isDiscoveryOpen && (
+              <div className="card" style={{ marginBottom: '24px', border: '1px solid rgba(99, 102, 241, 0.2)', animation: 'slideDown 0.3s ease' }}>
+                <h3 style={{ margin: '0 0 10px 0', fontSize: '17px', fontWeight: 600, color: 'var(--color-primary)' }}>Shadow IT Hunter: Cuestionario de Descubrimiento</h3>
+                <p style={{ fontSize: '13px', color: 'var(--text-secondary)', marginBottom: '20px' }}>
+                  El Shadow IT Hunter te ayuda a identificar flujos de datos al extranjero no declarados. Despliega las categorías y selecciona los servicios que utiliza tu organización para importarlos a la matriz.
+                </p>
+
+                {/* Accordion Categories */}
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginBottom: '20px' }}>
+                  {/* Category 1: Infraestructura */}
+                  <div style={{ border: '1px solid var(--border-color)', borderRadius: '8px', overflow: 'hidden' }}>
+                    <div 
+                      onClick={() => setActiveAccordion(activeAccordion === 'nube' ? null : 'nube')}
+                      style={{ padding: '14px 18px', background: 'rgba(255,255,255,0.02)', cursor: 'pointer', display: 'flex', justifyContent: 'space-between', fontWeight: 600, fontSize: '14px' }}
+                    >
+                      <span>🌐 Acordeón 1: Infraestructura y Nube (Hosting / Datacenters)</span>
+                      <span>{activeAccordion === 'nube' ? '▲' : '▼'}</span>
+                    </div>
+                    {activeAccordion === 'nube' && (
+                      <div style={{ padding: '16px', background: 'rgba(0,0,0,0.1)', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                        {['aws', 'gcp', 'azure', 'digitalocean'].map(key => {
+                          const item = discoveryState[key];
+                          return (
+                            <div key={key} style={{ padding: '12px', background: 'rgba(255,255,255,0.02)', borderRadius: '6px' }}>
+                              <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', fontWeight: 600, fontSize: '13px' }}>
+                                <input 
+                                  type="checkbox" 
+                                  checked={item.used}
+                                  onChange={e => setDiscoveryState({
+                                    ...discoveryState,
+                                    [key]: { ...item, used: e.target.checked }
+                                  })}
+                                />
+                                {item.vendorName}
+                              </label>
+                              {item.used && (
+                                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginTop: '12px', paddingLeft: '22px' }}>
+                                  <div>
+                                    <label className="form-label" style={{ fontSize: '11px' }}>Nombre</label>
+                                    <input 
+                                      type="text" 
+                                      className="input-text" 
+                                      style={{ padding: '6px' }}
+                                      value={item.vendorName}
+                                      onChange={e => setDiscoveryState({
+                                        ...discoveryState,
+                                        [key]: { ...item, vendorName: e.target.value }
+                                      })}
+                                    />
+                                  </div>
+                                  <div>
+                                    <label className="form-label" style={{ fontSize: '11px' }}>País Servidores</label>
+                                    <select 
+                                      className="input-text" 
+                                      style={{ padding: '6px' }}
+                                      value={item.country}
+                                      onChange={e => setDiscoveryState({
+                                        ...discoveryState,
+                                        [key]: { ...item, country: e.target.value }
+                                      })}
+                                    >
+                                      {countries.map(c => (
+                                        <option key={c.country_code} value={c.country_code}>{c.country_name}</option>
+                                      ))}
+                                    </select>
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Category 2: Marketing */}
+                  <div style={{ border: '1px solid var(--border-color)', borderRadius: '8px', overflow: 'hidden' }}>
+                    <div 
+                      onClick={() => setActiveAccordion(activeAccordion === 'mkt' ? null : 'mkt')}
+                      style={{ padding: '14px 18px', background: 'rgba(255,255,255,0.02)', cursor: 'pointer', display: 'flex', justifyContent: 'space-between', fontWeight: 600, fontSize: '14px' }}
+                    >
+                      <span>✉️ Acordeón 2: CRM, Marketing y Ventas</span>
+                      <span>{activeAccordion === 'mkt' ? '▲' : '▼'}</span>
+                    </div>
+                    {activeAccordion === 'mkt' && (
+                      <div style={{ padding: '16px', background: 'rgba(0,0,0,0.1)', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                        {['hubspot', 'salesforce', 'mailchimp', 'activecampaign', 'sendgrid'].map(key => {
+                          const item = discoveryState[key];
+                          return (
+                            <div key={key} style={{ padding: '12px', background: 'rgba(255,255,255,0.02)', borderRadius: '6px' }}>
+                              <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', fontWeight: 600, fontSize: '13px' }}>
+                                <input 
+                                  type="checkbox" 
+                                  checked={item.used}
+                                  onChange={e => setDiscoveryState({
+                                    ...discoveryState,
+                                    [key]: { ...item, used: e.target.checked }
+                                  })}
+                                />
+                                {item.vendorName}
+                              </label>
+                              {item.used && (
+                                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginTop: '12px', paddingLeft: '22px' }}>
+                                  <div>
+                                    <label className="form-label" style={{ fontSize: '11px' }}>Nombre</label>
+                                    <input 
+                                      type="text" 
+                                      className="input-text" 
+                                      style={{ padding: '6px' }}
+                                      value={item.vendorName}
+                                      onChange={e => setDiscoveryState({
+                                        ...discoveryState,
+                                        [key]: { ...item, vendorName: e.target.value }
+                                      })}
+                                    />
+                                  </div>
+                                  <div>
+                                    <label className="form-label" style={{ fontSize: '11px' }}>País Servidores</label>
+                                    <select 
+                                      className="input-text" 
+                                      style={{ padding: '6px' }}
+                                      value={item.country}
+                                      onChange={e => setDiscoveryState({
+                                        ...discoveryState,
+                                        [key]: { ...item, country: e.target.value }
+                                      })}
+                                    >
+                                      {countries.map(c => (
+                                        <option key={c.country_code} value={c.country_code}>{c.country_name}</option>
+                                      ))}
+                                    </select>
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Category 3: Operaciones y RRHH */}
+                  <div style={{ border: '1px solid var(--border-color)', borderRadius: '8px', overflow: 'hidden' }}>
+                    <div 
+                      onClick={() => setActiveAccordion(activeAccordion === 'ops' ? null : 'ops')}
+                      style={{ padding: '14px 18px', background: 'rgba(255,255,255,0.02)', cursor: 'pointer', display: 'flex', justifyContent: 'space-between', fontWeight: 600, fontSize: '14px' }}
+                    >
+                      <span>🛠️ Acordeón 3: Operaciones y Recursos Humanos</span>
+                      <span>{activeAccordion === 'ops' ? '▲' : '▼'}</span>
+                    </div>
+                    {activeAccordion === 'ops' && (
+                      <div style={{ padding: '16px', background: 'rgba(0,0,0,0.1)', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                        {['google_workspace', 'office_365', 'zoom', 'workday', 'bamboohr'].map(key => {
+                          const item = discoveryState[key];
+                          return (
+                            <div key={key} style={{ padding: '12px', background: 'rgba(255,255,255,0.02)', borderRadius: '6px' }}>
+                              <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', fontWeight: 600, fontSize: '13px' }}>
+                                <input 
+                                  type="checkbox" 
+                                  checked={item.used}
+                                  onChange={e => setDiscoveryState({
+                                    ...discoveryState,
+                                    [key]: { ...item, used: e.target.checked }
+                                  })}
+                                />
+                                {item.vendorName}
+                              </label>
+                              {item.used && (
+                                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginTop: '12px', paddingLeft: '22px' }}>
+                                  <div>
+                                    <label className="form-label" style={{ fontSize: '11px' }}>Nombre</label>
+                                    <input 
+                                      type="text" 
+                                      className="input-text" 
+                                      style={{ padding: '6px' }}
+                                      value={item.vendorName}
+                                      onChange={e => setDiscoveryState({
+                                        ...discoveryState,
+                                        [key]: { ...item, vendorName: e.target.value }
+                                      })}
+                                    />
+                                  </div>
+                                  <div>
+                                    <label className="form-label" style={{ fontSize: '11px' }}>País Servidores</label>
+                                    <select 
+                                      className="input-text" 
+                                      style={{ padding: '6px' }}
+                                      value={item.country}
+                                      onChange={e => setDiscoveryState({
+                                        ...discoveryState,
+                                        [key]: { ...item, country: e.target.value }
+                                      })}
+                                    >
+                                      {countries.map(c => (
+                                        <option key={c.country_code} value={c.country_code}>{c.country_name}</option>
+                                      ))}
+                                    </select>
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Category 4: Analytics */}
+                  <div style={{ border: '1px solid var(--border-color)', borderRadius: '8px', overflow: 'hidden' }}>
+                    <div 
+                      onClick={() => setActiveAccordion(activeAccordion === 'analytics' ? null : 'analytics')}
+                      style={{ padding: '14px 18px', background: 'rgba(255,255,255,0.02)', cursor: 'pointer', display: 'flex', justifyContent: 'space-between', fontWeight: 600, fontSize: '14px' }}
+                    >
+                      <span>📊 Acordeón 4: Analítica Web y Chatbots</span>
+                      <span>{activeAccordion === 'analytics' ? '▲' : '▼'}</span>
+                    </div>
+                    {activeAccordion === 'analytics' && (
+                      <div style={{ padding: '16px', background: 'rgba(0,0,0,0.1)', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                        {['google_analytics', 'meta_pixel', 'hotjar', 'zendesk', 'intercom'].map(key => {
+                          const item = discoveryState[key];
+                          return (
+                            <div key={key} style={{ padding: '12px', background: 'rgba(255,255,255,0.02)', borderRadius: '6px' }}>
+                              <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', fontWeight: 600, fontSize: '13px' }}>
+                                <input 
+                                  type="checkbox" 
+                                  checked={item.used}
+                                  onChange={e => setDiscoveryState({
+                                    ...discoveryState,
+                                    [key]: { ...item, used: e.target.checked }
+                                  })}
+                                />
+                                {item.vendorName}
+                              </label>
+                              {item.used && (
+                                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginTop: '12px', paddingLeft: '22px' }}>
+                                  <div>
+                                    <label className="form-label" style={{ fontSize: '11px' }}>Nombre</label>
+                                    <input 
+                                      type="text" 
+                                      className="input-text" 
+                                      style={{ padding: '6px' }}
+                                      value={item.vendorName}
+                                      onChange={e => setDiscoveryState({
+                                        ...discoveryState,
+                                        [key]: { ...item, vendorName: e.target.value }
+                                      })}
+                                    />
+                                  </div>
+                                  <div>
+                                    <label className="form-label" style={{ fontSize: '11px' }}>País Servidores</label>
+                                    <select 
+                                      className="input-text" 
+                                      style={{ padding: '6px' }}
+                                      value={item.country}
+                                      onChange={e => setDiscoveryState({
+                                        ...discoveryState,
+                                        [key]: { ...item, country: e.target.value }
+                                      })}
+                                    >
+                                      {countries.map(c => (
+                                        <option key={c.country_code} value={c.country_code}>{c.country_name}</option>
+                                      ))}
+                                    </select>
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                <div style={{ textAlign: 'right' }}>
+                  <button className="btn-save" onClick={handleImportDiscovery}>
+                    Importar hallazgos del Cuestionario al Mapa de Transferencias
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* SECCIÓN 2: CENTRO DE RECURSOS Y GUÍAS OPERATIVAS */}
+            {isResourcesOpen && (
+              <div className="card" style={{ marginBottom: '24px', border: '1px solid rgba(16, 185, 129, 0.2)', animation: 'slideDown 0.3s ease' }}>
+                <h3 style={{ margin: '0 0 10px 0', fontSize: '17px', fontWeight: 600, color: 'var(--color-success)' }}>Centro de Guías y Recursos Operativos (Ley N° 21.719)</h3>
+                
+                {/* Accordions */}
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginBottom: '20px' }}>
+                  <details style={{ border: '1px solid var(--border-color)', borderRadius: '6px', padding: '12px' }}>
+                    <summary style={{ cursor: 'pointer', fontWeight: 600, fontSize: '13.5px' }}>🛡️ ¿Qué exige la Ley sobre Transferencias Internacionales (TID)?</summary>
+                    <p style={{ margin: '8px 0 0 0', fontSize: '13px', color: 'var(--text-secondary)', lineHeight: 1.5 }}>
+                      Los artículos 27 y 28 de la Ley N° 21.719 regulan el flujo de datos fuera de Chile. Solo se permite transferir datos a países que posean un nivel adecuado de protección legal, o bien, si se garantizan contractualmente los derechos de los titulares mediante la firma de Cláusulas Contractuales Tipo (SCC).
+                    </p>
+                  </details>
+
+                  <details style={{ border: '1px solid var(--border-color)', borderRadius: '6px', padding: '12px' }}>
+                    <summary style={{ cursor: 'pointer', fontWeight: 600, fontSize: '13.5px' }}>🌿 Árbol de Decisión Contractual (Licitud)</summary>
+                    <div style={{ margin: '8px 0 0 0', fontSize: '13px', color: 'var(--text-secondary)', padding: '10px', background: 'rgba(0,0,0,0.2)', borderRadius: '4px' }}>
+                      <code style={{ fontSize: '11px', whiteSpace: 'pre-wrap' }}>
+{`¿El país de servidores es considerado Seguro/Adecuado?
+  ├── SI ──> [CUMPLIMIENTO DIRECTO] Mecanismo: ADEQUATE_COUNTRY (ej. España, Alemania)
+  └── NO ──> ¿Se han firmado Cláusulas Tipo (SCC) con el proveedor?
+               ├── SI ──> [CONFORME CON CONTRATO] Mecanismo: STANDARD_CLAUSES + Firma
+               └── NO ──> [RIESGO CRÍTICO 🔴] El flujo viola el Art. 27.`}
+                      </code>
+                    </div>
+                  </details>
+
+                  <details style={{ border: '1px solid var(--border-color)', borderRadius: '6px', padding: '12px' }}>
+                    <summary style={{ cursor: 'pointer', fontWeight: 600, fontSize: '13.5px' }}>📈 Protocolo de Regularización Rápido en 3 Clics</summary>
+                    <ol style={{ margin: '8px 0 0 0', paddingLeft: '20px', fontSize: '13px', color: 'var(--text-secondary)', lineHeight: 1.6 }}>
+                      <li>Identifica proveedores no conformes en la tabla (semáforo en 🔴).</li>
+                      <li>Haz clic en <strong>Generar Anexo SCC / DPA</strong> en la fila del proveedor para redactar el contrato.</li>
+                      <li>Firma el anexo con tu proveedor, arrastra y suelta el PDF firmado sobre su celda en la tabla para marcarlo como 🟢 Conforme.</li>
+                    </ol>
+                  </details>
+                </div>
+
+                {/* Downloads Buttons */}
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px' }}>
+                  <button 
+                    className="btn-action"
+                    onClick={() => {
+                      // Generate CSV format questionnaire template
+                      const headers = ['Categoria', 'Proveedor de Muestra', 'Servidores (Muestra)', 'Datos (Separados por coma)'];
+                      const data = [
+                        ['Infraestructura', 'AWS', 'US', 'Datos Identificatorios,Financieros'],
+                        ['CRM/Marketing', 'HubSpot', 'US', 'Datos Identificatorios,Navegación'],
+                        ['Analitica', 'Google Analytics', 'US', 'Cookies/Navegación']
+                      ];
+                      const csvContent = [headers, ...data].map(e => e.map(val => `"${val}"`).join(",")).join("\n");
+                      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+                      const link = document.createElement("a");
+                      link.href = URL.createObjectURL(blob);
+                      link.setAttribute("download", "cuestionario_deteccion_transferencias.csv");
+                      document.body.appendChild(link);
+                      link.click();
+                      document.body.removeChild(link);
+                      showToast('Borrador de Cuestionario de Detección descargado.', 'success');
+                    }}
+                  >
+                    📥 Cuestionario de Detección (CSV)
+                  </button>
+                  <button 
+                    className="btn-action"
+                    onClick={() => {
+                      // Export Matrix to CSV
+                      const headers = ['Proveedor', 'Pais Destino', 'Categorias', 'Mecanismo Legal', 'Estado de Firma', 'Enlace Contrato'];
+                      const data = transfers.map(t => {
+                        const categories = Array.isArray(t.data_categories) 
+                          ? t.data_categories 
+                          : typeof t.data_categories === 'string'
+                            ? JSON.parse(t.data_categories)
+                            : [];
+                        return [
+                          t.vendor_name,
+                          t.destination_country,
+                          categories.join('; '),
+                          t.transfer_mechanism,
+                          t.signature_status,
+                          t.scc_document_url || 'N/A'
+                        ];
+                      });
+                      const csvContent = [headers, ...data].map(e => e.map(val => `"${val}"`).join(",")).join("\n");
+                      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+                      const link = document.createElement("a");
+                      link.href = URL.createObjectURL(blob);
+                      link.setAttribute("download", "matriz_transferencias_ley21719.csv");
+                      document.body.appendChild(link);
+                      link.click();
+                      document.body.removeChild(link);
+                      showToast('Matriz de Transferencias exportada con éxito.', 'success');
+                    }}
+                  >
+                    📊 Exportar Matriz (Excel / CSV)
+                  </button>
+                  <button 
+                    className="btn-action"
+                    onClick={() => {
+                      // Download blank scc markdown draft
+                      const blankScc = `# MODELO DE CLÁUSULAS CONTRACTUALES TIPO (SCC)\nPara regular la transferencia de datos conforme a la Ley N° 21.719 de Chile...\n`;
+                      const blob = new Blob([blankScc], { type: 'text/plain;charset=utf-8;' });
+                      const link = document.createElement("a");
+                      link.href = URL.createObjectURL(blob);
+                      link.setAttribute("download", "scc_modelo_draft_ley21719.md");
+                      document.body.appendChild(link);
+                      link.click();
+                      document.body.removeChild(link);
+                      showToast('Borrador contractual de Cláusulas Tipo descargado.', 'success');
+                    }}
+                  >
+                    ✍️ Descargar Plantilla SCC (Markdown)
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* WIZARD: AGREGAR FLUJO */}
             {isAddingTransfer ? (
               <div className="card">
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
@@ -1545,23 +2160,13 @@ export default function App() {
                 </div>
               </div>
             ) : (
-              /* CASE 4: DASHBOARD / TRANSFERS TABLE LIST */
+              /* CASE 4: MATRIZ DE TRANSACCIONES (TABLE VIEW) */
               <div className="card">
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', flexWrap: 'wrap', gap: '10px' }}>
-                  <h3 style={{ margin: 0, fontSize: '18px', fontWeight: 600 }}>Mapa de Flujos Transfronterizos y Proveedores</h3>
-                  <div style={{ display: 'flex', gap: '8px' }}>
-                    <button className="btn-action" onClick={() => { 
-                      setIsGeneratingScc(true);
-                      setSccExporterName(config?.company_name || '');
-                      setSccExporterRut('');
-                      setSccExporterAddress(config?.policy_content.representative || '');
-                    }}>
-                      Generador de Cláusulas (SCC)
-                    </button>
-                    <button className="btn-save" onClick={() => { setIsAddingTransfer(true); setWizardStep(1); }}>
-                      Registrar Flujo Internacional
-                    </button>
-                  </div>
+                  <h3 style={{ margin: 0, fontSize: '18px', fontWeight: 600 }}>Matriz de Proveedores y Mapeo TID</h3>
+                  <button className="btn-save" onClick={() => { setIsAddingTransfer(true); setWizardStep(1); }}>
+                    + Registrar Flujo Manual
+                  </button>
                 </div>
 
                 {transfers.length > 0 ? (
@@ -1572,8 +2177,8 @@ export default function App() {
                           <th>Proveedor</th>
                           <th>País Destino</th>
                           <th>Categorías de Datos</th>
-                          <th>Base Legal / Mecanismo</th>
-                          <th>SCC Firmado</th>
+                          <th>Mecanismo Legal</th>
+                          <th>Estado de Firma</th>
                           <th>Riesgo Legal</th>
                           <th>Acciones</th>
                         </tr>
@@ -1586,50 +2191,275 @@ export default function App() {
                               ? JSON.parse(t.data_categories)
                               : [];
                           const risk = getRiskStatus(t, countries);
+                          const isEditing = editingRowId === t.id;
+
                           return (
-                            <tr key={t.id}>
-                              <td><strong>{t.vendor_name}</strong></td>
-                              <td>{t.destination_country}</td>
+                            <tr key={t.id} style={{ background: isEditing ? 'rgba(99,102,241,0.05)' : 'transparent' }}>
+                              {/* VENDOR NAME */}
                               <td>
-                                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
-                                  {categories.map((cat: string) => (
-                                    <span key={cat} className="badge badge-leve" style={{ fontSize: '10px' }}>{cat}</span>
-                                  ))}
-                                </div>
-                              </td>
-                              <td>
-                                <code style={{ fontSize: '11px' }}>{t.transfer_mechanism}</code>
-                              </td>
-                              <td>
-                                {t.transfer_mechanism === 'STANDARD_CLAUSES' ? (
-                                  t.has_signed_scc ? (
-                                    t.scc_document_url ? (
-                                      <a href={t.scc_document_url} target="_blank" rel="noreferrer" style={{ color: 'var(--color-primary)', display: 'flex', alignItems: 'center', gap: '4px', textDecoration: 'underline' }}>
-                                        Sí 🔗
-                                      </a>
-                                    ) : (
-                                      <span style={{ color: 'var(--color-success)' }}>Sí</span>
-                                    )
-                                  ) : (
-                                    <span style={{ color: 'var(--color-danger)' }}>No</span>
-                                  )
+                                {isEditing ? (
+                                  <input 
+                                    type="text" 
+                                    className="input-text" 
+                                    style={{ padding: '4px', fontSize: '12px' }}
+                                    value={editFields.vendor_name}
+                                    onChange={e => setEditFields({ ...editFields, vendor_name: e.target.value })}
+                                  />
                                 ) : (
-                                  <span style={{ color: 'var(--text-secondary)' }}>N/A</span>
+                                  <span 
+                                    style={{ cursor: 'pointer', borderBottom: '1px dotted rgba(255,255,255,0.3)' }}
+                                    onClick={() => { setEditingRowId(t.id); setEditFields({ ...t, data_categories: categories }); }}
+                                    title="Haz clic para editar"
+                                  >
+                                    <strong>{t.vendor_name}</strong>
+                                  </span>
                                 )}
                               </td>
+
+                              {/* COUNTRY */}
+                              <td>
+                                {isEditing ? (
+                                  <select 
+                                    className="input-text" 
+                                    style={{ padding: '4px', fontSize: '12px', width: '120px' }}
+                                    value={editFields.destination_country}
+                                    onChange={e => {
+                                      const countrySelected = e.target.value;
+                                      const selectedObj = countries.find(c => c.country_code === countrySelected || c.country_name === countrySelected);
+                                      const isAdequate = selectedObj ? selectedObj.is_adequate : false;
+                                      
+                                      // Reactive recommendation
+                                      let recMechanism = editFields.transfer_mechanism;
+                                      if (isAdequate) {
+                                        recMechanism = 'ADEQUATE_COUNTRY';
+                                      } else if (editFields.transfer_mechanism === 'ADEQUATE_COUNTRY') {
+                                        recMechanism = 'STANDARD_CLAUSES';
+                                      }
+
+                                      setEditFields({ 
+                                        ...editFields, 
+                                        destination_country: countrySelected,
+                                        transfer_mechanism: recMechanism
+                                      });
+                                    }}
+                                  >
+                                    {countries.map(c => (
+                                      <option key={c.country_code} value={c.country_code}>{c.country_name}</option>
+                                    ))}
+                                  </select>
+                                ) : (
+                                  <span>{t.destination_country}</span>
+                                )}
+                              </td>
+
+                              {/* CATEGORIES */}
+                              <td>
+                                {isEditing ? (
+                                  <div style={{ display: 'flex', flexDirection: 'column', gap: '3px', maxHeight: '100px', overflowY: 'auto', padding: '4px', border: '1px solid var(--border-color)', borderRadius: '4px' }}>
+                                    {['Nombres / Identidad', 'Correo electrónico', 'Dirección física', 'Teléfono', 'Datos de navegación (cookies/IP)', 'Datos financieros/tarjetas'].map(cat => {
+                                      const isSel = editFields.data_categories?.includes(cat);
+                                      return (
+                                        <label key={cat} style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '11px', cursor: 'pointer' }}>
+                                          <input 
+                                            type="checkbox" 
+                                            checked={isSel} 
+                                            onChange={() => {
+                                              const updated = isSel 
+                                                ? editFields.data_categories.filter((c: string) => c !== cat)
+                                                : [...(editFields.data_categories || []), cat];
+                                              setEditFields({ ...editFields, data_categories: updated });
+                                            }}
+                                          />
+                                          <span>{cat}</span>
+                                        </label>
+                                      );
+                                    })}
+                                  </div>
+                                ) : (
+                                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
+                                    {categories.map((cat: string) => (
+                                      <span key={cat} className="badge badge-leve" style={{ fontSize: '10px' }}>{cat}</span>
+                                    ))}
+                                  </div>
+                                )}
+                              </td>
+
+                              {/* MECHANISM */}
+                              <td>
+                                {isEditing ? (
+                                  <select 
+                                    className="input-text" 
+                                    style={{ padding: '4px', fontSize: '12px', width: '130px' }}
+                                    value={editFields.transfer_mechanism}
+                                    onChange={e => setEditFields({ ...editFields, transfer_mechanism: e.target.value })}
+                                  >
+                                    <option value="STANDARD_CLAUSES">Cláusulas Tipo (SCC)</option>
+                                    <option value="ADEQUATE_COUNTRY">País Adecuado</option>
+                                    <option value="BCR">Normas BCR</option>
+                                    <option value="CONSENT_EXCEPTIONAL">Excepción Consent.</option>
+                                    <option value="OTHER">Otro Mecanismo</option>
+                                  </select>
+                                ) : (
+                                  <code style={{ fontSize: '11px' }}>{t.transfer_mechanism}</code>
+                                )}
+                              </td>
+
+                              {/* SIGNATURE STATUS */}
+                              <td>
+                                {isEditing ? (
+                                  <select 
+                                    className="input-text" 
+                                    style={{ padding: '4px', fontSize: '12px', width: '110px' }}
+                                    value={editFields.signature_status}
+                                    onChange={e => {
+                                      const statusVal = e.target.value;
+                                      setEditFields({ 
+                                        ...editFields, 
+                                        signature_status: statusVal,
+                                        has_signed_scc: statusVal === 'SIGNED'
+                                      });
+                                    }}
+                                  >
+                                    <option value="PENDING">Pendiente</option>
+                                    <option value="SENT">Enviado</option>
+                                    <option value="SIGNED">Firmado/Conforme</option>
+                                  </select>
+                                ) : (
+                                  <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                                    {(() => {
+                                      const status = t.signature_status || 'PENDING';
+                                      if (status === 'SIGNED') {
+                                        return (
+                                          <span className="badge badge-leve" style={{ color: 'var(--color-success)', background: 'rgba(16,185,129,0.1)' }}>
+                                            🟢 Firmado/Conforme
+                                          </span>
+                                        );
+                                      } else if (status === 'SENT') {
+                                        return (
+                                          <span className="badge badge-leve" style={{ color: 'var(--color-warning)', background: 'rgba(245,158,11,0.1)' }}>
+                                            🟡 Enviado
+                                          </span>
+                                        );
+                                      } else {
+                                        return (
+                                          <span className="badge badge-leve" style={{ color: 'var(--color-danger)', background: 'rgba(239,68,68,0.1)' }}>
+                                            🔴 Pendiente
+                                          </span>
+                                        );
+                                      }
+                                    })()}
+
+                                    {/* Mock file drop zone (only shown if not signed yet) */}
+                                    {t.signature_status !== 'SIGNED' && (
+                                      <div 
+                                        className={`drop-zone-mini ${isDragging === t.id ? 'dragging' : ''}`}
+                                        onDragOver={e => { e.preventDefault(); setIsDragging(t.id); }}
+                                        onDragLeave={() => setIsDragging(null)}
+                                        onDrop={e => {
+                                          e.preventDefault();
+                                          setIsDragging(null);
+                                          const file = e.dataTransfer.files[0];
+                                          if (file) handleFileDrop(t.id, file.name);
+                                        }}
+                                        style={{
+                                          border: '1px dashed rgba(255,255,255,0.2)',
+                                          padding: '4px 6px',
+                                          borderRadius: '4px',
+                                          fontSize: '10px',
+                                          textAlign: 'center',
+                                          cursor: 'pointer',
+                                          background: isDragging === t.id ? 'rgba(99, 102, 241, 0.1)' : 'transparent',
+                                          transition: 'all 0.2s ease'
+                                        }}
+                                        onClick={() => {
+                                          const fileInput = document.createElement('input');
+                                          fileInput.type = 'file';
+                                          fileInput.accept = '.pdf';
+                                          fileInput.onchange = (e: any) => {
+                                            const file = e.target.files[0];
+                                            if (file) handleFileDrop(t.id, file.name);
+                                          };
+                                          fileInput.click();
+                                        }}
+                                      >
+                                        📁 Subir PDF firmado
+                                      </div>
+                                    )}
+
+                                    {t.scc_document_url && (
+                                      <a href={t.scc_document_url} target="_blank" rel="noreferrer" style={{ fontSize: '11px', color: 'var(--color-primary)', textDecoration: 'underline', marginTop: '2px' }}>
+                                        Ver Evidencia Contrato 🔗
+                                      </a>
+                                    )}
+                                  </div>
+                                )}
+                              </td>
+
+                              {/* DYNAMIC RISK LIGHT */}
                               <td>
                                 <span className={`badge ${risk.badgeClass}`} style={{ fontSize: '11px' }}>
                                   {risk.text}
                                 </span>
+                                {/* suggestion pop-up helper if high risk */}
+                                {risk.status.includes('No Conforme') && (
+                                  <div style={{ fontSize: '9.5px', color: 'var(--color-danger)', marginTop: '4px', maxWidth: '140px', lineHeight: 1.2 }}>
+                                    ⚠️ Requiere firmar Cláusulas Tipo (SCC) para operar lícitamente.
+                                  </div>
+                                )}
                               </td>
+
+                              {/* ACTIONS */}
                               <td>
-                                <button 
-                                  className="btn-action" 
-                                  onClick={() => handleDeleteTransfer(t.id)}
-                                  style={{ padding: '4px 8px', background: 'rgba(239, 68, 68, 0.1)', color: 'var(--color-danger)', border: 'none' }}
-                                >
-                                  Eliminar
-                                </button>
+                                {isEditing ? (
+                                  <div style={{ display: 'flex', gap: '4px' }}>
+                                    <button 
+                                      className="btn-save" 
+                                      style={{ padding: '4px 8px', fontSize: '11px' }}
+                                      onClick={() => handleSaveInlineEdit(t.id, editFields)}
+                                    >
+                                      Guardar
+                                    </button>
+                                    <button 
+                                      className="btn-action" 
+                                      style={{ padding: '4px 8px', fontSize: '11px' }}
+                                      onClick={() => setEditingRowId(null)}
+                                    >
+                                      X
+                                    </button>
+                                  </div>
+                                ) : (
+                                  <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                                    <button 
+                                      className="btn-action" 
+                                      style={{ padding: '4px 8px', fontSize: '11px' }}
+                                      onClick={() => { setEditingRowId(t.id); setEditFields({ ...t, data_categories: categories }); }}
+                                    >
+                                      ✏️ Editar
+                                    </button>
+                                    <button 
+                                      className="btn-action" 
+                                      style={{ padding: '4px 8px', fontSize: '11px', background: 'rgba(99,102,241,0.1)', color: 'var(--color-primary)' }}
+                                      onClick={() => {
+                                        setSccImporterName(t.vendor_name);
+                                        const countryObj = countries.find(c => c.country_code === t.destination_country || c.country_name === t.destination_country);
+                                        setDestCountry(countryObj ? countryObj.country_name : 'Estados Unidos');
+                                        setSelectedCategories(categories);
+                                        setSccExporterName(config?.company_name || '');
+                                        setSccExporterAddress(config?.policy_content.representative || '');
+                                        setIsGeneratingScc(true);
+                                      }}
+                                    >
+                                      📜 Crear SCC
+                                    </button>
+                                    <button 
+                                      className="btn-action" 
+                                      onClick={() => handleDeleteTransfer(t.id)}
+                                      style={{ padding: '4px 8px', fontSize: '11px', background: 'rgba(239, 68, 68, 0.1)', color: 'var(--color-danger)', border: 'none' }}
+                                    >
+                                      Eliminar
+                                    </button>
+                                  </div>
+                                )}
                               </td>
                             </tr>
                           );
@@ -1644,7 +2474,7 @@ export default function App() {
                       No se han registrado flujos transfronterizos.
                     </p>
                     <p style={{ margin: 0 }}>
-                      Registra los servicios extranjeros (ej. hosting, CRM, analítica) para evaluar su adecuación con la ley.
+                      Registra los servicios extranjeros o usa la herramienta <strong>Shadow IT Hunter</strong> arriba para descubrir y cargar proveedores.
                     </p>
                   </div>
                 )}

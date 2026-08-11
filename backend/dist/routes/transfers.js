@@ -39,15 +39,15 @@ router.get('/', adminCors, async (req, res) => {
 });
 // POST /api/transfers - Register a new transfer flow
 router.post('/', adminCors, async (req, res) => {
-    const { domain, vendor_name, destination_country, data_categories, transfer_mechanism, has_signed_scc, scc_document_url } = req.body;
+    const { domain, vendor_name, destination_country, data_categories, transfer_mechanism, has_signed_scc, scc_document_url, signature_status } = req.body;
     if (!domain || !vendor_name || !destination_country || !transfer_mechanism || !Array.isArray(data_categories)) {
         return res.status(400).json({ error: 'Campos requeridos faltantes o con formato inválido.' });
     }
     const db = getDb();
     try {
         const result = await db.query(`INSERT INTO international_transfers 
-       (domain, vendor_name, destination_country, data_categories, transfer_mechanism, has_signed_scc, scc_document_url)
-       VALUES ($1, $2, $3, $4, $5, $6, $7)
+       (domain, vendor_name, destination_country, data_categories, transfer_mechanism, has_signed_scc, scc_document_url, signature_status)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
        RETURNING *`, [
             domain,
             vendor_name,
@@ -55,7 +55,8 @@ router.post('/', adminCors, async (req, res) => {
             JSON.stringify(data_categories),
             transfer_mechanism,
             has_signed_scc === true,
-            scc_document_url || null
+            scc_document_url || null,
+            signature_status || 'PENDING'
         ]);
         res.status(201).json(result.rows[0]);
     }
@@ -67,7 +68,7 @@ router.post('/', adminCors, async (req, res) => {
 // PUT /api/transfers/:id - Update transfer mechanism or documents
 router.put('/:id', adminCors, async (req, res) => {
     const { id } = req.params;
-    const { vendor_name, destination_country, data_categories, transfer_mechanism, has_signed_scc, scc_document_url } = req.body;
+    const { vendor_name, destination_country, data_categories, transfer_mechanism, has_signed_scc, scc_document_url, signature_status } = req.body;
     const db = getDb();
     try {
         // Check if transfer exists
@@ -82,6 +83,7 @@ router.put('/:id', adminCors, async (req, res) => {
            transfer_mechanism = COALESCE($5, transfer_mechanism),
            has_signed_scc = COALESCE($6, has_signed_scc),
            scc_document_url = COALESCE($7, scc_document_url),
+           signature_status = COALESCE($8, signature_status),
            updated_at = CURRENT_TIMESTAMP
        WHERE id = $1
        RETURNING *`, [
@@ -91,7 +93,8 @@ router.put('/:id', adminCors, async (req, res) => {
             data_categories ? JSON.stringify(data_categories) : null,
             transfer_mechanism,
             has_signed_scc !== undefined ? has_signed_scc === true : null,
-            scc_document_url
+            scc_document_url,
+            signature_status
         ]);
         res.json(result.rows[0]);
     }

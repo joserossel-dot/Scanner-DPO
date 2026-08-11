@@ -146,10 +146,17 @@ export async function initDb() {
       data_categories JSONB NOT NULL,
       transfer_mechanism VARCHAR(50) NOT NULL,
       has_signed_scc BOOLEAN NOT NULL DEFAULT FALSE,
+      signature_status VARCHAR(50) NOT NULL DEFAULT 'PENDING',
       scc_document_url VARCHAR(500),
       created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
       updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
     )
+  `);
+
+  // Alter table to add signature_status if table already exists in production
+  await pool.query(`
+    ALTER TABLE international_transfers 
+    ADD COLUMN IF NOT EXISTS signature_status VARCHAR(50) NOT NULL DEFAULT 'PENDING'
   `);
 
   console.log('✅ Tablas y esquema de PostgreSQL validados/creados.');
