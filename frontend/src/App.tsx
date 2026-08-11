@@ -210,6 +210,13 @@ export default function App() {
   const [titularsNoticeText, setTitularsNoticeText] = useState('');
   const [isGeneratingNotice, setIsGeneratingNotice] = useState(false);
 
+  // Proactive Vulnerability Scanner State
+  const [isScanningVulnerabilities, setIsScanningVulnerabilities] = useState(false);
+  const [scanVulnerabilitiesResult, setScanVulnerabilitiesResult] = useState<any>(null);
+  const [weeklyCronEnabled, setWeeklyCronEnabled] = useState(() => {
+    return localStorage.getItem('weekly_security_cron') === 'true';
+  });
+
   // Load basic statistics on mount
   useEffect(() => {
     fetchLatestScan();
@@ -495,6 +502,43 @@ export default function App() {
       console.error(e);
       showToast('Error al conectar con la API de generación.', 'warning');
     }
+  };
+
+  const handleScanVulnerabilities = async () => {
+    setIsScanningVulnerabilities(true);
+    try {
+      const res = await fetch(`${API_BASE}/api/incidents/scan-vulnerabilities`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ domain: 'localhost:3000' })
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setScanVulnerabilitiesResult(data.scanResult);
+        showToast(`Escaneo de vulnerabilidades finalizado. Score: ${data.scanResult.score}%`, 'success');
+        fetchIncidents(); // reload to get new automated alerts
+      } else {
+        showToast('Error al ejecutar el escaneo de vulnerabilidades.', 'warning');
+      }
+    } catch (e) {
+      console.error(e);
+      showToast('Error de comunicación con la API de escaneo.', 'warning');
+    } finally {
+      setIsScanningVulnerabilities(false);
+    }
+  };
+
+  const handlePromoteVulnerability = (vul: any) => {
+    setIncidentTitle(`Brecha Potencial: ${vul.title}`);
+    setIncidentType('UNAUTHORIZED_ACCESS');
+    setAffectedCategories(['Datos de Identidad (RUT, Claves de Acceso)']);
+    setApproxAffectedTitulars(0);
+    setDescriptionAndEffects(`Mitigación preventiva de vulnerabilidad detectada: ${vul.description}`);
+    setMitigationMeasures(vul.recommendation);
+    setIncidentStatus('DETECTED');
+    setIsAddingIncident(true);
+    setWizardIncidentStep(1);
+    showToast('Wizard de incidente pre-llenado con los datos de la alerta.', 'info');
   };
 
   const fetchTransfers = async () => {
@@ -2684,37 +2728,142 @@ export default function App() {
                 <p className="page-subtitle">Monitoreo legal y bitácora de vulneraciones de seguridad de la información (Art. 14 sexies de la Ley N° 21.719).</p>
               </div>
               {!isAddingIncident && (
-                <button 
-                  className="btn-save" 
-                  style={{ display: 'flex', alignItems: 'center', gap: '8px' }}
-                  onClick={() => setIsAddingIncident(true)}
-                >
-                  <AlertTriangle size={16} />
-                  <span>Reportar Brecha / Incidente</span>
-                </button>
-              )}
+                 <div style={{ display: 'flex', gap: '10px' }}>
+                   <button 
+                     className="btn-action" 
+                     style={{ display: 'flex', alignItems: 'center', gap: '8px', background: 'rgba(99, 102, 241, 0.1)', color: 'var(--color-primary)', border: '1px solid var(--color-primary)' }}
+                     onClick={handleScanVulnerabilities}
+                     disabled={isScanningVulnerabilities}
+                   >
+                     {isScanningVulnerabilities ? (
+                       <>
+                         <RefreshCw className="loader" size={16} />
+                         <span>Analizando Seguridad...</span>
+                       </>
+                     ) : (
+                       <>
+                         <Shield size={16} />
+                         <span>Auditar Vulnerabilidades</span>
+                       </>
+                     )}
+                   </button>
+
+                   <button 
+                     className="btn-save" 
+                     style={{ display: 'flex', alignItems: 'center', gap: '8px' }}
+                     onClick={() => setIsAddingIncident(true)}
+                   >
+                     <AlertTriangle size={16} />
+                     <span>Reportar Brecha / Incidente</span>
+                   </button>
+                 </div>
+               )}
             </header>
 
             {/* KPI Cards (Bitácora Principal) */}
             {!isAddingIncident && (
-              <div className="stats-row" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '20px', marginBottom: '24px' }}>
-                <div className="card text-center" style={{ padding: '16px 20px' }}>
-                  <p style={{ margin: 0, fontSize: '12px', color: 'var(--text-secondary)' }}>Total Brechas Registradas</p>
-                  <h3 style={{ margin: '8px 0 0 0', fontSize: '32px', fontWeight: 700, color: 'var(--color-primary)' }}>{incidents.length}</h3>
+              <>
+                <div className="stats-row" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '20px', marginBottom: '24px' }}>
+                  <div className="card text-center" style={{ padding: '16px 20px' }}>
+                    <p style={{ margin: 0, fontSize: '12px', color: 'var(--text-secondary)' }}>Total Brechas Registradas</p>
+                    <h3 style={{ margin: '8px 0 0 0', fontSize: '32px', fontWeight: 700, color: 'var(--color-primary)' }}>{incidents.length}</h3>
+                  </div>
+                  <div className="card text-center" style={{ padding: '16px 20px' }}>
+                    <p style={{ margin: 0, fontSize: '12px', color: 'var(--text-secondary)' }}>Casos Activos (Investigación)</p>
+                    <h3 style={{ margin: '8px 0 0 0', fontSize: '32px', fontWeight: 700, color: 'var(--color-warning)' }}>
+                      {incidents.filter(i => ['DETECTED', 'UNDER_ANALYSIS'].includes(i.status)).length}
+                    </h3>
+                  </div>
+                  <div className="card text-center" style={{ padding: '16px 20px' }}>
+                    <p style={{ margin: 0, fontSize: '12px', color: 'var(--text-secondary)' }}>Casos Mitigados y Cerrados</p>
+                    <h3 style={{ margin: '8px 0 0 0', fontSize: '32px', fontWeight: 700, color: 'var(--color-success)' }}>
+                      {incidents.filter(i => ['MITIGATED', 'REPORTED_AND_CLOSED'].includes(i.status)).length}
+                    </h3>
+                  </div>
                 </div>
-                <div className="card text-center" style={{ padding: '16px 20px' }}>
-                  <p style={{ margin: 0, fontSize: '12px', color: 'var(--text-secondary)' }}>Casos Activos (Investigación)</p>
-                  <h3 style={{ margin: '8px 0 0 0', fontSize: '32px', fontWeight: 700, color: 'var(--color-warning)' }}>
-                    {incidents.filter(i => ['DETECTED', 'UNDER_ANALYSIS'].includes(i.status)).length}
-                  </h3>
+
+                {/* Programador de Escaneos Automáticos */}
+                <div className="card" style={{ marginBottom: '24px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '14px 20px', background: 'rgba(255,255,255,0.01)', border: '1px dashed var(--border-color)' }}>
+                  <div>
+                    <span style={{ fontWeight: 600, fontSize: '14px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                      ⏰ Auditoría Semanal Automática de Brechas
+                    </span>
+                    <p style={{ margin: '2px 0 0 0', fontSize: '12px', color: 'var(--text-secondary)' }}>
+                      Ejecuta escaneos proactivos automáticos de puertos y cabeceras los lunes a las 08:00 AM y envía reportes consolidados al DPO.
+                    </p>
+                  </div>
+                  <label className="switch" style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}>
+                    <input 
+                      type="checkbox" 
+                      checked={weeklyCronEnabled}
+                      onChange={e => {
+                        const val = e.target.checked;
+                        setWeeklyCronEnabled(val);
+                        localStorage.setItem('weekly_security_cron', String(val));
+                        showToast(val ? 'Auditoría semanal programada con éxito.' : 'Auditoría automática desactivada.', 'info');
+                      }}
+                    />
+                    <span className="slider round"></span>
+                    <span style={{ fontSize: '13px', fontWeight: 600, color: weeklyCronEnabled ? 'var(--color-success)' : 'var(--text-secondary)' }}>
+                      {weeklyCronEnabled ? 'Activo' : 'Inactivo'}
+                    </span>
+                  </label>
                 </div>
-                <div className="card text-center" style={{ padding: '16px 20px' }}>
-                  <p style={{ margin: 0, fontSize: '12px', color: 'var(--text-secondary)' }}>Casos Mitigados y Cerrados</p>
-                  <h3 style={{ margin: '8px 0 0 0', fontSize: '32px', fontWeight: 700, color: 'var(--color-success)' }}>
-                    {incidents.filter(i => ['MITIGATED', 'REPORTED_AND_CLOSED'].includes(i.status)).length}
-                  </h3>
-                </div>
-              </div>
+
+                {/* Amenazas Potenciales Detectadas */}
+                {scanVulnerabilitiesResult && (
+                  <div className="card" style={{ marginBottom: '24px', border: '1px solid rgba(239, 68, 68, 0.2)', background: 'rgba(239, 68, 68, 0.01)' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid var(--border-color)', paddingBottom: '10px', marginBottom: '15px' }}>
+                      <h3 style={{ margin: 0, fontSize: '15px', fontWeight: 600, color: 'var(--color-danger)', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                        🚨 Amenazas y Brechas Potenciales Detectadas (Score: {scanVulnerabilitiesResult.score}%)
+                      </h3>
+                      <button className="btn-action" style={{ fontSize: '11px', padding: '2px 8px' }} onClick={() => setScanVulnerabilitiesResult(null)}>
+                        Descartar Vista
+                      </button>
+                    </div>
+
+                    {scanVulnerabilitiesResult.vulnerabilities.length > 0 ? (
+                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '16px' }}>
+                        {scanVulnerabilitiesResult.vulnerabilities.map((vul: any) => (
+                          <div key={vul.id} style={{ 
+                            border: `1px solid ${vul.severity === 'CRITICAL' ? 'rgba(239, 68, 68, 0.3)' : vul.severity === 'HIGH' ? 'rgba(245, 158, 11, 0.3)' : 'rgba(234, 179, 8, 0.3)'}`,
+                            borderRadius: '8px',
+                            padding: '12px 14px',
+                            background: 'rgba(0, 0, 0, 0.15)',
+                            display: 'flex',
+                            flexDirection: 'column',
+                            justifyContent: 'space-between',
+                            gap: '10px'
+                          }}>
+                            <div>
+                              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+                                <span style={{ fontWeight: 600, fontSize: '13px' }}>{vul.title}</span>
+                                <span className={`badge ${vul.severity === 'CRITICAL' ? 'badge-gravisima' : vul.severity === 'HIGH' ? 'badge-grave' : 'badge-leve'}`} style={{ fontSize: '9px', textTransform: 'uppercase' }}>
+                                  {vul.severity}
+                                </span>
+                              </div>
+                              <p style={{ margin: 0, fontSize: '11.5px', color: 'var(--text-secondary)', lineHeight: 1.4 }}>{vul.description}</p>
+                              <p style={{ margin: '6px 0 0 0', fontSize: '11px', color: 'var(--color-primary)' }}><strong>Recomendación:</strong> {vul.recommendation}</p>
+                            </div>
+                            
+                            <button 
+                              className="btn-save" 
+                              style={{ width: '100%', fontSize: '10.5px', padding: '6px 0', background: 'rgba(99, 102, 241, 0.15)', border: '1px solid var(--color-primary)', color: 'white', cursor: 'pointer' }}
+                              onClick={() => handlePromoteVulnerability(vul)}
+                            >
+                              🛡️ Convertir en Incidente Oficial
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <p style={{ margin: 0, fontSize: '13px', color: 'var(--color-success)', fontWeight: 600 }}>
+                        🟢 ¡Excelente! No se detectaron vulnerabilidades críticas ni puertos expuestos en este escaneo.
+                      </p>
+                    )}
+                  </div>
+                )}
+              </>
             )}
 
             {/* WIZARD FORM: REPORT AN INCIDENT */}

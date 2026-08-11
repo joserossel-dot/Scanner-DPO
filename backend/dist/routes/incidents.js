@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import cors from 'cors';
 import { getDb } from '../database/db.js';
+import { runSecurityScan } from '../services/securityScanner.js';
 const router = Router();
 // CORS setup matching dashboard origins
 const adminCors = cors((req, callback) => {
@@ -203,6 +204,54 @@ Atentamente,
     catch (error) {
         console.error('Error generating notices:', error.message);
         res.status(500).json({ error: 'Error al redactar los comunicados de brecha.' });
+    }
+});
+// POST /api/incidents/scan-vulnerabilities - Proactive vulnerability scanning
+router.post('/scan-vulnerabilities', adminCors, async (req, res) => {
+    const { domain } = req.body;
+    if (!domain) {
+        return res.status(400).json({ error: 'Falta parámetro domain' });
+    }
+    const db = getDb();
+    try {
+        const scanResult = await runSecurityScan(domain);
+        const incidentsCreated = [];
+        // Filter Critical and High severity warnings to auto-escalate
+        const targetVulnerabilities = scanResult.vulnerabilities.filter(v => v.severity === 'CRITICAL' || v.severity === 'HIGH');
+        for (const vul of targetVulnerabilities) {
+            // 1. Prevent duplicate active alert incidents
+            const dupCheck = await db.query(`SELECT id FROM security_incidents 
+         WHERE domain = $1 AND incident_title = $2 AND status != 'REPORTED_AND_CLOSED'`, [domain, `[ALERTA PREVENTIVA] ${vul.title}`]);
+            if (dupCheck.rowCount === 0) {
+                // 2. Insert alert as a preventive incident in database
+                const insertRes = await db.query(`INSERT INTO security_incidents 
+           (domain, incident_title, incident_date, incident_type, affected_data_categories, 
+            approx_affected_titulars, description_and_effects, mitigation_measures, 
+            requires_agency_notification, requires_titulars_notification, status)
+           VALUES ($1, $2, CURRENT_TIMESTAMP, $3, $4, $5, $6, $7, $8, $9, $10)
+           RETURNING *`, [
+                    domain,
+                    `[ALERTA PREVENTIVA] ${vul.title}`,
+                    'PREVENTIVE_ALERT',
+                    JSON.stringify(['Datos Generales']),
+                    0,
+                    vul.description,
+                    vul.recommendation,
+                    false,
+                    false,
+                    'DETECTED'
+                ]);
+                incidentsCreated.push(insertRes.rows[0]);
+            }
+        }
+        res.json({
+            scanResult,
+            incidentsCreated
+        });
+    }
+    catch (error) {
+        console.error('Error running security scan:', error.message);
+        res.status(500).json({ error: 'Error al realizar el escaneo proactivo de seguridad.' });
     }
 });
 export default router;
