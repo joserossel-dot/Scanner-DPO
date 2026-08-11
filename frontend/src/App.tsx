@@ -3,6 +3,7 @@ import { BrowserRouter, Routes, Route, Link, useLocation, useNavigate } from 're
 import LandingPage from './pages/LandingPage';
 import DiagnosticQuestionnaire from './pages/dashboard/components/DiagnosticQuestionnaire';
 import DiagnosisResultsView from './pages/dashboard/DiagnosisResultsView';
+import ContractBuilderView from './pages/dashboard/components/ContractBuilderView';
 import { 
   Shield, 
   Activity, 
@@ -118,7 +119,7 @@ export function Dashboard() {
   const navigate = useNavigate();
 
   const [activeTab, setActiveTab] = useState<'scanner' | 'diagnosis' | 'remediation'>('scanner');
-  const [remediationSubTab, setRemediationSubTab] = useState<'cmp' | 'arco' | 'transfers' | 'policies'>('cmp');
+  const [remediationSubTab, setRemediationSubTab] = useState<'cmp' | 'arco' | 'transfers' | 'policies' | 'contracts'>('cmp');
   
   // Diagnosis State (Capa 2)
   const [diagnosisData, setDiagnosisData] = useState<any>(null);
@@ -1425,6 +1426,17 @@ Firmas autorizadas:
           >
             📄 Políticas & Oficios
           </button>
+          <button 
+            className="btn-action" 
+            style={{ 
+              background: remediationSubTab === 'contracts' ? 'var(--color-primary)' : 'rgba(255,255,255,0.01)',
+              color: remediationSubTab === 'contracts' ? 'white' : 'var(--text-secondary)',
+              border: remediationSubTab === 'contracts' ? '1px solid var(--color-primary)' : '1px solid var(--border-color)'
+            }}
+            onClick={() => setRemediationSubTab('contracts')}
+          >
+            📝 Contratos DPA/SCC
+          </button>
         </div>
 
         {/* Sub-tab: CMP & Consent Logs */}
@@ -1828,6 +1840,11 @@ Firmas autorizadas:
               </div>
             )}
           </div>
+        )}
+
+        {/* Sub-tab: Contract Builder (DPA/SCC) */}
+        {remediationSubTab === 'contracts' && (
+          <ContractBuilderView />
         )}
       </div>
     );
