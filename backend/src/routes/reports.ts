@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import cors from 'cors';
 import { getDb } from '../database/db.js';
+import { evaluateQuestionnaire } from '../services/diagnosisEngine.js';
 
 const router = Router();
 
@@ -150,6 +151,46 @@ router.get('/diagnosis', adminCors, async (req, res) => {
   } catch (error: any) {
     console.error('Error compiling diagnosis report:', error.message);
     res.status(500).json({ error: 'Error al generar el reporte consolidad de cumplimiento.' });
+  }
+});
+
+// POST /api/reports/evaluate - Evaluate diagnostic questionnaire and save report
+router.post('/evaluate', adminCors, async (req, res) => {
+  try {
+    const answers = req.body;
+    const evaluation = evaluateQuestionnaire(answers);
+    
+    // Save as an audit report to the database
+    const db = getDb();
+    const domain = answers.domain || 'localhost:3000';
+    
+    const severityCounts = {
+      leve: evaluation.findings.filter(f => f.severity === 'Leve').length,
+      grave: evaluation.findings.filter(f => f.severity === 'Grave').length,
+      gravisima: evaluation.findings.filter(f => f.severity === 'Gravísima').length
+    };
+
+    const result = await db.query(
+      `INSERT INTO audit_reports (url, score, severity_counts, findings, pages_analyzed, pages_skipped)
+       VALUES ($1, $2, $3, $4, $5, $6) RETURNING id`,
+      [
+        domain,
+        evaluation.scoreTotal,
+        JSON.stringify(severityCounts),
+        JSON.stringify(evaluation.findings),
+        JSON.stringify([]),
+        JSON.stringify([])
+      ]
+    );
+
+    res.json({
+      id: result.rows[0]?.id || 1,
+      domain,
+      ...evaluation
+    });
+  } catch (error: any) {
+    console.error('Error evaluating questionnaire:', error.message);
+    res.status(550).json({ error: 'Error al evaluar y guardar el cuestionario: ' + error.message });
   }
 });
 

@@ -2,6 +2,7 @@ import { useState, useEffect, FormEvent } from 'react';
 import { BrowserRouter, Routes, Route, Link, useLocation, useNavigate } from 'react-router-dom';
 import LandingPage from './pages/LandingPage';
 import DiagnosticQuestionnaire from './pages/dashboard/components/DiagnosticQuestionnaire';
+import DiagnosisResultsView from './pages/dashboard/DiagnosisResultsView';
 import { 
   Shield, 
   Activity, 
@@ -230,6 +231,29 @@ export function Dashboard() {
   const [weeklyCronEnabled, setWeeklyCronEnabled] = useState(() => {
     return localStorage.getItem('weekly_security_cron') === 'true';
   });
+
+  const [evalResults, setEvalResults] = useState<any>(null);
+
+  const handleEvaluateQuestionnaire = async (answers: any) => {
+    try {
+      const res = await fetch(`${API_BASE}/api/reports/evaluate`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ...answers, domain: 'localhost:3000' })
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setEvalResults(data);
+        showToast('Diagnóstico guardado con éxito en la base de datos.', 'success');
+        handleFetchDiagnosis();
+      } else {
+        showToast('Error al evaluar el cuestionario.', 'warning');
+      }
+    } catch (e) {
+      console.error(e);
+      showToast('Error de conexión al enviar el diagnóstico.', 'warning');
+    }
+  };
 
   // Auto scan logic from landing page redirect
   useEffect(() => {
@@ -1327,7 +1351,18 @@ Firmas autorizadas:
 
             {/* Cuestionario Operativo Interno (Ley N° 21.719) */}
             <div className="col-12" style={{ marginTop: '20px' }}>
-              <DiagnosticQuestionnaire />
+              {evalResults ? (
+                <DiagnosisResultsView 
+                  results={evalResults}
+                  onNavigateToRemediation={(subTab) => {
+                    setActiveTab('remediation');
+                    setRemediationSubTab(subTab);
+                  }}
+                  onReset={() => setEvalResults(null)}
+                />
+              ) : (
+                <DiagnosticQuestionnaire onSubmit={handleEvaluateQuestionnaire} />
+              )}
             </div>
           </div>
         )}

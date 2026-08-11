@@ -73,7 +73,11 @@ const initialFormState: QuestionnaireState = {
   vendors_dpa_contracts: ''
 };
 
-export default function DiagnosticQuestionnaire() {
+interface DiagnosticQuestionnaireProps {
+  onSubmit: (answers: any) => void;
+}
+
+export default function DiagnosticQuestionnaire({ onSubmit }: DiagnosticQuestionnaireProps) {
   const [formData, setFormData] = useState<QuestionnaireState>(initialFormState);
   const [activeAccordion, setActiveAccordion] = useState<number | null>(0);
   const [formSubmitted, setFormSubmitted] = useState(false);
@@ -102,6 +106,7 @@ export default function DiagnosticQuestionnaire() {
     e.preventDefault();
     console.log('📊 [Diagnóstico Legal] Cuestionario Operativo Interno Enviado:', formData);
     setFormSubmitted(true);
+    onSubmit(formData);
     
     // Smooth scroll to top of the questionnaire
     const element = document.getElementById('diagnostic-questionnaire-root');
