@@ -193,6 +193,23 @@ export default function App() {
   const [isResourcesOpen, setIsResourcesOpen] = useState(false);
   const [isDragging, setIsDragging] = useState<string | null>(null);
 
+  // Security Incidents Module State
+  const [incidents, setIncidents] = useState<any[]>([]);
+  const [isAddingIncident, setIsAddingIncident] = useState(false);
+  const [wizardIncidentStep, setWizardIncidentStep] = useState(1);
+  const [incidentTitle, setIncidentTitle] = useState('');
+  const [incidentDate, setIncidentDate] = useState(new Date().toISOString().slice(0, 16));
+  const [incidentType, setIncidentType] = useState('DATA_LEAK');
+  const [affectedCategories, setAffectedCategories] = useState<string[]>([]);
+  const [approxAffectedTitulars, setApproxAffectedTitulars] = useState<number>(0);
+  const [descriptionAndEffects, setDescriptionAndEffects] = useState('');
+  const [mitigationMeasures, setMitigationMeasures] = useState('');
+  const [incidentStatus, setIncidentStatus] = useState('DETECTED');
+  const [selectedIncidentForNotice, setSelectedIncidentForNotice] = useState<any>(null);
+  const [agencyNoticeText, setAgencyNoticeText] = useState('');
+  const [titularsNoticeText, setTitularsNoticeText] = useState('');
+  const [isGeneratingNotice, setIsGeneratingNotice] = useState(false);
+
   // Load basic statistics on mount
   useEffect(() => {
     fetchLatestScan();
@@ -200,6 +217,7 @@ export default function App() {
     fetchConsentLogs();
     fetchArcoTickets();
     fetchConfig();
+    fetchIncidents();
   }, []);
 
   const fetchLatestScan = async () => {
@@ -376,6 +394,106 @@ export default function App() {
     } catch (err) {
       console.error(err);
       showToast('Error al subir el archivo.', 'warning');
+    }
+  };
+
+  // --- Módulo de Incidentes API Operations ---
+  const fetchIncidents = async () => {
+    try {
+      const res = await fetch(`${API_BASE}/api/incidents?domain=localhost:3000`);
+      if (res.ok) {
+        const data = await res.json();
+        setIncidents(data);
+      }
+    } catch (e) {
+      console.error('Error fetching incidents:', e);
+    }
+  };
+
+  const handleCreateIncident = async (e: FormEvent) => {
+    e.preventDefault();
+    try {
+      const res = await fetch(`${API_BASE}/api/incidents`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          domain: 'localhost:3000',
+          incident_title: incidentTitle,
+          incident_date: incidentDate,
+          incident_type: incidentType,
+          affected_data_categories: affectedCategories,
+          approx_affected_titulars: approxAffectedTitulars,
+          description_and_effects: descriptionAndEffects,
+          mitigation_measures: mitigationMeasures,
+          status: incidentStatus
+        })
+      });
+
+      if (res.ok) {
+        showToast('Incidente registrado con éxito.', 'success');
+        fetchIncidents();
+        setIsAddingIncident(false);
+        // Reset wizard values
+        setIncidentTitle('');
+        setIncidentDate(new Date().toISOString().slice(0, 16));
+        setIncidentType('DATA_LEAK');
+        setAffectedCategories([]);
+        setApproxAffectedTitulars(0);
+        setDescriptionAndEffects('');
+        setMitigationMeasures('');
+        setIncidentStatus('DETECTED');
+        setWizardIncidentStep(1);
+      } else {
+        showToast('Error al registrar incidente.', 'warning');
+      }
+    } catch (e) {
+      console.error(e);
+      showToast('Error de comunicación con el servidor.', 'warning');
+    }
+  };
+
+  const handleUpdateIncidentStatus = async (id: string, nextStatus: string) => {
+    try {
+      const payload: any = { status: nextStatus };
+      if (nextStatus === 'REPORTED_AND_CLOSED') {
+        payload.agency_notified_at = new Date().toISOString();
+        payload.titulars_notified_at = new Date().toISOString();
+      }
+      
+      const res = await fetch(`${API_BASE}/api/incidents/${id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+
+      if (res.ok) {
+        showToast(`Estado de incidente actualizado a ${nextStatus}`, 'success');
+        fetchIncidents();
+      } else {
+        showToast('Error al actualizar estado.', 'warning');
+      }
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  const handleGenerateIncidentNotice = async (incident: any) => {
+    setSelectedIncidentForNotice(incident);
+    try {
+      const res = await fetch(`${API_BASE}/api/incidents/${incident.id}/generate-notice`, {
+        method: 'POST'
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setAgencyNoticeText(data.agencyNotice);
+        setTitularsNoticeText(data.titularsNotice);
+        setIsGeneratingNotice(true);
+      } else {
+        showToast('Error al generar los borradores contractuales.', 'warning');
+      }
+    } catch (e) {
+      console.error(e);
+      showToast('Error al conectar con la API de generación.', 'warning');
     }
   };
 
@@ -685,6 +803,14 @@ export default function App() {
           >
             <ExternalLink size={16} />
             <span>Transf. Internacionales</span>
+          </div>
+
+          <div 
+            className={`nav-item ${activeTab === 'incidents' ? 'active' : ''}`}
+            onClick={() => { setActiveTab('incidents'); fetchIncidents(); }}
+          >
+            <AlertTriangle size={16} />
+            <span>Bitácora de Brechas</span>
           </div>
 
           <div 
@@ -2546,6 +2672,570 @@ export default function App() {
                 )}
               </div>
             )}
+          </div>
+        )}
+
+        {/* TAB 7: SECURITY INCIDENTS */}
+        {activeTab === 'incidents' && (
+          <div>
+            <header className="page-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '15px' }}>
+              <div>
+                <h1 className="page-title">Gestión de Contingencias y Brechas de Seguridad</h1>
+                <p className="page-subtitle">Monitoreo legal y bitácora de vulneraciones de seguridad de la información (Art. 14 sexies de la Ley N° 21.719).</p>
+              </div>
+              {!isAddingIncident && (
+                <button 
+                  className="btn-save" 
+                  style={{ display: 'flex', alignItems: 'center', gap: '8px' }}
+                  onClick={() => setIsAddingIncident(true)}
+                >
+                  <AlertTriangle size={16} />
+                  <span>Reportar Brecha / Incidente</span>
+                </button>
+              )}
+            </header>
+
+            {/* KPI Cards (Bitácora Principal) */}
+            {!isAddingIncident && (
+              <div className="stats-row" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '20px', marginBottom: '24px' }}>
+                <div className="card text-center" style={{ padding: '16px 20px' }}>
+                  <p style={{ margin: 0, fontSize: '12px', color: 'var(--text-secondary)' }}>Total Brechas Registradas</p>
+                  <h3 style={{ margin: '8px 0 0 0', fontSize: '32px', fontWeight: 700, color: 'var(--color-primary)' }}>{incidents.length}</h3>
+                </div>
+                <div className="card text-center" style={{ padding: '16px 20px' }}>
+                  <p style={{ margin: 0, fontSize: '12px', color: 'var(--text-secondary)' }}>Casos Activos (Investigación)</p>
+                  <h3 style={{ margin: '8px 0 0 0', fontSize: '32px', fontWeight: 700, color: 'var(--color-warning)' }}>
+                    {incidents.filter(i => ['DETECTED', 'UNDER_ANALYSIS'].includes(i.status)).length}
+                  </h3>
+                </div>
+                <div className="card text-center" style={{ padding: '16px 20px' }}>
+                  <p style={{ margin: 0, fontSize: '12px', color: 'var(--text-secondary)' }}>Casos Mitigados y Cerrados</p>
+                  <h3 style={{ margin: '8px 0 0 0', fontSize: '32px', fontWeight: 700, color: 'var(--color-success)' }}>
+                    {incidents.filter(i => ['MITIGATED', 'REPORTED_AND_CLOSED'].includes(i.status)).length}
+                  </h3>
+                </div>
+              </div>
+            )}
+
+            {/* WIZARD FORM: REPORT AN INCIDENT */}
+            {isAddingIncident ? (
+              <div className="card" style={{ maxWidth: '800px', margin: '0 auto' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', borderBottom: '1px solid var(--border-color)', paddingBottom: '10px' }}>
+                  <h3 style={{ margin: 0, fontSize: '18px', fontWeight: 600 }}>Reportar Nuevo Incidente de Seguridad</h3>
+                  <button className="btn-action" onClick={() => setIsAddingIncident(false)}>Cancelar</button>
+                </div>
+
+                {/* Stepper progress indicator */}
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '30px', position: 'relative' }}>
+                  <div style={{ position: 'absolute', top: '15px', left: 0, right: 0, height: '2px', background: 'var(--border-color)', zIndex: 1 }}></div>
+                  <div style={{ position: 'absolute', top: '15px', left: 0, width: `${((wizardIncidentStep - 1) / 3) * 100}%`, height: '2px', background: 'var(--color-primary)', zIndex: 2, transition: 'width 0.3s ease' }}></div>
+                  
+                  {[1, 2, 3, 4].map(step => (
+                    <div key={step} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', zIndex: 3, cursor: 'pointer' }} onClick={() => setWizardIncidentStep(step)}>
+                      <div style={{
+                        width: '32px',
+                        height: '32px',
+                        borderRadius: '50%',
+                        background: wizardIncidentStep === step ? 'var(--color-primary)' : wizardIncidentStep > step ? 'var(--color-success)' : 'var(--bg-card)',
+                        color: wizardIncidentStep >= step ? '#fff' : 'var(--text-secondary)',
+                        border: wizardIncidentStep === step ? '2px solid var(--color-primary)' : '2px solid var(--border-color)',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        fontWeight: 'bold',
+                        fontSize: '13px'
+                      }}>
+                        {wizardIncidentStep > step ? '✓' : step}
+                      </div>
+                      <span style={{ fontSize: '11px', marginTop: '6px', color: wizardIncidentStep === step ? 'var(--text-primary)' : 'var(--text-secondary)' }}>
+                        {step === 1 ? 'Datos' : step === 2 ? 'Impacto' : step === 3 ? 'Riesgo Legal' : 'Mitigación'}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+
+                <form onSubmit={handleCreateIncident}>
+                  {/* STEP 1: BASIC DETAILS */}
+                  {wizardIncidentStep === 1 && (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                      <div>
+                        <label className="form-label">Título descriptivo del incidente</label>
+                        <input 
+                          type="text" 
+                          className="input-text" 
+                          placeholder="ej. Acceso no autorizado a BBDD de clientes" 
+                          value={incidentTitle} 
+                          onChange={e => setIncidentTitle(e.target.value)} 
+                          required 
+                          style={{ width: '100%' }}
+                        />
+                      </div>
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+                        <div>
+                          <label className="form-label">Fecha y Hora de Detección</label>
+                          <input 
+                            type="datetime-local" 
+                            className="input-text" 
+                            value={incidentDate} 
+                            onChange={e => setIncidentDate(e.target.value)} 
+                            required 
+                            style={{ width: '100%' }}
+                          />
+                        </div>
+                        <div>
+                          <label className="form-label">Tipo de Vulneración</label>
+                          <select 
+                            className="input-text" 
+                            value={incidentType} 
+                            onChange={e => setIncidentType(e.target.value)}
+                            style={{ width: '100%', height: '42px' }}
+                          >
+                            <option value="DATA_LEAK">Filtración de Datos (Fuga)</option>
+                            <option value="RANSOMWARE_HACK">Secuestro de BBDD / Ransomware</option>
+                            <option value="LOST_DEVICE">Pérdida/Robo de Dispositivo Físico</option>
+                            <option value="UNAUTHORIZED_ACCESS">Acceso No Autorizado</option>
+                            <option value="HUMAN_ERROR">Error Humano / Envío Erróneo</option>
+                            <option value="OTHER">Otro Incidente de Ciberseguridad</option>
+                          </select>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* STEP 2: IMPACT & CATEGORIES */}
+                  {wizardIncidentStep === 2 && (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                      <label className="form-label">Categorías de Datos Involucrados</label>
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', background: 'rgba(255,255,255,0.02)', padding: '16px', borderRadius: '8px' }}>
+                        {[
+                          { id: 'general_contact', label: 'Datos de Contacto General (Emails, Teléfonos)' },
+                          { id: 'financial', label: 'Datos Bancarios u Obligaciones Financieras' },
+                          { id: 'sensitive', label: 'Datos Sensibles (Salud, Biométricos, Afiliación)' },
+                          { id: 'minors_under_14', label: 'Datos de Menores de 14 años' },
+                          { id: 'identity', label: 'Datos de Identidad (RUT, Claves de Acceso)' }
+                        ].map(cat => (
+                          <label key={cat.id} style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', fontSize: '13px' }}>
+                            <input 
+                              type="checkbox" 
+                              checked={affectedCategories.includes(cat.label)}
+                              onChange={e => {
+                                if (e.target.checked) {
+                                  setAffectedCategories([...affectedCategories, cat.label]);
+                                } else {
+                                  setAffectedCategories(affectedCategories.filter(c => c !== cat.label));
+                                }
+                              }}
+                            />
+                            <span>{cat.label}</span>
+                          </label>
+                        ))}
+                      </div>
+                      <div>
+                        <label className="form-label">Número aproximado de titulares (personas) afectados</label>
+                        <input 
+                          type="number" 
+                          className="input-text" 
+                          min={0}
+                          placeholder="ej. 500" 
+                          value={approxAffectedTitulars || ''} 
+                          onChange={e => setApproxAffectedTitulars(parseInt(e.target.value) || 0)} 
+                          required 
+                          style={{ width: '100%' }}
+                        />
+                      </div>
+                    </div>
+                  )}
+
+                  {/* STEP 3: AUTOMATIC LEGAL ASSESSMENT */}
+                  {wizardIncidentStep === 3 && (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                      <h4 style={{ margin: '0 0 10px 0', fontSize: '14.5px', fontWeight: 600 }}>Veredicto Automático de Obligación Legal (Ley N° 21.719):</h4>
+                      
+                      {/* Agency notification evaluation */}
+                      {['DATA_LEAK', 'RANSOMWARE_HACK', 'UNAUTHORIZED_ACCESS', 'LOST_DEVICE'].includes(incidentType) || approxAffectedTitulars > 0 ? (
+                        <div style={{ 
+                          padding: '16px', 
+                          background: 'rgba(239, 68, 68, 0.05)', 
+                          borderLeft: '4px solid var(--color-danger)', 
+                          borderRadius: '6px'
+                        }}>
+                          <span style={{ fontWeight: 600, color: 'var(--color-danger)', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                            ⚠️ EXIGIBLE: Notificación Obligatoria a la Agencia de Protección de Datos
+                          </span>
+                          <p style={{ margin: '6px 0 0 0', fontSize: '12.5px', color: 'var(--text-secondary)' }}>
+                            El Art. 14 sexies de la Ley establece que ante cualquier vulneración de seguridad que comprometa la integridad, confidencialidad o disponibilidad de datos, se debe informar formalmente a la Agencia en un plazo prudente.
+                          </p>
+                        </div>
+                      ) : (
+                        <div style={{ 
+                          padding: '16px', 
+                          background: 'rgba(34, 197, 94, 0.05)', 
+                          borderLeft: '4px solid var(--color-success)', 
+                          borderRadius: '6px'
+                        }}>
+                          <span style={{ fontWeight: 600, color: 'var(--color-success)', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                            🟢 No Exigible Urgente: Notificación a la Agencia bajo Análisis
+                          </span>
+                          <p style={{ margin: '6px 0 0 0', fontSize: '12.5px', color: 'var(--text-secondary)' }}>
+                            Dado el tipo de incidente clasificado, no existe sospecha inmediata de pérdida masiva. Sin embargo, la DPO sugiere documentar para la bitácora auditable.
+                          </p>
+                        </div>
+                      )}
+
+                      {/* Titulars notification evaluation */}
+                      {affectedCategories.some(c => c.includes('Bancario') || c.includes('Sensible') || c.includes('Menor')) ? (
+                        <div style={{ 
+                          padding: '16px', 
+                          background: 'rgba(245, 158, 11, 0.05)', 
+                          borderLeft: '4px solid var(--color-warning)', 
+                          borderRadius: '6px'
+                        }}>
+                          <span style={{ fontWeight: 600, color: 'var(--color-warning)', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                            🚨 OBLIGATORIO: Comunicación Transparente a los Titulares Afectados
+                          </span>
+                          <p style={{ margin: '6px 0 0 0', fontSize: '12.5px', color: 'var(--text-secondary)' }}>
+                            La ley exige notificar directamente a los usuarios si el incidente compromete información de naturaleza financiera, datos de menores de 14 años o datos sensibles, con el fin de que puedan tomar medidas de resguardo.
+                          </p>
+                        </div>
+                      ) : (
+                        <div style={{ 
+                          padding: '16px', 
+                          background: 'rgba(255, 255, 255, 0.02)', 
+                          borderLeft: '4px solid var(--text-secondary)', 
+                          borderRadius: '6px'
+                        }}>
+                          <span style={{ fontWeight: 600, color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                            ⚪ Exento: Sin obligación legal de alertar a titulares
+                          </span>
+                          <p style={{ margin: '6px 0 0 0', fontSize: '12.5px', color: 'var(--text-secondary)' }}>
+                            No se detectó afectación a categorías sensibles de información. No se requiere alertar de forma pública o masiva a los usuarios finales.
+                          </p>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* STEP 4: MITIGATION MEASURES & DESCRIPTION */}
+                  {wizardIncidentStep === 4 && (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                      <div>
+                        <label className="form-label">Descripción de la vulneración y efectos previstos</label>
+                        <textarea 
+                          className="form-textarea" 
+                          rows={3} 
+                          placeholder="Detallar qué falló, cómo ingresaron o qué causó la fuga..." 
+                          value={descriptionAndEffects} 
+                          onChange={e => setDescriptionAndEffects(e.target.value)}
+                          required
+                        ></textarea>
+                      </div>
+                      <div>
+                        <label className="form-label">Medidas correctivas y de mitigación adoptadas</label>
+                        <textarea 
+                          className="form-textarea" 
+                          rows={3} 
+                          placeholder="ej. Aislamiento de base de datos, revocación de credenciales comprometidas y actualización de parches de seguridad." 
+                          value={mitigationMeasures} 
+                          onChange={e => setMitigationMeasures(e.target.value)}
+                          required
+                        ></textarea>
+                      </div>
+                      <div>
+                        <label className="form-label">Estado Inicial del Caso</label>
+                        <select 
+                          className="input-text" 
+                          value={incidentStatus} 
+                          onChange={e => setIncidentStatus(e.target.value)}
+                          style={{ width: '100%', height: '42px' }}
+                        >
+                          <option value="DETECTED">Detectado (Análisis Inicial)</option>
+                          <option value="UNDER_ANALYSIS">Bajo Análisis Forense</option>
+                          <option value="MITIGATED">Mitigado y Contenido</option>
+                          <option value="REPORTED_AND_CLOSED">Reportado a la Agencia y Cerrado</option>
+                        </select>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Wizard Controls Footer */}
+                  <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '30px', borderTop: '1px solid var(--border-color)', paddingTop: '15px' }}>
+                    <div>
+                      {wizardIncidentStep > 1 && (
+                        <button type="button" className="btn-action" onClick={() => setWizardIncidentStep(wizardIncidentStep - 1)}>
+                          Atrás
+                        </button>
+                      )}
+                    </div>
+                    <div>
+                      {wizardIncidentStep < 4 ? (
+                        <button type="button" className="btn-save" onClick={() => setWizardIncidentStep(wizardIncidentStep + 1)}>
+                          Siguiente
+                        </button>
+                      ) : (
+                        <button type="submit" className="btn-save">
+                          Registrar Incidente en Bitácora
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                </form>
+              </div>
+            ) : (
+              /* INCIDENTS TABLE VIEW */
+              <div className="card">
+                <h3 style={{ margin: '0 0 20px 0', fontSize: '16px', fontWeight: 600 }}>Bitácora Histórica Auditada de Vulneraciones</h3>
+                {incidents.length > 0 ? (
+                  <div className="table-responsive">
+                    <table className="data-table">
+                      <thead>
+                        <tr>
+                          <th>Fecha Detección</th>
+                          <th>Incidente / Tipo</th>
+                          <th>Afectados Est.</th>
+                          <th>Categorías Comprometidas</th>
+                          <th>Riesgo / Avisos</th>
+                          <th>Estado</th>
+                          <th>Acciones</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {incidents.map((incident) => {
+                          const categories = Array.isArray(incident.affected_data_categories) 
+                            ? incident.affected_data_categories 
+                            : JSON.parse(incident.affected_data_categories || '[]');
+
+                          return (
+                            <tr key={incident.id}>
+                              <td style={{ whiteSpace: 'nowrap' }}>
+                                {new Date(incident.incident_date).toLocaleDateString('es-CL', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                              </td>
+                              <td>
+                                <div style={{ fontWeight: 600 }}>{incident.incident_title}</div>
+                                <div style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>
+                                  {incident.incident_type === 'DATA_LEAK' ? 'Fuga de Datos' :
+                                   incident.incident_type === 'RANSOMWARE_HACK' ? 'Ataque Ransomware' :
+                                   incident.incident_type === 'LOST_DEVICE' ? 'Dispositivo Extraviado' :
+                                   incident.incident_type === 'UNAUTHORIZED_ACCESS' ? 'Acceso No Autorizado' :
+                                   incident.incident_type === 'HUMAN_ERROR' ? 'Error Humano' : 'Otro'}
+                                </div>
+                              </td>
+                              <td style={{ fontWeight: 600 }}>
+                                {incident.approx_affected_titulars.toLocaleString()} pers.
+                              </td>
+                              <td>
+                                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
+                                  {categories.map((cat: string, idx: number) => (
+                                    <span key={idx} style={{ 
+                                      fontSize: '10px', 
+                                      background: 'rgba(255,255,255,0.05)', 
+                                      padding: '2px 6px', 
+                                      borderRadius: '4px',
+                                      color: (cat.includes('Sensible') || cat.includes('Bancario') || cat.includes('Menor')) ? 'var(--color-warning)' : 'var(--text-secondary)'
+                                    }}>
+                                      {cat}
+                                    </span>
+                                  ))}
+                                </div>
+                              </td>
+                              <td>
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                                  {incident.requires_agency_notification && (
+                                    <span className={`badge ${incident.agency_notified_at ? 'badge-success' : 'badge-gravisima'}`} style={{ fontSize: '10px' }}>
+                                      {incident.agency_notified_at ? 'Agencia Notificada ✓' : 'Falta Aviso Agencia ⚠️'}
+                                    </span>
+                                  )}
+                                  {incident.requires_titulars_notification && (
+                                    <span className={`badge ${incident.titulars_notified_at ? 'badge-success' : 'badge-grave'}`} style={{ fontSize: '10px' }}>
+                                      {incident.titulars_notified_at ? 'Clientes Notificados ✓' : 'Falta Aviso Clientes 🚨'}
+                                    </span>
+                                  )}
+                                  {!incident.requires_agency_notification && !incident.requires_titulars_notification && (
+                                    <span style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>Sin Avisos Obligatorios</span>
+                                  )}
+                                </div>
+                              </td>
+                              <td>
+                                <select 
+                                  value={incident.status}
+                                  onChange={(e) => handleUpdateIncidentStatus(incident.id, e.target.value)}
+                                  style={{ 
+                                    padding: '4px 8px', 
+                                    fontSize: '12px', 
+                                    borderRadius: '4px',
+                                    background: incident.status === 'REPORTED_AND_CLOSED' ? 'rgba(34,197,94,0.1)' : incident.status === 'MITIGATED' ? 'rgba(99,102,241,0.1)' : 'rgba(239,68,68,0.1)',
+                                    color: incident.status === 'REPORTED_AND_CLOSED' ? 'var(--color-success)' : incident.status === 'MITIGATED' ? 'var(--color-primary)' : 'var(--color-danger)',
+                                    border: '1px solid currentColor',
+                                    fontWeight: 600,
+                                    cursor: 'pointer'
+                                  }}
+                                >
+                                  <option value="DETECTED" style={{ background: 'var(--bg-card)', color: '#fff' }}>Detectado</option>
+                                  <option value="UNDER_ANALYSIS" style={{ background: 'var(--bg-card)', color: '#fff' }}>En Análisis</option>
+                                  <option value="MITIGATED" style={{ background: 'var(--bg-card)', color: '#fff' }}>Mitigado</option>
+                                  <option value="REPORTED_AND_CLOSED" style={{ background: 'var(--bg-card)', color: '#fff' }}>Reportado y Cerrado</option>
+                                </select>
+                              </td>
+                              <td>
+                                <button 
+                                  className="btn-action" 
+                                  style={{ padding: '4px 8px', fontSize: '11px', display: 'flex', alignItems: 'center', gap: '4px' }}
+                                  onClick={() => handleGenerateIncidentNotice(incident)}
+                                >
+                                  📄 Generar Oficios
+                                </button>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                ) : (
+                  <div className="empty-state" style={{ padding: '40px 20px' }}>
+                    <Shield size={48} style={{ color: 'var(--text-secondary)', marginBottom: '15px' }} />
+                    <p style={{ margin: 0, fontSize: '14px', color: 'var(--text-secondary)' }}>No se registran incidentes ni brechas de seguridad en la bitácora.</p>
+                    <button className="btn-scan" style={{ marginTop: '15px' }} onClick={() => setIsAddingIncident(true)}>
+                      Reportar Primer Incidente
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* MODAL: GENERADOR DE COMUNICADOS DE INCIDENTES */}
+        {isGeneratingNotice && selectedIncidentForNotice && (
+          <div style={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            background: 'rgba(0, 0, 0, 0.75)',
+            backdropFilter: 'blur(5px)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 10000,
+            padding: '20px',
+            animation: 'fadeIn 0.2s ease'
+          }}>
+            <div style={{
+              background: 'var(--bg-card)',
+              border: '1px solid var(--border-color)',
+              borderRadius: '12px',
+              width: '100%',
+              maxWidth: '1000px',
+              maxHeight: '90vh',
+              display: 'flex',
+              flexDirection: 'column',
+              boxShadow: '0 8px 32px rgba(0,0,0,0.5)'
+            }}>
+              <div style={{
+                padding: '16px 20px',
+                borderBottom: '1px solid var(--border-color)',
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center'
+              }}>
+                <div>
+                  <h3 style={{ margin: 0, fontSize: '18px', fontWeight: 600 }}>Generador de Comunicados Oficiales</h3>
+                  <p style={{ margin: '2px 0 0 0', fontSize: '12px', color: 'var(--text-secondary)' }}>
+                    Documentos redactados bajo el Art. 14 sexies de la Ley N° 21.719 para: <strong>{selectedIncidentForNotice.incident_title}</strong>
+                  </p>
+                </div>
+                <button 
+                  className="btn-action" 
+                  onClick={() => {
+                    setIsGeneratingNotice(false);
+                    setSelectedIncidentForNotice(null);
+                  }}
+                >
+                  Cerrar
+                </button>
+              </div>
+
+              <div style={{
+                padding: '20px',
+                overflowY: 'auto',
+                display: 'grid',
+                gridTemplateColumns: '1fr 1fr',
+                gap: '20px',
+                background: 'var(--bg-app)'
+              }}>
+                {/* Agencia Notice Card */}
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <span style={{ fontWeight: 600, color: 'var(--color-danger)', fontSize: '13.5px' }}>
+                      📄 Oficio de Notificación a la Agencia (DPA)
+                    </span>
+                    <button 
+                      className="btn-action" 
+                      style={{ padding: '2px 8px', fontSize: '11px' }}
+                      onClick={() => {
+                        navigator.clipboard.writeText(agencyNoticeText);
+                        showToast('Oficio técnico copiado al portapapeles.', 'success');
+                      }}
+                    >
+                      📋 Copiar Oficio
+                    </button>
+                  </div>
+                  <textarea
+                    className="form-textarea"
+                    readOnly
+                    rows={16}
+                    value={agencyNoticeText}
+                    style={{ fontFamily: 'monospace', fontSize: '11.5px', background: '#0a0a14', color: '#c0c0d0', lineHeight: 1.4 }}
+                  ></textarea>
+                </div>
+
+                {/* Titulars Notice Card */}
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <span style={{ fontWeight: 600, color: 'var(--color-primary)', fontSize: '13.5px' }}>
+                      ✉️ Comunicación Transparente a Titulares (Clientes)
+                    </span>
+                    <button 
+                      className="btn-action" 
+                      style={{ padding: '2px 8px', fontSize: '11px' }}
+                      onClick={() => {
+                        navigator.clipboard.writeText(titularsNoticeText);
+                        showToast('Comunicación a clientes copiada.', 'success');
+                      }}
+                    >
+                      📋 Copiar Mensaje
+                    </button>
+                  </div>
+                  <textarea
+                    className="form-textarea"
+                    readOnly
+                    rows={16}
+                    value={titularsNoticeText}
+                    style={{ fontFamily: 'monospace', fontSize: '11.5px', background: '#0a0a14', color: '#c0c0d0', lineHeight: 1.4 }}
+                  ></textarea>
+                </div>
+              </div>
+
+              <div style={{
+                padding: '16px 20px',
+                borderTop: '1px solid var(--border-color)',
+                display: 'flex',
+                justifyContent: 'flex-end',
+                background: 'var(--bg-card)',
+                borderRadius: '0 0 12px 12px'
+              }}>
+                <button 
+                  className="btn-save" 
+                  onClick={() => {
+                    setIsGeneratingNotice(false);
+                    setSelectedIncidentForNotice(null);
+                  }}
+                >
+                  Entendido y Cerrar
+                </button>
+              </div>
+            </div>
           </div>
         )}
 

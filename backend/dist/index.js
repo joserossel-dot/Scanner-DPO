@@ -6,6 +6,7 @@ import dotenv from 'dotenv';
 import { initDb } from './database/db.js';
 import apiRouter from './routes/api.js';
 import transfersRouter from './routes/transfers.js';
+import incidentsRouter from './routes/incidents.js';
 // Load environment variables
 dotenv.config();
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -15,6 +16,7 @@ app.use(express.json());
 // API Routes
 app.use('/api', apiRouter);
 app.use('/api/transfers', transfersRouter);
+app.use('/api/incidents', incidentsRouter);
 // Serve the compiled Frontend Dashboard from the frontend workspace
 const frontendDistPath = path.resolve(__dirname, '../../frontend/dist');
 app.use(express.static(frontendDistPath));
