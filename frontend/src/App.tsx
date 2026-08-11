@@ -874,7 +874,7 @@ export default function App() {
               <p className="page-subtitle">Simule o audite en vivo cualquier URL para verificar brechas de cumplimiento, scripts de terceros invasivos y opt-ins ausentes.</p>
             </header>
 
-            <div className="card" style={{ marginBottom: '24px' }}>
+            <div id="scanner-input-card" className="card" style={{ marginBottom: '24px' }}>
               <form onSubmit={handleScan}>
                 <label className="form-label">Ingresa la URL del sitio web a Auditar</label>
                 <div className="scan-input-group">
@@ -1030,11 +1030,24 @@ export default function App() {
                             <span style={{ fontWeight: 600, color: 'var(--color-success)', display: 'flex', alignItems: 'center', gap: '4px', marginBottom: '8px' }}>
                               🟢 Páginas Auditadas ({latestScan.pagesAnalyzed.length})
                             </span>
-                            <div style={{ maxHeight: '150px', overflowY: 'auto', background: 'rgba(0,0,0,0.15)', padding: '10px', borderRadius: '6px' }}>
-                              <ul style={{ margin: 0, paddingLeft: '16px', color: 'var(--text-secondary)', display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                            <div style={{ maxHeight: '180px', overflowY: 'auto', background: 'rgba(0,0,0,0.15)', padding: '10px', borderRadius: '6px' }}>
+                              <ul style={{ margin: 0, paddingLeft: 0, listStyle: 'none', color: 'var(--text-secondary)', display: 'flex', flexDirection: 'column', gap: '6px' }}>
                                 {latestScan.pagesAnalyzed.map((p, idx) => (
-                                  <li key={idx} style={{ wordBreak: 'break-all', fontSize: '12px' }}>
-                                    <span style={{ color: 'var(--color-success)', marginRight: '4px' }}>✓</span> {p}
+                                  <li key={idx} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px', borderBottom: '1px solid rgba(255,255,255,0.03)', paddingBottom: '4px' }}>
+                                    <span style={{ wordBreak: 'break-all', fontSize: '11.5px' }}>
+                                      <span style={{ color: 'var(--color-success)', marginRight: '4px' }}>✓</span> {p}
+                                    </span>
+                                    <button 
+                                      className="btn-action" 
+                                      style={{ padding: '2px 8px', fontSize: '10px', whiteSpace: 'nowrap', border: 'none', height: '22px', display: 'flex', alignItems: 'center' }}
+                                      onClick={() => {
+                                        setScanUrl(p);
+                                        showToast(`URL cargada en buscador: ${p}`, 'info');
+                                        document.getElementById('scanner-input-card')?.scrollIntoView({ behavior: 'smooth' });
+                                      }}
+                                    >
+                                      🔍 Re-auditar
+                                    </button>
                                   </li>
                                 ))}
                               </ul>
@@ -1048,11 +1061,24 @@ export default function App() {
                             <span style={{ fontWeight: 600, color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: '4px', marginBottom: '8px' }}>
                               ⚪ Páginas Fuera de Alcance ({latestScan.pagesSkipped.length})
                             </span>
-                            <div style={{ maxHeight: '150px', overflowY: 'auto', background: 'rgba(0,0,0,0.15)', padding: '10px', borderRadius: '6px' }}>
-                              <ul style={{ margin: 0, paddingLeft: '16px', color: 'var(--text-secondary)', display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                            <div style={{ maxHeight: '180px', overflowY: 'auto', background: 'rgba(0,0,0,0.15)', padding: '10px', borderRadius: '6px' }}>
+                              <ul style={{ margin: 0, paddingLeft: 0, listStyle: 'none', color: 'var(--text-secondary)', display: 'flex', flexDirection: 'column', gap: '6px' }}>
                                 {latestScan.pagesSkipped.map((p, idx) => (
-                                  <li key={idx} style={{ wordBreak: 'break-all', fontSize: '12px', opacity: 0.7 }} title="Omitido para prevenir bloqueo de IP">
-                                    <span style={{ color: 'var(--text-secondary)', marginRight: '4px' }}>👁️‍🗨️</span> {p}
+                                  <li key={idx} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px', borderBottom: '1px solid rgba(255,255,255,0.03)', paddingBottom: '4px' }} title="Omitido para prevenir bloqueo de IP">
+                                    <span style={{ wordBreak: 'break-all', fontSize: '11.5px', opacity: 0.85 }}>
+                                      <span style={{ color: 'var(--text-secondary)', marginRight: '4px' }}>👁️‍🗨️</span> {p}
+                                    </span>
+                                    <button 
+                                      className="btn-action" 
+                                      style={{ padding: '2px 8px', fontSize: '10px', whiteSpace: 'nowrap', border: 'none', height: '22px', display: 'flex', alignItems: 'center', opacity: 1, background: 'rgba(99,102,241,0.15)', color: 'var(--color-primary)' }}
+                                      onClick={() => {
+                                        setScanUrl(p);
+                                        showToast(`URL cargada en buscador: ${p}`, 'info');
+                                        document.getElementById('scanner-input-card')?.scrollIntoView({ behavior: 'smooth' });
+                                      }}
+                                    >
+                                      🚀 Auditar
+                                    </button>
                                   </li>
                                 ))}
                               </ul>
