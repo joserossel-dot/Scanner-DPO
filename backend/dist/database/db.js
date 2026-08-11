@@ -65,8 +65,16 @@ export async function initDb() {
       score INTEGER NOT NULL,
       severity_counts JSONB NOT NULL,
       findings JSONB NOT NULL,
+      pages_analyzed JSONB,
+      pages_skipped JSONB,
       created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
     )
+  `);
+    // Alter table if it already exists
+    await pool.query(`
+    ALTER TABLE audit_reports 
+    ADD COLUMN IF NOT EXISTS pages_analyzed JSONB,
+    ADD COLUMN IF NOT EXISTS pages_skipped JSONB
   `);
     // 3. Consent Logs table
     await pool.query(`

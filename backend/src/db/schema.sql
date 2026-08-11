@@ -31,6 +31,8 @@ CREATE TABLE IF NOT EXISTS audit_reports (
   score INTEGER NOT NULL,
   severity_counts JSONB NOT NULL, -- {leve: N, grave: M, gravisima: K}
   findings JSONB NOT NULL, -- List of detailed findings
+  pages_analyzed JSONB, -- List of crawled subpages
+  pages_skipped JSONB, -- List of discovered but skipped subpages
   created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 

@@ -15,7 +15,7 @@ export async function runAudit(url) {
     const queue = [fetchedUrl];
     const visited = new Set();
     const pagesAnalyzed = [];
-    const maxPages = 5;
+    const maxPages = 15;
     const trackersFound = new Set();
     let totalMissingOptIn = 0;
     let totalPreCheckedOptIn = 0;
@@ -245,6 +245,13 @@ export async function runAudit(url) {
         grave: findings.filter(f => f.severity === 'Grave').length,
         gravisima: findings.filter(f => f.severity === 'Gravísima').length
     };
+    const pagesSkipped = Array.from(new Set(queue))
+        .filter(link => {
+        let norm = link.split('#')[0];
+        if (norm.endsWith('/'))
+            norm = norm.slice(0, -1);
+        return !visited.has(norm);
+    });
     const actionPlan = generateActionPlan(findings);
     return {
         url,
@@ -252,7 +259,8 @@ export async function runAudit(url) {
         findings,
         severityCounts,
         actionPlan,
-        pagesAnalyzed
+        pagesAnalyzed,
+        pagesSkipped
     };
 }
 // Generates simulated report when a external fetch fails (e.g. testing offline)
@@ -266,6 +274,7 @@ function generateFallbackAudit(url, errMsg) {
             severityCounts: { leve: 0, grave: 0, gravisima: 0 },
             actionPlan: generateActionPlan([]),
             pagesAnalyzed: [url],
+            pagesSkipped: [],
             isSimulated: true
         };
     }
@@ -338,6 +347,8 @@ function generateFallbackAudit(url, errMsg) {
         selectedFindings.push(findingsPool[1]); // missing opt-in
     }
     const actionPlan = generateActionPlan(selectedFindings);
+    // Normalize url trailing slashes to build mock unvisited links
+    const baseSlash = url.endsWith('/') ? url.slice(0, -1) : url;
     return {
         url,
         score,
@@ -348,7 +359,8 @@ function generateFallbackAudit(url, errMsg) {
             gravisima: selectedFindings.filter(f => f.severity === 'Gravísima').length
         },
         actionPlan,
-        pagesAnalyzed: [url, `${url}/contacto`, `${url}/nosotros`],
+        pagesAnalyzed: [url, `${baseSlash}/contacto`, `${baseSlash}/nosotros`],
+        pagesSkipped: [`${baseSlash}/terminos-y-condiciones`, `${baseSlash}/blog`, `${baseSlash}/tienda-online`],
         isSimulated: true
     };
 }

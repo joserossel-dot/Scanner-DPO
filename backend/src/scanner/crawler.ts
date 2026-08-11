@@ -50,7 +50,7 @@ export async function runAudit(url: string): Promise<AuditResult> {
   const queue: string[] = [fetchedUrl];
   const visited = new Set<string>();
   const pagesAnalyzed: string[] = [];
-  const maxPages = 5;
+  const maxPages = 15;
 
   const trackersFound = new Set<string>();
   let totalMissingOptIn = 0;
@@ -299,6 +299,13 @@ export async function runAudit(url: string): Promise<AuditResult> {
     gravisima: findings.filter(f => f.severity === 'Gravísima').length
   };
 
+  const pagesSkipped = Array.from(new Set(queue))
+    .filter(link => {
+      let norm = link.split('#')[0];
+      if (norm.endsWith('/')) norm = norm.slice(0, -1);
+      return !visited.has(norm);
+    });
+
   const actionPlan = generateActionPlan(findings);
 
   return {
@@ -307,7 +314,8 @@ export async function runAudit(url: string): Promise<AuditResult> {
     findings,
     severityCounts,
     actionPlan,
-    pagesAnalyzed
+    pagesAnalyzed,
+    pagesSkipped
   };
 }
 
@@ -323,6 +331,7 @@ function generateFallbackAudit(url: string, errMsg: string): AuditResult {
       severityCounts: { leve: 0, grave: 0, gravisima: 0 },
       actionPlan: generateActionPlan([]),
       pagesAnalyzed: [url],
+      pagesSkipped: [],
       isSimulated: true
     };
   }
@@ -400,6 +409,9 @@ function generateFallbackAudit(url: string, errMsg: string): AuditResult {
 
   const actionPlan = generateActionPlan(selectedFindings);
 
+  // Normalize url trailing slashes to build mock unvisited links
+  const baseSlash = url.endsWith('/') ? url.slice(0, -1) : url;
+
   return {
     url,
     score,
@@ -410,7 +422,8 @@ function generateFallbackAudit(url: string, errMsg: string): AuditResult {
       gravisima: selectedFindings.filter(f => f.severity === 'Gravísima').length
     },
     actionPlan,
-    pagesAnalyzed: [url, `${url}/contacto`, `${url}/nosotros`],
+    pagesAnalyzed: [url, `${baseSlash}/contacto`, `${baseSlash}/nosotros`],
+    pagesSkipped: [`${baseSlash}/terminos-y-condiciones`, `${baseSlash}/blog`, `${baseSlash}/tienda-online`],
     isSimulated: true
   };
 }

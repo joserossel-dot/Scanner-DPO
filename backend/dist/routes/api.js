@@ -71,14 +71,16 @@ router.post('/scan', adminCors, async (req, res) => {
         const report = await runAudit(url);
         const db = getDb();
         const result = await db.query(`
-      INSERT INTO audit_reports (url, score, severity_counts, findings)
-      VALUES ($1, $2, $3, $4)
+      INSERT INTO audit_reports (url, score, severity_counts, findings, pages_analyzed, pages_skipped)
+      VALUES ($1, $2, $3, $4, $5, $6)
       RETURNING id
     `, [
             report.url,
             report.score,
             JSON.stringify(report.severityCounts),
-            JSON.stringify(report.findings)
+            JSON.stringify(report.findings),
+            JSON.stringify(report.pagesAnalyzed || []),
+            JSON.stringify(report.pagesSkipped || [])
         ]);
         const reportId = result.rows[0].id;
         return res.json({ id: reportId, ...report });
@@ -102,6 +104,8 @@ router.get('/scan/latest', adminCors, async (req, res) => {
             score: latest.score,
             severityCounts: safeParseJson(latest.severity_counts),
             findings: safeParseJson(latest.findings),
+            pagesAnalyzed: safeParseJson(latest.pages_analyzed) || [],
+            pagesSkipped: safeParseJson(latest.pages_skipped) || [],
             created_at: latest.created_at
         });
     }

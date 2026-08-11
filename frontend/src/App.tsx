@@ -43,6 +43,8 @@ interface AuditResult {
   };
   actionPlan?: ActionStep[];
   pagesAnalyzed?: string[];
+  pagesSkipped?: string[];
+  isSimulated?: boolean;
   created_at?: string;
 }
 
@@ -1004,22 +1006,60 @@ export default function App() {
                     <span>Plan de Acción de Mitigación (Cumplimiento Ley N° 21.719)</span>
                   </h3>
                   
-                  {/* Páginas analizadas */}
-                  {latestScan.pagesAnalyzed && latestScan.pagesAnalyzed.length > 0 && (
+                  {/* Mapa de Alcance y Cobertura del Escaneo */}
+                  {((latestScan.pagesAnalyzed && latestScan.pagesAnalyzed.length > 0) || (latestScan.pagesSkipped && latestScan.pagesSkipped.length > 0)) && (
                     <div style={{ 
-                      marginBottom: '20px', 
-                      padding: '12px 16px', 
-                      background: 'rgba(99, 102, 241, 0.05)', 
+                      marginBottom: '24px', 
+                      padding: '16px', 
+                      background: 'rgba(255, 255, 255, 0.02)', 
                       borderRadius: '8px', 
-                      borderLeft: '4px solid var(--color-primary)', 
+                      border: '1px solid var(--border-color)', 
                       fontSize: '13px' 
                     }}>
-                      <strong>Rastreo Multi-página Completo — Enlaces analizados:</strong>
-                      <ul style={{ margin: '6px 0 0 0', paddingLeft: '20px', color: 'var(--text-secondary)' }}>
-                        {latestScan.pagesAnalyzed.map((p, idx) => (
-                          <li key={idx} style={{ wordBreak: 'break-all', marginTop: '2px' }}>{p}</li>
-                        ))}
-                      </ul>
+                      <div style={{ fontWeight: 600, fontSize: '14.5px', marginBottom: '12px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <span>🗺️ Mapa de Cobertura y Alcance del Escaneo</span>
+                        <span className="badge badge-success" style={{ fontSize: '11px' }}>
+                          Límite Seguro: 15 páginas
+                        </span>
+                      </div>
+                      
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px', flexWrap: 'wrap' }}>
+                        {/* Páginas Auditadas */}
+                        {latestScan.pagesAnalyzed && latestScan.pagesAnalyzed.length > 0 && (
+                          <div>
+                            <span style={{ fontWeight: 600, color: 'var(--color-success)', display: 'flex', alignItems: 'center', gap: '4px', marginBottom: '8px' }}>
+                              🟢 Páginas Auditadas ({latestScan.pagesAnalyzed.length})
+                            </span>
+                            <div style={{ maxHeight: '150px', overflowY: 'auto', background: 'rgba(0,0,0,0.15)', padding: '10px', borderRadius: '6px' }}>
+                              <ul style={{ margin: 0, paddingLeft: '16px', color: 'var(--text-secondary)', display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                                {latestScan.pagesAnalyzed.map((p, idx) => (
+                                  <li key={idx} style={{ wordBreak: 'break-all', fontSize: '12px' }}>
+                                    <span style={{ color: 'var(--color-success)', marginRight: '4px' }}>✓</span> {p}
+                                  </li>
+                                ))}
+                              </ul>
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Páginas Fuera de Alcance / Omitidas */}
+                        {latestScan.pagesSkipped && latestScan.pagesSkipped.length > 0 && (
+                          <div>
+                            <span style={{ fontWeight: 600, color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: '4px', marginBottom: '8px' }}>
+                              ⚪ Páginas Fuera de Alcance ({latestScan.pagesSkipped.length})
+                            </span>
+                            <div style={{ maxHeight: '150px', overflowY: 'auto', background: 'rgba(0,0,0,0.15)', padding: '10px', borderRadius: '6px' }}>
+                              <ul style={{ margin: 0, paddingLeft: '16px', color: 'var(--text-secondary)', display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                                {latestScan.pagesSkipped.map((p, idx) => (
+                                  <li key={idx} style={{ wordBreak: 'break-all', fontSize: '12px', opacity: 0.7 }} title="Omitido para prevenir bloqueo de IP">
+                                    <span style={{ color: 'var(--text-secondary)', marginRight: '4px' }}>👁️‍🗨️</span> {p}
+                                  </li>
+                                ))}
+                              </ul>
+                            </div>
+                          </div>
+                        )}
+                      </div>
                     </div>
                   )}
 
