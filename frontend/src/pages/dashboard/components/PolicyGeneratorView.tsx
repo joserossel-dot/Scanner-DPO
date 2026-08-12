@@ -136,7 +136,14 @@ export default function PolicyGeneratorView({ token }: PolicyGeneratorViewProps)
     }, 4000);
   };
 
-  const handleCopyCode = () => {
+  const sha256 = async (message: string): Promise<string> => {
+    const msgBuffer = new TextEncoder().encode(message);
+    const hashBuffer = await window.crypto.subtle.digest('SHA-256', msgBuffer);
+    const hashArray = Array.from(new Uint8Array(hashBuffer));
+    return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+  };
+
+  const handleCopyCode = async () => {
     if (!policyHtml) return;
     navigator.clipboard.writeText(policyHtml);
     setIsCopied(true);
@@ -144,6 +151,24 @@ export default function PolicyGeneratorView({ token }: PolicyGeneratorViewProps)
     setTimeout(() => {
       setIsCopied(false);
     }, 2000);
+
+    try {
+      const hash = await sha256(policyHtml);
+      await fetch(`${API_BASE}/api/remediation/log-download`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          document_type: 'privacy_policy',
+          content_hash: hash,
+          disclaimer_version: 'DISCLAIMER_V1'
+        })
+      });
+    } catch (err) {
+      console.error('Error logging policy download:', err);
+    }
   };
 
   const toggleCategory = (cat: string) => {

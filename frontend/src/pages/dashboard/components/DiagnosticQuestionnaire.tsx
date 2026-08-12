@@ -60,6 +60,9 @@ interface QuestionnaireState {
 
   // Shadow IT List
   shadow_it_providers: string[];
+
+  // Behavior tracking question (auto-filled by scanner)
+  commercial_track_behavior: string;
 }
 
 const initialFormState: QuestionnaireState = {
@@ -102,18 +105,64 @@ const initialFormState: QuestionnaireState = {
   vendors_dpa_contracts: '',
   vendors_dpa_contracts_other: '',
 
-  shadow_it_providers: []
+  shadow_it_providers: [],
+  commercial_track_behavior: ''
 };
 
 interface DiagnosticQuestionnaireProps {
   onSubmit: (answers: any) => void;
+  token?: string | null;
 }
 
-export default function DiagnosticQuestionnaire({ onSubmit }: DiagnosticQuestionnaireProps) {
+const API_BASE = (import.meta as any).env.VITE_API_URL || '';
+
+export default function DiagnosticQuestionnaire({ onSubmit, token }: DiagnosticQuestionnaireProps) {
   const [formData, setFormData] = useState<QuestionnaireState>(initialFormState);
   const [activeAccordion, setActiveAccordion] = useState<number | null>(0);
   const [formSubmitted, setFormSubmitted] = useState(false);
   const [validationError, setValidationError] = useState('');
+  const [detectedByScanner, setDetectedByScanner] = useState(false);
+
+  // Load latest scan report to auto-complete tracking question
+  React.useEffect(() => {
+    if (!token) return;
+    
+    const fetchScanData = async () => {
+      try {
+        const response = await fetch(`${API_BASE}/api/scan/latest`, {
+          headers: {
+            'Authorization': `Bearer ${token}`
+          }
+        });
+        if (response.ok) {
+          const scanReport = await response.json();
+          if (scanReport && scanReport.findings) {
+            // Check if findings contain unconsented_scripts
+            const hasAnalytics = scanReport.findings.some(
+              (f: any) => f.id === 'unconsented_scripts'
+            );
+            if (hasAnalytics) {
+              setDetectedByScanner(true);
+              setFormData(prev => ({
+                ...prev,
+                commercial_track_behavior: 'Sí',
+                // Also pre-mark Google Analytics and Meta Pixel in shadow IT list
+                shadow_it_providers: Array.from(new Set([
+                  ...prev.shadow_it_providers,
+                  'google_analytics',
+                  'meta_pixel'
+                ]))
+              }));
+            }
+          }
+        }
+      } catch (err) {
+        console.error('Error fetching latest scan for questionnaire:', err);
+      }
+    };
+    
+    fetchScanData();
+  }, [token]);
 
   const toggleAccordion = (index: number) => {
     setActiveAccordion(activeAccordion === index ? null : index);
@@ -152,6 +201,11 @@ export default function DiagnosticQuestionnaire({ onSubmit }: DiagnosticQuestion
     }
     if (formData.commercial_db_type.length === 0) {
       setValidationError('Por favor seleccione al menos una opción en: ¿Dónde reside la base de datos principal? (Área 2)');
+      setActiveAccordion(1);
+      return;
+    }
+    if (!formData.commercial_track_behavior) {
+      setValidationError('Por favor seleccione una opción en: ¿Rastreas el comportamiento de los usuarios en tu web? (Área 2)');
       setActiveAccordion(1);
       return;
     }
@@ -336,7 +390,7 @@ export default function DiagnosticQuestionnaire({ onSubmit }: DiagnosticQuestion
                 </div>
 
                 <div className="md:col-span-2">
-                  <label className="text-xs font-semibold text-slate-300 block mb-2">¿Qué datos de salud maneja el departamento de personas? (Art. 16 bis)</label>
+                  <label className="text-xs font-semibold text-slate-300 block mb-2">¿Tu empresa maneja datos de salud, huellas dactilares o datos de menores de edad?</label>
                   <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 bg-slate-950/40 p-4 rounded-lg border border-slate-800/80">
                     {[
                       { key: 'licencias', label: 'Licencias médicas recibidas' },
@@ -386,7 +440,7 @@ export default function DiagnosticQuestionnaire({ onSubmit }: DiagnosticQuestion
 
                 {/* PREGUNTA 2 (CHECKBOXES MULTIPLE) */}
                 <div className="md:col-span-2">
-                  <label className="text-xs font-semibold text-slate-300 block mb-2">¿Qué tecnología utiliza para control de asistencia? (Art. 16 ter)</label>
+                  <label className="text-xs font-semibold text-slate-300 block mb-2">¿Cómo registras la hora de entrada y salida de tus trabajadores? (Biometría, firma, etc.)</label>
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 bg-slate-950/40 p-4 rounded-lg border border-slate-800/80">
                     {[
                       { value: 'Huella', label: 'Biometría Dactilar (Huella)' },
@@ -484,7 +538,7 @@ export default function DiagnosticQuestionnaire({ onSubmit }: DiagnosticQuestion
                 
                 {/* PREGUNTA 3 (CHECKBOXES MULTIPLE) */}
                 <div className="md:col-span-2">
-                  <label className="text-xs font-semibold text-slate-300 block mb-2">¿Dónde reside la base de datos principal de clientes?</label>
+                  <label className="text-xs font-semibold text-slate-300 block mb-2">¿Dónde guardas la información y datos de contacto de tus clientes?</label>
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 bg-slate-950/40 p-4 rounded-lg border border-slate-800/80">
                     {[
                       { value: 'CRM Cloud', label: 'CRM en la Nube (Salesforce, HubSpot)' },
@@ -532,7 +586,7 @@ export default function DiagnosticQuestionnaire({ onSubmit }: DiagnosticQuestion
                 </div>
 
                 <div>
-                  <label className="text-xs font-semibold text-slate-300 block mb-1.5">¿País donde residen los servidores de la herramienta comercial? (TID)</label>
+                  <label className="text-xs font-semibold text-slate-300 block mb-1.5">¿Utilizas proveedores extranjeros (como servidores en la nube fuera de Chile) para guardar esta información?</label>
                   <select 
                     value={formData.commercial_server_country} 
                     onChange={e => handleInputChange('commercial_server_country', e.target.value)}
@@ -624,6 +678,39 @@ export default function DiagnosticQuestionnaire({ onSubmit }: DiagnosticQuestion
                     </div>
                   )}
                 </div>
+
+                {/* PREGUNTA: Rastreo de comportamiento (Pre-marcada si se detecta escáner) */}
+                <div className="md:col-span-2">
+                  <div className="flex items-center justify-between">
+                    <label className="text-xs font-semibold text-slate-300 block mb-2">
+                      ¿Rastreas el comportamiento o las visitas de los usuarios en tu sitio web?
+                    </label>
+                    {detectedByScanner && (
+                      <span className="text-[10px] text-amber-500 font-extrabold animate-pulse">
+                        ⚠️ (Detectado automáticamente por el Escáner)
+                      </span>
+                    )}
+                  </div>
+                  <div className="grid grid-cols-2 gap-3 bg-slate-950/40 p-4 rounded-lg border border-slate-800/80">
+                    {[
+                      { value: 'Sí', label: 'Sí, usamos cookies de analítica o píxeles (ej. Google Analytics, Meta Pixel)' },
+                      { value: 'No', label: 'No, no realizamos ningún tipo de seguimiento web' }
+                    ].map(item => (
+                      <label key={item.value} className="flex items-center gap-2.5 text-xs text-slate-400 cursor-pointer select-none hover:text-slate-200">
+                        <input 
+                          type="radio"
+                          name="commercial_track_behavior"
+                          value={item.value}
+                          checked={formData.commercial_track_behavior === item.value}
+                          onChange={() => handleInputChange('commercial_track_behavior', item.value)}
+                          className="accent-indigo-600 focus:ring-0 bg-slate-950 w-4 h-4"
+                        />
+                        <span>{item.label}</span>
+                      </label>
+                    ))}
+                  </div>
+                </div>
+
               </div>
             )}
           </div>
@@ -647,7 +734,7 @@ export default function DiagnosticQuestionnaire({ onSubmit }: DiagnosticQuestion
                 
                 {/* PREGUNTA 5 (CHECKBOXES MULTIPLE) */}
                 <div className="md:col-span-2">
-                  <label className="text-xs font-semibold text-slate-300 block mb-2">¿Cómo se gestiona el acceso a las bases de datos? (RBAC)</label>
+                  <label className="text-xs font-semibold text-slate-300 block mb-2">¿Quién tiene permiso para entrar y ver las bases de datos de tu empresa?</label>
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 bg-slate-950/40 p-4 rounded-lg border border-slate-800/80">
                     {[
                       { value: 'Control estricto por Roles', label: 'Control estricto basado en roles (RBAC) con accesos mínimos' },
@@ -695,7 +782,7 @@ export default function DiagnosticQuestionnaire({ onSubmit }: DiagnosticQuestion
                 </div>
 
                 <div>
-                  <label className="text-xs font-semibold text-slate-300 block mb-1.5">¿Las bases de datos e integraciones cuentan con cifrado? (Art. 14 quinquies)</label>
+                  <label className="text-xs font-semibold text-slate-300 block mb-1.5">¿La información de tus bases de datos está cifrada (protegida con clave de seguridad)?</label>
                   <select 
                     value={formData.ti_encryption_type} 
                     onChange={e => handleInputChange('ti_encryption_type', e.target.value)}
@@ -753,7 +840,7 @@ export default function DiagnosticQuestionnaire({ onSubmit }: DiagnosticQuestion
             {activeAccordion === 3 && (
               <div className="px-6 pb-6 pt-2 grid grid-cols-1 md:grid-cols-2 gap-5 bg-slate-900/5">
                 <div>
-                  <label className="text-xs font-semibold text-slate-300 block mb-1.5">¿Existe un procedimiento para eliminar datos de deudas prescriptas? (Art. 17)</label>
+                  <label className="text-xs font-semibold text-slate-300 block mb-1.5">¿Tienes una regla para borrar automáticamente las deudas que ya vencieron/prescribieron?</label>
                   <select 
                     value={formData.finances_debt_deletion} 
                     onChange={e => handleInputChange('finances_debt_deletion', e.target.value)}
@@ -811,7 +898,7 @@ export default function DiagnosticQuestionnaire({ onSubmit }: DiagnosticQuestion
             {activeAccordion === 4 && (
               <div className="px-6 pb-6 pt-2 grid grid-cols-1 md:grid-cols-2 gap-5 bg-slate-900/5">
                 <div className="md:col-span-2">
-                  <label className="text-xs font-semibold text-slate-300 block mb-2">¿Se transfieren bases de datos a proveedores de servicios? (Art. 15 bis)</label>
+                  <label className="text-xs font-semibold text-slate-300 block mb-2">¿Compartes información de tus clientes con proveedores externos de servicios (ej. agencias, contadores, hosting)?</label>
                   <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 bg-slate-950/40 p-4 rounded-lg border border-slate-800/80">
                     {[
                       { key: 'mkt', label: 'Agencias de Marketing Digital' },
@@ -860,7 +947,7 @@ export default function DiagnosticQuestionnaire({ onSubmit }: DiagnosticQuestion
                 </div>
 
                 <div>
-                  <label className="text-xs font-semibold text-slate-300 block mb-1.5">¿Los contratos vigentes con estos terceros incluyen cláusulas DPA?</label>
+                  <label className="text-xs font-semibold text-slate-300 block mb-1.5">¿Tus contratos con estos proveedores incluyen un acuerdo de protección de datos (DPA)?</label>
                   <select 
                     value={formData.vendors_dpa_contracts} 
                     onChange={e => handleInputChange('vendors_dpa_contracts', e.target.value)}

@@ -26,6 +26,7 @@ export interface DiagnosisFinding {
   recommendation: string;
   penalty: number;
   riskUtm: number;
+  effort: 'LOW' | 'MEDIUM' | 'HIGH';
 }
 
 export interface DiagnosisResults {
@@ -248,6 +249,17 @@ export default function DiagnosisResultsView({
                     <td className="py-3.5 px-2 space-y-1">
                       <span className="font-semibold text-white block">{f.description}</span>
                       <span className="text-[11px] text-slate-400 block"><strong>Recomendación:</strong> {f.recommendation}</span>
+                      {f.effort && (
+                        <span className={`inline-block text-[9px] uppercase font-black px-2 py-0.5 rounded mt-1 border ${
+                          f.effort === 'LOW'
+                            ? 'bg-emerald-950/60 text-emerald-450 border-emerald-900/40'
+                            : f.effort === 'MEDIUM'
+                              ? 'bg-amber-950/60 text-amber-500 border-amber-900/40'
+                              : 'bg-rose-950/60 text-rose-455 border-rose-900/40'
+                        }`}>
+                          Esfuerzo: {f.effort === 'LOW' ? 'Bajo' : f.effort === 'MEDIUM' ? 'Medio' : 'Alto'}
+                        </span>
+                      )}
                     </td>
                     <td className="py-3.5 px-2 text-center font-bold text-rose-500">-{f.penalty}</td>
                     <td className="py-3.5 px-2 text-right font-extrabold text-rose-400">{f.riskUtm.toLocaleString()} UTM</td>

@@ -88,7 +88,35 @@ export default function ContractBuilderView({ token }: ContractBuilderViewProps)
     }
   };
 
-  const handleCopyText = () => {
+  const sha256 = async (message: string): Promise<string> => {
+    const msgBuffer = new TextEncoder().encode(message);
+    const hashBuffer = await window.crypto.subtle.digest('SHA-256', msgBuffer);
+    const hashArray = Array.from(new Uint8Array(hashBuffer));
+    return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+  };
+
+  const logDocumentDownload = async (content: string) => {
+    try {
+      const hash = await sha256(content);
+      const docType = contractType === 'DPA_LOCAL' ? 'dpa' : 'scc';
+      await fetch(`${API_BASE}/api/remediation/log-download`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          document_type: docType,
+          content_hash: hash,
+          disclaimer_version: 'DISCLAIMER_V1'
+        })
+      });
+    } catch (err) {
+      console.error('Error logging contract download:', err);
+    }
+  };
+
+  const handleCopyText = async () => {
     if (!contractHtml) return;
     
     // Strip HTML tags for clean clipboard copy
@@ -99,9 +127,11 @@ export default function ContractBuilderView({ token }: ContractBuilderViewProps)
     navigator.clipboard.writeText(textContent);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
+
+    await logDocumentDownload(textContent);
   };
 
-  const handlePrint = () => {
+  const handlePrint = async () => {
     if (!contractHtml) return;
     
     const printWindow = window.open('', '_blank');
@@ -124,6 +154,8 @@ export default function ContractBuilderView({ token }: ContractBuilderViewProps)
       `);
       printWindow.document.close();
     }
+
+    await logDocumentDownload(contractHtml);
   };
 
   return (

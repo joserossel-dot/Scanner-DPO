@@ -303,6 +303,18 @@ export async function initDb() {
     ALTER TABLE ropa_inventory ADD COLUMN IF NOT EXISTS status VARCHAR(50) DEFAULT 'draft';
   `);
 
+  // Document downloads audit trail table (P1 - Punto 8)
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS document_downloads (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      user_id UUID REFERENCES users(id) ON DELETE CASCADE,
+      document_type VARCHAR(50) NOT NULL, -- 'privacy_policy' | 'dpa' | 'scc' | 'terms'
+      content_hash VARCHAR(64) NOT NULL, -- Hash SHA-256 del texto descargado
+      disclaimer_version VARCHAR(20) NOT NULL, -- Ej: 'DISCLAIMER_V1'
+      downloaded_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+    )
+  `);
+
   console.log('✅ Tablas y esquema de PostgreSQL validados/creados.');
   return pool;
 }

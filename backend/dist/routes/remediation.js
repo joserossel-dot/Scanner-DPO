@@ -107,4 +107,34 @@ router.post('/generate-contract', adminCors, async (req, res) => {
         res.status(500).json({ error: 'Error interno al redactar el contrato: ' + error.message });
     }
 });
+// POST /api/remediation/log-download - Audit log download of documents (P1 - Punto 8)
+router.post('/log-download', adminCors, async (req, res) => {
+    const { document_type, content_hash, disclaimer_version } = req.body;
+    if (!document_type || !content_hash || !disclaimer_version) {
+        return res.status(400).json({ error: 'Faltan parámetros obligatorios en la petición.' });
+    }
+    const validTypes = ['privacy_policy', 'dpa', 'scc', 'terms'];
+    if (!validTypes.includes(document_type)) {
+        return res.status(400).json({ error: 'Tipo de documento legal inválido.' });
+    }
+    try {
+        const db = getDb();
+        const result = await db.query(`INSERT INTO document_downloads (user_id, document_type, content_hash, disclaimer_version)
+       VALUES ($1, $2, $3, $4)
+       RETURNING *`, [
+            req.user.id,
+            document_type,
+            content_hash,
+            disclaimer_version
+        ]);
+        res.json({
+            success: true,
+            download: result.rows[0]
+        });
+    }
+    catch (error) {
+        console.error('Error logging document download:', error.message);
+        res.status(550).json({ error: 'Error al registrar la descarga en la bitácora legal: ' + error.message });
+    }
+});
 export default router;

@@ -1364,7 +1364,7 @@ Firmas autorizadas:
                   onReset={() => setEvalResults(null)}
                 />
               ) : (
-                <DiagnosticQuestionnaire onSubmit={handleEvaluateQuestionnaire} />
+                <DiagnosticQuestionnaire onSubmit={handleEvaluateQuestionnaire} token={token} />
               )}
             </div>
           </div>
