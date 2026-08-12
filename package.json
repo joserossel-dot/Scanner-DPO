@@ -16,5 +16,9 @@
     "build:frontend": "npm run build -w frontend && mkdir -p frontend/dist && cp widget/dist/widget.js frontend/dist/widget.js",
     "build:all": "npm run build:widget && npm run build:frontend",
     "start": "npm run start -w backend"
+  },
+  "dependencies": {
+    "multer": "^2.2.0",
+    "openai": "^7.4.0"
   }
 }

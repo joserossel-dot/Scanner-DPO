@@ -14,7 +14,8 @@ import {
   Info,
   Users,
   Megaphone,
-  Lock
+  Lock,
+  Sparkles
 } from 'lucide-react';
 
 interface RopaRecord {
@@ -50,6 +51,11 @@ export default function RopaInventoryView({ token }: RopaInventoryViewProps) {
   const [dataCategories, setDataCategories] = useState<string[]>([]);
   const [retentionPeriod, setRetentionPeriod] = useState('');
   const [crossBorderTransfer, setCrossBorderTransfer] = useState(false);
+
+  // Evidence AI states
+  const [evidenceFile, setEvidenceFile] = useState<File | null>(null);
+  const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [analysisResultMsg, setAnalysisResultMsg] = useState('');
 
   // Fetch all RoPA records
   const fetchRopa = async () => {
@@ -89,6 +95,8 @@ export default function RopaInventoryView({ token }: RopaInventoryViewProps) {
     setDataCategories([]);
     setRetentionPeriod('');
     setCrossBorderTransfer(false);
+    setEvidenceFile(null);
+    setAnalysisResultMsg('');
     setEditingRecord(null);
   };
 
@@ -107,6 +115,8 @@ export default function RopaInventoryView({ token }: RopaInventoryViewProps) {
     setDataCategories(record.data_categories);
     setRetentionPeriod(record.retention_period);
     setCrossBorderTransfer(record.cross_border_transfer);
+    setEvidenceFile(null);
+    setAnalysisResultMsg('');
     setIsModalOpen(true);
   };
 
@@ -184,6 +194,44 @@ export default function RopaInventoryView({ token }: RopaInventoryViewProps) {
         ? prev.filter(c => c !== cat) 
         : [...prev, cat]
     );
+  };
+
+  // Trigger simulated/real vision AI endpoint with FormData
+  const handleAnalyzeEvidence = async () => {
+    if (!evidenceFile) return;
+    setIsAnalyzing(true);
+    setAnalysisResultMsg('');
+    try {
+      const formDataBody = new FormData();
+      formDataBody.append('evidence', evidenceFile);
+
+      const response = await fetch(`${API_BASE}/api/ropa/analyze-evidence`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`
+        },
+        body: formDataBody
+      });
+      if (response.ok) {
+        const data = await response.json();
+        const detected = data.categories || [];
+        
+        // Auto-check data categories detected by AI
+        setDataCategories(prev => {
+          const combined = new Set([...prev, ...detected]);
+          return Array.from(combined);
+        });
+
+        setAnalysisResultMsg(`✨ ${data.reasoning}`);
+      } else {
+        alert('Error al analizar la evidencia de tratamiento.');
+      }
+    } catch (e) {
+      console.error(e);
+      alert('Error de red al analizar la imagen.');
+    } finally {
+      setIsAnalyzing(false);
+    }
   };
 
   // Export to CSV Function
@@ -268,7 +316,7 @@ export default function RopaInventoryView({ token }: RopaInventoryViewProps) {
         </div>
         <div className="space-y-1">
           <h3 className="text-xs font-bold text-indigo-300 uppercase tracking-wider">¿Qué es el inventario RoPA?</h3>
-          <p className="text-xs text-slate-350 leading-relaxed">
+          <p className="text-xs text-slate-355 leading-relaxed">
             El RoPA es la columna vertebral de su cumplimiento (Art. 12, Ley N° 21.719). Es un inventario obligatorio donde usted declara qué datos personales recopila su empresa, para qué los usa, dónde los guarda y con quién los comparte. Sin este mapa, es imposible demostrar cumplimiento ante una fiscalización.
           </p>
         </div>
@@ -464,6 +512,44 @@ export default function RopaInventoryView({ token }: RopaInventoryViewProps) {
                 <span className="text-[10px] text-slate-500 block mt-1">
                   Explique brevemente para qué usa estos datos. La ley prohíbe usarlos para fines distintos a los declarados.
                 </span>
+              </div>
+
+              {/* Killer Feature: Evidence File Upload + AI Autofill Button */}
+              <div className="space-y-1.5">
+                <label className="text-xs font-semibold text-slate-300 block">Adjuntar Evidencia (Opcional - Pantallazo del software o formulario)</label>
+                <div className="flex gap-2 items-center">
+                  <input
+                    type="file"
+                    accept="image/*,application/pdf"
+                    onChange={e => {
+                      if (e.target.files && e.target.files.length > 0) {
+                        setEvidenceFile(e.target.files[0]);
+                        setAnalysisResultMsg('');
+                      }
+                    }}
+                    className="flex-grow bg-slate-950 border border-slate-800 rounded-lg px-3 py-1 text-xs text-slate-400 focus:outline-none file:mr-2.5 file:py-1 file:px-2.5 file:rounded-md file:border-0 file:text-[10px] file:font-semibold file:bg-indigo-650 file:text-white hover:file:bg-indigo-500 file:cursor-pointer"
+                  />
+                  <button
+                    type="button"
+                    onClick={handleAnalyzeEvidence}
+                    disabled={isAnalyzing || !evidenceFile}
+                    className="flex items-center gap-1.5 py-1.5 px-3 bg-slate-950 border border-indigo-900/50 hover:border-indigo-700 text-indigo-400 hover:text-white font-bold text-xs rounded-lg transition-all shadow-md disabled:bg-slate-800 disabled:text-slate-600 disabled:border-slate-850"
+                  >
+                    {isAnalyzing ? (
+                      <span className="w-3.5 h-3.5 border-2 border-indigo-400 border-t-transparent rounded-full animate-spin" />
+                    ) : (
+                      <>
+                        <Sparkles size={12} />
+                        <span>Analizar con IA</span>
+                      </>
+                    )}
+                  </button>
+                </div>
+                {analysisResultMsg && (
+                  <span className="text-[10px] text-indigo-400 block mt-1.5 font-medium leading-relaxed">
+                    {analysisResultMsg}
+                  </span>
+                )}
               </div>
 
               <div className="grid grid-cols-2 gap-4">

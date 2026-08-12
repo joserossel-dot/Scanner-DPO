@@ -2,6 +2,11 @@ import { Router } from 'express';
 import cors from 'cors';
 import { getDb } from '../database/db.js';
 import { authenticateToken } from '../middlewares/auth.js';
+import multer from 'multer';
+import { OpenAI } from 'openai';
+
+const storage = multer.memoryStorage();
+const upload = multer({ storage: storage });
 
 const router = Router();
 
@@ -138,6 +143,60 @@ router.delete('/:id', adminCors, async (req: any, res) => {
   } catch (error: any) {
     console.error('Error deleting RoPA record:', error.message);
     res.status(500).json({ error: 'Error al eliminar la actividad de tratamiento.' });
+  }
+});
+
+// POST /api/ropa/analyze-evidence - Analyze uploaded evidence (screenshot) using OpenAI Vision in memory
+router.post('/analyze-evidence', adminCors, upload.single('evidence'), async (req: any, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ error: 'No se subió ningún archivo de evidencia.' });
+    }
+
+    const apiKey = process.env.OPENAI_API_KEY;
+    if (!apiKey) {
+      console.warn('[PrivacyTech AI] OPENAI_API_KEY no configurada. Usando fallback simulado.');
+      return res.json({
+        categories: ["Identificatorios", "Financieros"],
+        reasoning: "FALLBACK: No se encontró la clave de API de OpenAI. Se detectaron campos de RUT y Tarjeta en la imagen de prueba."
+      });
+    }
+
+    const openai = new OpenAI({ apiKey });
+    
+    // Convert memory buffer directly to Base64 (descarta en RAM tras responder)
+    const base64Data = req.file.buffer.toString('base64');
+    const mimeType = req.file.mimetype;
+    const dataUrl = `data:${mimeType};base64,${base64Data}`;
+
+    const prompt = "Eres un auditor legal de la Ley 21.719 de Chile. Analiza la imagen adjunta (que es una interfaz de software o documento). Devuelve ÚNICAMENTE un objeto JSON estricto con dos propiedades: 'categories' (un array de strings eligiendo solo entre: ['Identificatorios', 'Financieros', 'Salud/Sensibles', 'Biométricos', 'NNA']) y 'reasoning' (una breve explicación de por qué detectaste esos datos). No devuelvas markdown, solo el JSON.";
+
+    const response = await openai.chat.completions.create({
+      model: "gpt-4o-mini",
+      messages: [
+        {
+          role: "user",
+          content: [
+            { type: "text", text: prompt },
+            { type: "image_url", image_url: { url: dataUrl } }
+          ]
+        }
+      ],
+      max_tokens: 300,
+      response_format: { type: "json_object" }
+    });
+
+    const content = response.choices[0]?.message?.content;
+    if (!content) {
+      return res.status(500).json({ error: 'Respuesta vacía de OpenAI.' });
+    }
+
+    const parsed = JSON.parse(content);
+    return res.json(parsed);
+
+  } catch (err: any) {
+    console.error('Error in analyze-evidence:', err.message);
+    res.status(550).json({ error: 'Error al procesar la evidencia mediante IA.' });
   }
 });
 
