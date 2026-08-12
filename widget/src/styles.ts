@@ -13,7 +13,8 @@ export const WIDGET_STYLES = `
 .pt-floating-badge {
   position: fixed;
   bottom: 24px;
-  right: 24px;
+  left: 24px;
+  right: auto;
   width: 48px;
   height: 48px;
   border-radius: 50%;
@@ -40,8 +41,8 @@ export const WIDGET_STYLES = `
 .pt-banner {
   position: fixed;
   bottom: 24px;
-  left: 24px;
-  right: 88px; /* Safe space for the floating badge */
+  left: 88px; /* Safe space for the floating badge on the left */
+  right: 24px;
   max-width: 800px;
   background: rgba(255, 255, 255, 0.9);
   backdrop-filter: blur(16px);
