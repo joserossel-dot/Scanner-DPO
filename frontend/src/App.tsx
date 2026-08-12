@@ -39,7 +39,8 @@ import {
   Lock,
   ChevronDown,
   ChevronUp,
-  FolderLock
+  FolderLock,
+  Info
 } from 'lucide-react';
 
 interface AuditFinding {
@@ -171,7 +172,7 @@ export function Dashboard({ token, user, onLogout }: DashboardProps) {
   const [configChannels, setConfigChannels] = useState('');
   const [configCompanyName, setConfigCompanyName] = useState('');
   const [configBannerTitle, setConfigBannerTitle] = useState('');
-  const [configBannerDesc, setConfigBannerDesc] = useState('');
+  const [configBannerDesc, setConfigBannerDesc] = useState('Utilizamos cookies esenciales para el funcionamiento del sitio, y cookies analíticas/comerciales opcionales. Puede aceptar todas o rechazarlas. Consulte nuestra Política de Privacidad para más detalles conforme a la Ley N° 21.719.');
   const [configVersion, setConfigVersion] = useState('');
   const [isSavingConfig, setIsSavingConfig] = useState(false);
 
@@ -422,7 +423,7 @@ export function Dashboard({ token, user, onLogout }: DashboardProps) {
         setConfigChannels(data.policy_content?.channels || '');
         setConfigCompanyName(data.company_name || '');
         setConfigBannerTitle(data.banner_title || '');
-        setConfigBannerDesc(data.banner_description || '');
+        setConfigBannerDesc(data.banner_description || 'Utilizamos cookies esenciales para el funcionamiento del sitio, y cookies analíticas/comerciales opcionales. Puede aceptar todas o rechazarlas. Consulte nuestra Política de Privacidad para más detalles conforme a la Ley N° 21.719.');
         setConfigVersion(data.policy_version || 'v1.0.0');
       }
     } catch (e) {
@@ -1372,9 +1373,9 @@ Firmas autorizadas:
   const renderRemediation = () => {
     return (
       <div>
-        <header className="page-header">
-          <h1 className="page-title">🛠️ Centro de Remedición & Herramientas Activas</h1>
-          <p className="page-subtitle">Instale el CMP, procese solicitudes de usuarios, firme SCCs para proveedores internacionales y actualice su política de privacidad.</p>
+        <header className="page-header text-left">
+          <h1 className="page-title">🛠️ Herramientas de Cumplimiento & Gestión de Evidencia</h1>
+          <p className="page-subtitle">Instale el CMP, procese solicitudes de usuarios, firme SCCs para proveedores internacionales y actualice su política de privacidad de forma automatizada.</p>
         </header>
 
         {/* Capa 3 Local Sub-tab Nav */}
@@ -1438,21 +1439,21 @@ Firmas autorizadas:
 
         {/* Sub-tab: CMP & Consent Logs */}
         {remediationSubTab === 'cmp' && (
-          <div className="dashboard-grid">
-            <div className="card col-12">
+          <div className="dashboard-grid text-left">
+            <div className="card col-12 text-left">
               <h3 style={{ margin: '0 0 10px 0', fontSize: '15px', fontWeight: 600 }}>Configuración del Banner del CMP</h3>
               <p style={{ fontSize: '13px', color: 'var(--text-secondary)', marginBottom: '15px' }}>Personaliza las alertas que visualiza el cliente al ingresar a tu portal.</p>
               
-              <form onSubmit={handleSaveConfig} style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '15px' }}>
+              <form onSubmit={handleSaveConfig} style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '15px' }}>
                 <div>
                   <label className="form-label">Título del Banner</label>
                   <input type="text" className="input-text" style={{ width: '100%' }} value={configBannerTitle} onChange={e => setConfigBannerTitle(e.target.value)} required />
                 </div>
                 <div>
                   <label className="form-label">Mensaje Informativo (Consentimiento)</label>
-                  <textarea className="input-text" style={{ width: '100%', resize: 'vertical' }} rows={2} value={configBannerDesc} onChange={e => setConfigBannerDesc(e.target.value)} required />
+                  <textarea className="input-text" style={{ width: '100%', resize: 'vertical' }} rows={4} value={configBannerDesc} onChange={e => setConfigBannerDesc(e.target.value)} required />
                 </div>
-                <div className="col-12" style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '10px' }}>
+                <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '10px' }}>
                   <button type="submit" className="btn-save" disabled={isSavingConfig}>
                     {isSavingConfig ? 'Guardando...' : 'Aplicar Cambios del CMP'}
                   </button>
@@ -1460,16 +1461,18 @@ Firmas autorizadas:
               </form>
             </div>
 
-            <div className="card col-12">
+            <div className="card col-12 text-left">
               <h3 style={{ margin: '0 0 5px 0', fontSize: '15px', fontWeight: 600 }}>Instalación del SDK Widget (CMP)</h3>
-              <p style={{ fontSize: '12.5px', color: 'var(--text-secondary)', marginBottom: '15px' }}>Copia e inserta esta etiqueta en el <code>&lt;head&gt;</code> de tu sitio web de producción.</p>
+              <p style={{ fontSize: '12.5px', color: 'var(--text-secondary)', marginBottom: '15px' }}>
+                Copie este código y péguelo en su sitio web justo antes de cerrar la etiqueta <code>&lt;/head&gt;</code>. (Compatible con WordPress, Shopify o HTML nativo). Asegúrese de que la URL apunte a nuestro servidor de producción, no a localhost.
+              </p>
               <div style={{ background: '#0a0a14', padding: '12px 16px', borderRadius: '6px', fontFamily: 'monospace', fontSize: '12px', border: '1px solid var(--border-color)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <code>&lt;script src="http://localhost:3000/widget.js" async&gt;&lt;/script&gt;</code>
+                <code>{`<script src="https://pt-compliance-api.onrender.com/widget.js?tenant=${user?.id || 'default'}" async></script>`}</code>
                 <button 
                   className="btn-action" 
                   style={{ padding: '2px 8px', fontSize: '10px' }}
                   onClick={() => {
-                    navigator.clipboard.writeText('<script src="http://localhost:3000/widget.js" async></script>');
+                    navigator.clipboard.writeText(`<script src="https://pt-compliance-api.onrender.com/widget.js?tenant=${user?.id || 'default'}" async></script>`);
                     showToast('Código copiado al portapapeles.', 'success');
                   }}
                 >
@@ -1478,8 +1481,16 @@ Firmas autorizadas:
               </div>
             </div>
 
-            <div className="card col-12">
+            <div className="card col-12 text-left">
               <h3 style={{ margin: '0 0 10px 0', fontSize: '15px', fontWeight: 600 }}>Registro Histórico de Consentimientos</h3>
+              
+              <div className="bg-indigo-950/20 border border-indigo-900/30 rounded-xl p-3.5 mb-4 flex items-start gap-2.5">
+                <Info size={15} className="text-indigo-400 flex-shrink-0 mt-0.5" />
+                <span className="text-[11.5px] text-slate-350 leading-relaxed">
+                  <strong>Evidencia Legal (Art. 12):</strong> Nuestro widget captura automáticamente la hora y la IP anonimizada de quienes aceptan sus políticas. Esta bitácora es su prueba irrefutable ante una fiscalización de la Agencia de Datos. Todo funciona en piloto automático.
+                </span>
+              </div>
+
               <p style={{ fontSize: '13px', color: 'var(--text-secondary)', marginBottom: '15px' }}>Logs auditables de consentimientos registrados por usuarios en el CMP.</p>
               {consentLogs.length > 0 ? (
                 <div style={{ overflowX: 'auto' }}>
@@ -1517,9 +1528,9 @@ Firmas autorizadas:
 
         {/* Sub-tab: ARCO+ Inbox */}
         {remediationSubTab === 'arco' && (
-          <div className="dashboard-grid">
-            <div className="card col-12">
-              <h3 style={{ margin: '0 0 10px 0', fontSize: '15px', fontWeight: 600 }}>Bandeja Administrativa ARCO+</h3>
+          <div className="dashboard-grid text-left">
+            <div className="card col-12 text-left">
+              <h3 style={{ margin: '0 0 10px 0', fontSize: '15px', fontWeight: 600 }}>Bandeja de Entrada ARCO+</h3>
               <p style={{ fontSize: '13px', color: 'var(--text-secondary)', marginBottom: '15px' }}>Bandeja legal para responder requerimientos del titular de datos dentro de los plazos de la ley.</p>
               
               {arcoTickets.length > 0 ? (
@@ -1577,21 +1588,26 @@ Firmas autorizadas:
               )}
             </div>
 
-            <div className="card col-12">
+            <div className="card col-12 text-left">
               <h3 style={{ margin: '0 0 10px 0', fontSize: '15px', fontWeight: 600 }}>Pestaña Pública de Ejercicio ARCO+</h3>
-              <p style={{ fontSize: '13px', color: 'var(--text-secondary)', marginBottom: '15px' }}>El widget CMP despliega de forma nativa este portal para tus clientes. Si prefieres incrustarlo en una página de tu web, copia este enlace.</p>
-              <div style={{ background: '#0a0a14', padding: '12px 16px', borderRadius: '6px', fontFamily: 'monospace', fontSize: '12px', border: '1px solid var(--border-color)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <code>http://localhost:3000/mock-site/arco-portal</code>
-                <button 
-                  className="btn-action" 
-                  style={{ padding: '2px 8px', fontSize: '10px' }}
-                  onClick={() => {
-                    navigator.clipboard.writeText('http://localhost:3000/mock-site/arco-portal');
-                    showToast('Enlace copiado al portapapeles.', 'success');
-                  }}
-                >
-                  Copiar Enlace
-                </button>
+              <p style={{ fontSize: '13px', color: 'var(--text-secondary)', marginBottom: '15px' }}>
+                Pegue este enlace en su página web. Los reclamos de sus clientes llegarán aquí para que los gestione en el plazo legal de 30 días.
+              </p>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                <span className="text-xs font-semibold text-slate-400">Enlace para sus clientes:</span>
+                <div style={{ background: '#0a0a14', padding: '12px 16px', borderRadius: '6px', fontFamily: 'monospace', fontSize: '12px', border: '1px solid var(--border-color)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <code>{`https://pt-compliance-api.onrender.com/arco?tenant=${user?.id || 'default'}`}</code>
+                  <button 
+                    className="btn-action" 
+                    style={{ padding: '2px 8px', fontSize: '10px' }}
+                    onClick={() => {
+                      navigator.clipboard.writeText(`https://pt-compliance-api.onrender.com/arco?tenant=${user?.id || 'default'}`);
+                      showToast('Enlace copiado al portapapeles.', 'success');
+                    }}
+                  >
+                    Copiar Enlace
+                  </button>
+                </div>
               </div>
             </div>
           </div>
@@ -1599,8 +1615,15 @@ Firmas autorizadas:
 
         {/* Sub-tab: TID & Foreign Providers */}
         {remediationSubTab === 'transfers' && (
-          <div className="dashboard-grid">
-            <div className="card col-12">
+          <div className="dashboard-grid text-left">
+            <div className="card col-12 text-left">
+              <div className="bg-amber-950/20 border border-amber-900/40 rounded-xl p-3.5 mb-4 flex items-start gap-2.5">
+                <AlertTriangle size={16} className="text-amber-500 flex-shrink-0 mt-0.5" />
+                <span className="text-[11.5px] text-amber-500 leading-relaxed">
+                  <strong>⚠️ Conexión Legal:</strong> Los proveedores extranjeros que registre en esta matriz DEBEN ser declarados en su 'Política de Privacidad' y obligan a generar un anexo en la pestaña 'Contratos DPA/SCC'.
+                </span>
+              </div>
+
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px', flexWrap: 'wrap', gap: '10px' }}>
                 <div>
                   <h3 style={{ margin: 0, fontSize: '15px', fontWeight: 600 }}>Matriz de Transferencias Internacionales (TID)</h3>
@@ -1871,7 +1894,7 @@ Firmas autorizadas:
             onClick={() => { setActiveTab('remediation'); fetchConsentLogs(); fetchArcoTickets(); fetchTransfers(); fetchConfig(); }}
           >
             <Settings size={16} />
-            <span>🛠️ 3. Centro Remedición</span>
+            <span>🛠️ 3. Herramientas de Cumplimiento</span>
           </div>
 
           <div 
