@@ -53,6 +53,30 @@ const store = {
     ],
     whistleblowerReports: [
         { id: 'report-1', user_id: 'default', incident_description: 'Filtración de correos de clientes en foro público por ex-empleado.', reported_date: new Date().toISOString(), status: 'PENDING' }
+    ],
+    ropaInventory: [
+        {
+            id: 'ropa-1',
+            user_id: 'default',
+            process_name: 'Gestión de Planillas y Remuneraciones',
+            purpose: 'Administración del pago de sueldos, cotizaciones y licencias médicas.',
+            legal_basis: 'Contrato',
+            data_categories: ['Identificatorios', 'Financieros', 'Salud/Sensibles'],
+            retention_period: '5 años',
+            cross_border_transfer: false,
+            created_at: new Date().toISOString()
+        },
+        {
+            id: 'ropa-2',
+            user_id: 'default',
+            process_name: 'Campañas de Email Marketing',
+            purpose: 'Envío de boletines informativos y ofertas comerciales a clientes.',
+            legal_basis: 'Consentimiento',
+            data_categories: ['Identificatorios'],
+            retention_period: 'Hasta revocación del consentimiento',
+            cross_border_transfer: true,
+            created_at: new Date().toISOString()
+        }
     ]
 };
 // Mock Pool that behaves like pg.Pool for local development
@@ -278,6 +302,55 @@ class MockPool {
                 report.status = status;
             }
             return { rows: report ? [report] : [], rowCount: report ? 1 : 0 };
+        }
+        if (text.includes('FROM ropa_inventory') && text.includes('user_id = $1')) {
+            const list = store.ropaInventory?.filter((r) => r.user_id === params[0]) || [];
+            return { rows: list, rowCount: list.length };
+        }
+        if (text.startsWith('INSERT INTO ropa_inventory')) {
+            if (!store.ropaInventory)
+                store.ropaInventory = [];
+            const newRopa = {
+                id: 'ropa-' + Math.random().toString(36).substring(2, 9),
+                user_id: params[0],
+                process_name: params[1],
+                purpose: params[2],
+                legal_basis: params[3],
+                data_categories: typeof params[4] === 'string' ? JSON.parse(params[4]) : params[4],
+                retention_period: params[5],
+                cross_border_transfer: params[6] === true || params[6] === 'true' || params[6] === '1',
+                created_at: new Date().toISOString()
+            };
+            store.ropaInventory.push(newRopa);
+            return { rows: [newRopa], rowCount: 1 };
+        }
+        if (text.startsWith('UPDATE ropa_inventory')) {
+            const processName = params[0];
+            const purpose = params[1];
+            const legalBasis = params[2];
+            const dataCategories = typeof params[3] === 'string' ? JSON.parse(params[3]) : params[3];
+            const retentionPeriod = params[4];
+            const crossBorderTransfer = params[5] === true || params[5] === 'true' || params[5] === '1';
+            const id = params[6];
+            const userId = params[7];
+            const item = store.ropaInventory?.find((r) => r.id === id && r.user_id === userId);
+            if (item) {
+                item.process_name = processName;
+                item.purpose = purpose;
+                item.legal_basis = legalBasis;
+                item.data_categories = dataCategories;
+                item.retention_period = retentionPeriod;
+                item.cross_border_transfer = crossBorderTransfer;
+            }
+            return { rows: item ? [item] : [], rowCount: item ? 1 : 0 };
+        }
+        if (text.startsWith('DELETE FROM ropa_inventory')) {
+            const id = params[0];
+            const userId = params[1];
+            const beforeLength = store.ropaInventory?.length || 0;
+            store.ropaInventory = store.ropaInventory?.filter((r) => !(r.id === id && r.user_id === userId)) || [];
+            const deletedCount = beforeLength - store.ropaInventory.length;
+            return { rows: [], rowCount: deletedCount };
         }
         if (text.startsWith('INSERT INTO audit_reports')) {
             const newReport = {
@@ -582,6 +655,19 @@ export async function initDb() {
       incident_description TEXT NOT NULL,
       reported_date TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
       status VARCHAR(50) NOT NULL DEFAULT 'PENDING'
+    )
+  `);
+    await pool.query(`
+    CREATE TABLE IF NOT EXISTS ropa_inventory (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      user_id UUID REFERENCES users(id) ON DELETE CASCADE,
+      process_name VARCHAR(255) NOT NULL,
+      purpose TEXT NOT NULL,
+      legal_basis VARCHAR(255) NOT NULL,
+      data_categories JSONB NOT NULL,
+      retention_period VARCHAR(255) NOT NULL,
+      cross_border_transfer BOOLEAN NOT NULL DEFAULT FALSE,
+      created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
     )
   `);
     console.log('✅ Tablas y esquema de PostgreSQL validados/creados.');

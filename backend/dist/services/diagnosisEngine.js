@@ -162,10 +162,36 @@ export function evaluateQuestionnaire(answers) {
         actionPlan.push({
             step: stepCounter++,
             title: 'Depurar deudas prescriptas',
-            description: 'Implementar protocolos de eliminación de deudas financieras prescriptas (Art. 17).',
+            description: 'Implementar deudas financieras prescriptas (Art. 17).',
             priority: 'Media',
             estimatedEffort: '1 día',
             details: 'Ejecutar procesos automáticos de eliminación o anonimización de registros financieros según las reglas del Art. 17.'
+        });
+    }
+    // Rule 7: Shadow IT sin DPA (Art. 15 bis)
+    const hasShadowIt = Array.isArray(answers.shadow_it_providers) && answers.shadow_it_providers.length > 0;
+    if (hasShadowIt && (answers.vendors_dpa_contracts === 'Ninguno' || answers.vendors_dpa_contracts === 'Solo algunos')) {
+        const penalty = 15;
+        const riskUtm = 10000;
+        scoreTotal -= penalty;
+        if (riskUtm > maxRiskUtm)
+            maxRiskUtm = riskUtm;
+        findings.push({
+            id: 'FIND_SHADOW_IT_NO_DPA',
+            category: 'Proveedores',
+            severity: 'Grave',
+            description: 'Infracción Grave (Art. 15 bis) - Uso de herramientas SaaS externas (Shadow IT) sin acuerdos contractuales de DPA.',
+            recommendation: 'Establecer y regularizar acuerdos de procesamiento de datos (DPA) con todos los proveedores externos declarados.',
+            penalty,
+            riskUtm
+        });
+        actionPlan.push({
+            step: stepCounter++,
+            title: 'Regularizar contratos de encargado de tratamiento con proveedores de Shadow IT',
+            description: 'Regularizar los contratos de transferencia de datos con herramientas SaaS de Shadow IT (Art. 15 bis).',
+            priority: 'Alta',
+            estimatedEffort: '2 días',
+            details: 'Identificar y firmar contratos DPA con todos los proveedores de software declarados (ej. AWS, HubSpot, Slack, Zoom, Google Analytics, etc.).'
         });
     }
     // Cap score between 0 and 100

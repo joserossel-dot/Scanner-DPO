@@ -13,6 +13,7 @@ import PrivacyPolicyPublic from './pages/legal/PrivacyPolicyPublic';
 import CookiesPolicyPublic from './pages/legal/CookiesPolicyPublic';
 import TermsAndConditions from './pages/legal/TermsAndConditions';
 import ArcoRequestPublic from './pages/legal/ArcoRequestPublic';
+import RopaInventoryView from './pages/dashboard/components/RopaInventoryView';
 import { 
   Shield, 
   Activity, 
@@ -35,7 +36,8 @@ import {
   ArrowRight,
   Lock,
   ChevronDown,
-  ChevronUp
+  ChevronUp,
+  FolderLock
 } from 'lucide-react';
 
 interface AuditFinding {
@@ -966,51 +968,6 @@ Firmas autorizadas:
               </div>
             )}
           </div>
-
-          {/* Section C: Shadow IT Discovery Accordion */}
-          <div className="card col-12">
-            <h3 style={{ margin: '0 0 10px 0', fontSize: '16px', fontWeight: 600, color: 'var(--color-primary)' }}>3. Shadow IT Hunter: Descubrimiento de Proveedores</h3>
-            <p style={{ fontSize: '13px', color: 'var(--text-secondary)', marginBottom: '20px' }}>Responde este checklist por categorías para relevar y auditar herramientas externas que tu equipo técnico use de forma no autorizada.</p>
-            
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-              {[
-                { id: 'infra', title: 'A. Infraestructura y Nube (AWS, GCP, Azure, DigitalOcean)', keys: ['aws', 'gcp', 'azure', 'digitalocean'] },
-                { id: 'marketing', title: 'B. CRM, Marketing y Automatización (HubSpot, Salesforce, Mailchimp)', keys: ['hubspot', 'salesforce', 'mailchimp', 'activecampaign', 'sendgrid'] },
-                { id: 'operations', title: 'C. Operaciones y Recursos Humanos (Slack, Workspace, Zoom)', keys: ['google_workspace', 'office_365', 'zoom', 'workday', 'bamboohr'] },
-                { id: 'analytics', title: 'D. TI, Analytics y Soporte (Analytics, Pixel, Hotjar, Zendesk)', keys: ['google_analytics', 'meta_pixel', 'hotjar', 'zendesk', 'intercom'] }
-              ].map(group => {
-                const isOpen = activeAccordion === group.id;
-                return (
-                  <div key={group.id} style={{ border: '1px solid var(--border-color)', borderRadius: '8px', overflow: 'hidden' }}>
-                    <div 
-                      onClick={() => setActiveAccordion(isOpen ? null : group.id)} 
-                      style={{ padding: '12px 16px', background: 'rgba(255,255,255,0.02)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: 'pointer', fontWeight: 600, fontSize: '13.5px' }}
-                    >
-                      <span>{group.title}</span>
-                      {isOpen ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
-                    </div>
-                    {isOpen && (
-                      <div style={{ padding: '16px', background: 'black', display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                        {group.keys.map(k => {
-                          const item = discoveryState[k];
-                          return (
-                            <label key={k} style={{ display: 'flex', alignItems: 'center', gap: '10px', fontSize: '13px', cursor: 'pointer' }}>
-                              <input 
-                                type="checkbox" 
-                                checked={item.used} 
-                                onChange={() => handleCheckboxToggle(k)}
-                              />
-                              <span>Utilizamos <strong>{item.vendorName}</strong> (HQ en {item.country === 'US' ? 'EE.UU.' : item.country})</span>
-                            </label>
-                          );
-                        })}
-                      </div>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-          </div>
         </div>
       </div>
     );
@@ -1883,6 +1840,15 @@ Firmas autorizadas:
             <Activity size={16} />
             <span>📊 2. Diagnóstico & Plan</span>
           </div>
+
+          <div 
+            className={`nav-item ${activeTab === 'ropa' ? 'active' : ''}`}
+            style={{ paddingLeft: '28px', fontSize: '11.5px', opacity: 0.85 }}
+            onClick={() => { setActiveTab('ropa'); }}
+          >
+            <FolderLock size={14} />
+            <span>📓 Inventario de Datos (RoPA)</span>
+          </div>
           
           <div 
             className={`nav-item ${activeTab === 'remediation' ? 'active' : ''}`}
@@ -1969,6 +1935,7 @@ Firmas autorizadas:
         {activeTab === 'remediation' && renderRemediation()}
         {activeTab === 'dpo' && <DpoSuiteView token={token} />}
         {activeTab === 'dossier' && <AuditDossierView token={token} />}
+        {activeTab === 'ropa' && <RopaInventoryView token={token} />}
 
         {/* Modal: SCC Agreement Generator Viewer */}
         {isGeneratingScc && (
