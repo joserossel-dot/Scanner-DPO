@@ -41,7 +41,7 @@ function checkSslCertificate(hostname: string): Promise<{ valid: boolean; daysRe
       port: 443,
       servername: hostname,
       rejectUnauthorized: false, // Obtain certificate data even if invalid/expired to inspect it
-      timeout: 4000
+      timeout: 5000
     }, () => {
       if (completed) return;
       completed = true;
@@ -59,6 +59,7 @@ function checkSslCertificate(hostname: string): Promise<{ valid: boolean; daysRe
         const now = new Date();
         const msRemaining = validTo.getTime() - now.getTime();
         const daysRemaining = Math.max(0, Math.floor(msRemaining / (1000 * 60 * 60 * 24)));
+        
         const getIssuerString = (field: string | string[] | undefined): string => {
           if (Array.isArray(field)) return field[0] || '';
           return field || '';
@@ -106,7 +107,7 @@ function checkHttpHeaders(hostname: string): Promise<{ headers: Record<string, s
       headers: {
         'User-Agent': 'PrivacyTech-SecurityScanner/1.0'
       },
-      timeout: 4000,
+      timeout: 5000,
       rejectUnauthorized: false
     }, (res) => {
       if (completed) return;
@@ -167,7 +168,6 @@ function scanExposedFile(hostname: string, filePath: string, keywords: string[])
       res.setEncoding('utf8');
       res.on('data', (chunk) => {
         body += chunk;
-        // Limit body check size to prevent DOS/OOM on massive files
         if (body.length > 3072) {
           req.destroy();
         }
@@ -200,29 +200,32 @@ function scanExposedFile(hostname: string, filePath: string, keywords: string[])
 
 // Main scan runner
 export async function runSecurityScan(domain: string): Promise<SecurityScanResult> {
-  const vulnerabilities: VulnerabilityAlert[] = [];
-  let score = 100;
-  
   const hostname = getHostname(domain);
   console.log(`[SecurityScanner] Iniciando análisis real sobre hostname: ${hostname}`);
 
-  // Skip actual HTTP calls for local test domains to avoid timeouts, fallback immediately
-  const isLocalDomain = hostname === 'localhost' || hostname === '127.0.0.1' || hostname.endsWith('.local') || hostname.includes('example');
+  const isLocalDomain = hostname === 'localhost' || hostname === '127.0.0.1';
 
   if (isLocalDomain) {
     return generateSimulatedResult(domain);
   }
 
   try {
-    // 1. SSL Scan
+    const vulnerabilities: VulnerabilityAlert[] = [];
+    let score = 100;
+
+    // 1. SSL Scan (throws error on connection issues)
     const sslInfo = await checkSslCertificate(hostname);
+    if (sslInfo.error) {
+      throw new Error(sslInfo.error);
+    }
+
     if (!sslInfo.valid) {
       score -= 30;
       vulnerabilities.push({
         id: 'ssl_expired',
         title: 'Certificado SSL Criptográfico Inválido o Ausente',
         severity: 'CRITICAL',
-        description: `El servidor no proporciona un cifrado SSL/TLS válido para las transmisiones. Error: ${sslInfo.error || 'Certificado inválido o expirado'}.`,
+        description: 'El servidor no proporciona un cifrado SSL/TLS válido para las transmisiones.',
         recommendation: 'Instalar un certificado SSL/TLS de confianza en el servidor y configurar redirección HTTPS automática.',
         type: 'SSL_EXPIRED'
       });
@@ -238,16 +241,10 @@ export async function runSecurityScan(domain: string): Promise<SecurityScanResul
       });
     }
 
-    // 2. HTTP Headers Audit
+    // 2. HTTP Headers Audit (throws error on connection issues)
     const httpInfo = await checkHttpHeaders(hostname);
-    if (httpInfo.error && vulnerabilities.length > 0) {
-      // If we couldn't connect to SSL and we can't fetch headers, return current findings
-      return {
-        domain,
-        scanDate: new Date().toISOString(),
-        score: Math.max(0, score),
-        vulnerabilities
-      };
+    if (httpInfo.error) {
+      throw new Error(httpInfo.error);
     }
 
     const headers = httpInfo.headers || {};
@@ -287,7 +284,7 @@ export async function runSecurityScan(domain: string): Promise<SecurityScanResul
         severity: 'MEDIUM',
         description: 'La cabecera X-Frame-Options no está configurada, permitiendo inyectar el portal en frames maliciosos de terceros.',
         recommendation: 'Agregar el encabezado de respuesta HTTP "X-Frame-Options: SAMEORIGIN" o "DENY".',
-        type: 'HSTS_MISSING' // Matches matching categories in alerts
+        type: 'HSTS_MISSING'
       });
     }
 
@@ -318,21 +315,36 @@ export async function runSecurityScan(domain: string): Promise<SecurityScanResul
       });
     }
 
+    return {
+      domain,
+      scanDate: new Date().toISOString(),
+      score: Math.max(0, score),
+      vulnerabilities
+    };
+
   } catch (err: any) {
     console.error(`[SecurityScanner] Falla crítica al escanear ${hostname}:`, err.message);
-    // Graceful fallback to simulated results so audits don't crash
-    return generateSimulatedResult(domain);
+    
+    // For non-local domains, we MUST return a single critical finding
+    return {
+      domain,
+      scanDate: new Date().toISOString(),
+      score: 0,
+      vulnerabilities: [
+        {
+          id: 'server_unreachable',
+          title: 'Bloqueo de Auditoría o Servidor Inaccesible',
+          severity: 'CRITICAL',
+          description: `No pudimos auditar los certificados ni las cabeceras de seguridad. El servidor destino rechazó la conexión, superó el tiempo de espera (Timeout) o carece de protocolo HTTPS válido. (Error interno: ${err.message || 'error desconocido'}).`,
+          recommendation: 'Verificar la conectividad del servidor, configurar puertos y firewalls para permitir el tráfico entrante HTTPS (puerto 443), y asegurarse de que el dominio está activo.',
+          type: 'SSL_EXPIRED'
+        }
+      ]
+    };
   }
-
-  return {
-    domain,
-    scanDate: new Date().toISOString(),
-    score: Math.max(0, score),
-    vulnerabilities
-  };
 }
 
-// Graceful fallback generator using a domain-specific hash to produce reproducible results
+// Graceful fallback generator using a domain-specific hash for local development testing only
 function generateSimulatedResult(domain: string): SecurityScanResult {
   const vulnerabilities: VulnerabilityAlert[] = [];
   let score = 100;
@@ -348,9 +360,9 @@ function generateSimulatedResult(domain: string): SecurityScanResult {
     score -= 30;
     vulnerabilities.push({
       id: 'ssl_expired_sim',
-      title: 'Certificado SSL Criptográfico Inválido (Simulación)',
+      title: 'Certificado SSL Criptográfico Inválido (Simulación Local)',
       severity: 'CRITICAL',
-      description: 'El certificado criptográfico SSL/TLS del dominio simulado expiró o carece de firma autorizada por una CA oficial.',
+      description: 'El certificado criptográfico SSL/TLS del dominio simulado local expiró o carece de firma autorizada por una CA oficial.',
       recommendation: 'Instalar un certificado SSL/TLS Let\'s Encrypt válido.',
       type: 'SSL_EXPIRED'
     });
@@ -361,9 +373,9 @@ function generateSimulatedResult(domain: string): SecurityScanResult {
     score -= 20;
     vulnerabilities.push({
       id: 'csp_missing_sim',
-      title: 'Falta Política de Seguridad de Contenido (CSP) (Simulación)',
+      title: 'Falta Política de Seguridad de Contenido (CSP) (Simulación Local)',
       severity: 'HIGH',
-      description: 'No se detectó una cabecera Content-Security-Policy restrictiva en el servidor.',
+      description: 'No se detectó una cabecera Content-Security-Policy restrictiva en el servidor local.',
       recommendation: 'Configurar directivas CSP para prevenir inyección de scripts externos de seguimiento.',
       type: 'CSP_MISSING'
     });
@@ -374,9 +386,9 @@ function generateSimulatedResult(domain: string): SecurityScanResult {
     score -= 10;
     vulnerabilities.push({
       id: 'hsts_missing_sim',
-      title: 'Falta cabecera de seguridad HSTS (Simulación)',
+      title: 'Falta cabecera de seguridad HSTS (Simulación Local)',
       severity: 'MEDIUM',
-      description: 'La directiva Strict-Transport-Security no está configurada en los encabezados HTTP.',
+      description: 'La directiva Strict-Transport-Security no está configurada en los encabezados HTTP del entorno local.',
       recommendation: 'Configurar HSTS con un max-age de al menos un año en el servidor web.',
       type: 'HSTS_MISSING'
     });
