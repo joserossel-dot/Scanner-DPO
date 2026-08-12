@@ -283,6 +283,33 @@ router.post('/consent', openCors, async (req, res) => {
         return res.status(500).json({ error: error.message });
     }
 });
+// Log Consent from custom lightweight widget (Public)
+router.post('/remediation/consent-log', openCors, async (req, res) => {
+    const { tenantId, url, action, userAgent } = req.body;
+    const domain = url ? new URL(url).hostname : 'localhost';
+    const consentTypes = {
+        essential: true,
+        analytical: action === 'accepted',
+        marketing: action === 'accepted'
+    };
+    try {
+        const db = getDb();
+        await db.query(`
+      INSERT INTO consent_logs (domain, ip_hash, consent_types, user_agent, policy_version)
+      VALUES ($1, $2, $3, $4, $5)
+    `, [
+            domain,
+            tenantId || 'anon',
+            JSON.stringify(consentTypes),
+            userAgent || '',
+            'v1.0.0'
+        ]);
+        return res.json({ success: true });
+    }
+    catch (error) {
+        return res.status(500).json({ error: error.message });
+    }
+});
 // 10. Submit ARCO+ Request from Widget (Public)
 router.post('/arco', openCors, async (req, res) => {
     const { domain, requesterName, requesterEmail, requestType, details } = req.body;

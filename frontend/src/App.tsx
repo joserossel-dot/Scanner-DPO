@@ -8,6 +8,11 @@ import LoginView from './pages/auth/LoginView';
 import RegisterView from './pages/auth/RegisterView';
 import PolicyGeneratorView from './pages/dashboard/components/PolicyGeneratorView';
 import DpoSuiteView from './pages/dashboard/components/DpoSuiteView';
+import AuditDossierView from './pages/dashboard/components/AuditDossierView';
+import PrivacyPolicyPublic from './pages/legal/PrivacyPolicyPublic';
+import CookiesPolicyPublic from './pages/legal/CookiesPolicyPublic';
+import TermsAndConditions from './pages/legal/TermsAndConditions';
+import ArcoRequestPublic from './pages/legal/ArcoRequestPublic';
 import { 
   Shield, 
   Activity, 
@@ -137,7 +142,7 @@ export function Dashboard({ token, user, onLogout }: DashboardProps) {
     return window.fetch(url, { ...options, headers });
   };
 
-  const [activeTab, setActiveTab] = useState<'scanner' | 'diagnosis' | 'remediation' | 'dpo'>('scanner');
+  const [activeTab, setActiveTab] = useState<'scanner' | 'diagnosis' | 'remediation' | 'dpo' | 'dossier'>('scanner');
   const [remediationSubTab, setRemediationSubTab] = useState<'cmp' | 'arco' | 'transfers' | 'policies' | 'contracts'>('cmp');
   
   // Diagnosis State (Capa 2)
@@ -1903,6 +1908,18 @@ Firmas autorizadas:
               </span>
             </span>
           </div>
+
+          <div 
+            className={`nav-item ${activeTab === 'dossier' ? 'active' : ''}`}
+            style={{ 
+              borderLeft: activeTab === 'dossier' ? '3px solid #6366f1' : 'none',
+              background: activeTab === 'dossier' ? 'rgba(99, 102, 241, 0.05)' : 'none'
+            }}
+            onClick={() => setActiveTab('dossier')}
+          >
+            <FileText size={16} />
+            <span>📋 5. Dossier Imprimible</span>
+          </div>
         </nav>
         
         <div style={{ padding: '12px 16px', borderTop: '1px solid var(--border-color)', borderBottom: '1px solid var(--border-color)', marginBottom: '15px' }}>
@@ -1951,6 +1968,7 @@ Firmas autorizadas:
         {activeTab === 'diagnosis' && renderDiagnosis()}
         {activeTab === 'remediation' && renderRemediation()}
         {activeTab === 'dpo' && <DpoSuiteView token={token} />}
+        {activeTab === 'dossier' && <AuditDossierView token={token} />}
 
         {/* Modal: SCC Agreement Generator Viewer */}
         {isGeneratingScc && (
@@ -2091,6 +2109,10 @@ export default function App() {
             </ProtectedRoute>
           } 
         />
+        <Route path="/privacidad" element={<PrivacyPolicyPublic />} />
+        <Route path="/cookies" element={<CookiesPolicyPublic />} />
+        <Route path="/terminos" element={<TermsAndConditions />} />
+        <Route path="/arco" element={<ArcoRequestPublic />} />
       </Routes>
     </BrowserRouter>
   );

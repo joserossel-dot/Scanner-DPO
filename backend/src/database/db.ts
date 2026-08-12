@@ -100,7 +100,8 @@ class MockPool {
     }
 
     if (text.includes('FROM international_transfers')) {
-      return { rows: store.transfers, rowCount: store.transfers.length };
+      const list = store.transfers.filter((t: any) => !t.user_id || t.user_id === params[0]);
+      return { rows: list, rowCount: list.length };
     }
 
     if (text.includes('FROM security_incidents')) {
@@ -124,8 +125,8 @@ class MockPool {
     }
 
     if (text.includes('FROM users')) {
-      const email = params[0];
-      const user = store.users.find(u => u.email === email);
+      const identifier = params[0];
+      const user = store.users.find(u => u.email === identifier || u.id === identifier);
       return { rows: user ? [user] : [], rowCount: user ? 1 : 0 };
     }
 

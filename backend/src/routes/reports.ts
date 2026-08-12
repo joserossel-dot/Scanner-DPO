@@ -199,4 +199,71 @@ router.post('/evaluate', adminCors, async (req: any, res) => {
   }
 });
 
+// GET /api/reports/dossier - Aggregated Compliance Dossier for Fiscalization
+router.get('/dossier', adminCors, async (req: any, res) => {
+  const db = getDb();
+  try {
+    // 1. Get user/company info
+    const userRes = await db.query(
+      'SELECT company_name, email, created_at FROM users WHERE id = $1',
+      [req.user.id]
+    );
+
+    if (userRes.rowCount === 0) {
+      return res.status(404).json({ error: 'Inquilino no encontrado.' });
+    }
+    const company = userRes.rows[0];
+
+    // 2. Get latest score
+    const reportRes = await db.query(
+      'SELECT score, severity_counts, created_at FROM audit_reports WHERE user_id = $1 ORDER BY created_at DESC LIMIT 1',
+      [req.user.id]
+    );
+    const latestReport = reportRes.rows[0] || { score: 100, severity_counts: { leve: 0, grave: 0, gravisima: 0 } };
+
+    // 3. Get latest privacy policy timestamp
+    const policyRes = await db.query(
+      'SELECT updated_at FROM privacy_policies WHERE user_id = $1 ORDER BY updated_at DESC LIMIT 1',
+      [req.user.id]
+    );
+    const latestPolicy = policyRes.rows[0] || null;
+
+    // 4. Count international transfers and SCC status
+    const transfersRes = await db.query(
+      'SELECT * FROM international_transfers WHERE user_id = $1',
+      [req.user.id]
+    );
+    const totalTransfers = transfersRes.rowCount;
+    const transfersWithScc = transfersRes.rows.filter((t: any) => t.has_scc).length;
+
+    // 5. Count risk matrix entries
+    const risksRes = await db.query(
+      'SELECT * FROM risk_matrix WHERE user_id = $1',
+      [req.user.id]
+    );
+    const totalRisks = risksRes.rowCount;
+    const mitigatedRisks = risksRes.rows.filter((r: any) => r.status === 'IMPLEMENTED').length;
+
+    res.json({
+      company_name: company.company_name,
+      company_email: company.email,
+      created_at: company.created_at,
+      latest_score: latestReport.score,
+      severity_counts: latestReport.severity_counts,
+      last_policy_updated: latestPolicy ? latestPolicy.updated_at : null,
+      transfers: {
+        total: totalTransfers,
+        with_scc: transfersWithScc
+      },
+      risks: {
+        total: totalRisks,
+        mitigated: mitigatedRisks
+      }
+    });
+  } catch (error: any) {
+    console.error('Error compiling audit dossier:', error.message);
+    res.status(500).json({ error: 'Error al compilar el dossier oficial de cumplimiento: ' + error.message });
+  }
+});
+
 export default router;

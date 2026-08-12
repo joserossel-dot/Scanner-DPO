@@ -15,6 +15,7 @@ import {
   Search,
   RefreshCw
 } from 'lucide-react';
+import Footer from '../components/Footer';
 
 const API_BASE = (import.meta as any).env.VITE_API_URL || '';
 
@@ -554,19 +555,7 @@ export default function LandingPage() {
       </section>
 
       {/* Footer */}
-      <footer className="border-t border-slate-900 py-12 bg-slate-950">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex flex-col sm:flex-row items-center justify-between gap-6 text-slate-500 text-xs">
-          <div>
-            &copy; {new Date().getFullYear()} PrivacyTech. Todos los derechos reservados.
-          </div>
-          <div className="flex gap-6">
-            <a href="#riesgos" className="hover:text-slate-400 transition-colors">Riesgos</a>
-            <a href="#solucion" className="hover:text-slate-400 transition-colors">Solución</a>
-            <a href="#metodologia" className="hover:text-slate-400 transition-colors">Metodología</a>
-            <Link to="/dashboard" className="hover:text-indigo-400 transition-colors font-semibold">Dashboard</Link>
-          </div>
-        </div>
-      </footer>
+      <Footer />
     </div>
   );
 }

@@ -181,7 +181,7 @@ export default function DiagnosticQuestionnaire({ onSubmit }: DiagnosticQuestion
 
       {validationError && (
         <div className="p-4 bg-rose-950/30 border-b border-rose-900/40 text-rose-400 text-xs font-semibold flex items-center gap-2">
-          <AlertCircle className="w-4 h-4 text-rose-500" />
+          <ShieldAlert className="w-4 h-4 text-rose-500" />
           <span>{validationError}</span>
         </div>
       )}
