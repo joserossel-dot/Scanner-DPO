@@ -12,6 +12,7 @@ import remediationRouter from './routes/remediation.js';
 import authRouter from './routes/auth.js';
 import dpoSuiteRouter from './routes/dpoSuite.js';
 import ropaRouter from './routes/ropa.js';
+import aiRouter from './routes/ai.js';
 // Load environment variables
 dotenv.config();
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -27,6 +28,7 @@ app.use('/api/reports', reportsRouter);
 app.use('/api/remediation', remediationRouter);
 app.use('/api/dpo', dpoSuiteRouter);
 app.use('/api/ropa', ropaRouter);
+app.use('/api/ai', aiRouter);
 // Serve the compiled Frontend Dashboard from the frontend workspace
 const frontendDistPath = path.resolve(__dirname, '../../frontend/dist');
 app.use(express.static(frontendDistPath));

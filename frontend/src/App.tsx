@@ -14,6 +14,8 @@ import CookiesPolicyPublic from './pages/legal/CookiesPolicyPublic';
 import TermsAndConditions from './pages/legal/TermsAndConditions';
 import ArcoRequestPublic from './pages/legal/ArcoRequestPublic';
 import RopaInventoryView from './pages/dashboard/components/RopaInventoryView';
+import ComplianceOverviewView from './pages/dashboard/components/ComplianceOverviewView';
+import LegalCopilot from './components/LegalCopilot';
 import { 
   Shield, 
   Activity, 
@@ -144,8 +146,9 @@ export function Dashboard({ token, user, onLogout }: DashboardProps) {
     return window.fetch(url, { ...options, headers });
   };
 
-  const [activeTab, setActiveTab] = useState<'scanner' | 'diagnosis' | 'remediation' | 'dpo' | 'dossier'>('scanner');
+  const [activeTab, setActiveTab] = useState<'scanner' | 'diagnosis' | 'remediation' | 'dpo' | 'dossier' | 'ropa'>('scanner');
   const [remediationSubTab, setRemediationSubTab] = useState<'cmp' | 'arco' | 'transfers' | 'policies' | 'contracts'>('cmp');
+  const [diagnosisViewMode, setDiagnosisViewMode] = useState<'overview' | 'questionnaire'>('overview');
   
   // Diagnosis State (Capa 2)
   const [diagnosisData, setDiagnosisData] = useState<any>(null);
@@ -975,6 +978,14 @@ Firmas autorizadas:
 
   // Render Sub-Views (Capa 2)
   const renderDiagnosis = () => {
+    if (diagnosisViewMode === 'overview') {
+      return (
+        <ComplianceOverviewView 
+          onStartDiagnosis={() => setDiagnosisViewMode('questionnaire')} 
+        />
+      );
+    }
+
     const finalScore = diagnosisData ? diagnosisData.globalScore : (latestScan ? latestScan.score : 100);
     const breakdown = diagnosisData ? diagnosisData.breakdown : { crawlScore: latestScan ? latestScan.score : 100, transfersScore: 100, securityScore: 100 };
     const findings = diagnosisData ? diagnosisData.findings : (latestScan ? latestScan.findings : []);
@@ -987,10 +998,15 @@ Firmas autorizadas:
             <h1 className="page-title">📊 Diagnóstico & Plan de Acción Priorizado</h1>
             <p className="page-subtitle">Evaluación normativa consolidada frente a la Ley N° 21.719. Ponderación de auditoría web, garantías de transferencias y brechas.</p>
           </div>
-          <button className="btn-action" onClick={handleFetchDiagnosis} disabled={isFetchingDiagnosis}>
-            {isFetchingDiagnosis ? <RefreshCw className="loader" size={14} /> : <RefreshCw size={14} />}
-            <span style={{ marginLeft: '6px' }}>Actualizar Diagnóstico</span>
-          </button>
+          <div style={{ display: 'flex', gap: '10px' }}>
+            <button className="btn-action" onClick={() => setDiagnosisViewMode('overview')}>
+              <span>Ver Pilares Ley N° 21.719</span>
+            </button>
+            <button className="btn-action" onClick={handleFetchDiagnosis} disabled={isFetchingDiagnosis}>
+              {isFetchingDiagnosis ? <RefreshCw className="loader" size={14} /> : <RefreshCw size={14} />}
+              <span style={{ marginLeft: '6px' }}>Actualizar Diagnóstico</span>
+            </button>
+          </div>
         </header>
 
         {isAddingIncident ? (
@@ -2024,6 +2040,7 @@ Firmas autorizadas:
           </div>
         )}
       </main>
+      <LegalCopilot token={token} />
     </div>
   );
 }
