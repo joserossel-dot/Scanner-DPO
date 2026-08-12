@@ -20,9 +20,18 @@ export default function RegisterView({ onRegisterSuccess }: RegisterViewProps) {
   const [isLoading, setIsLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
 
+  // Consent states
+  const [privacyConsent, setPrivacyConsent] = useState(false);
+  const [marketingConsent, setMarketingConsent] = useState(false);
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!email || !password || !companyName) return;
+
+    if (!privacyConsent) {
+      setErrorMsg('Debe aceptar la política de privacidad y los términos de uso para registrarse.');
+      return;
+    }
 
     setIsLoading(true);
     setErrorMsg('');
@@ -33,7 +42,13 @@ export default function RegisterView({ onRegisterSuccess }: RegisterViewProps) {
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ email, password, company_name: companyName }),
+        body: JSON.stringify({ 
+          email, 
+          password, 
+          company_name: companyName,
+          privacy_consent: privacyConsent,
+          marketing_consent: marketingConsent
+        }),
       });
 
       const data = await response.json();
@@ -148,10 +163,46 @@ export default function RegisterView({ onRegisterSuccess }: RegisterViewProps) {
               </div>
             </div>
 
+            {/* Checkboxes */}
+            <div className="space-y-3.5 pt-1 select-none">
+              <label className="flex items-start gap-2.5 text-xs text-slate-400 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={privacyConsent}
+                  onChange={(e) => setPrivacyConsent(e.target.checked)}
+                  className="rounded border-slate-800 text-indigo-650 focus:ring-0 bg-slate-950 w-4 h-4 mt-0.5"
+                  required
+                />
+                <span className="leading-tight text-left">
+                  He leído y acepto la{' '}
+                  <Link to="/privacidad" target="_blank" className="text-indigo-400 hover:underline">
+                    Política de Privacidad
+                  </Link>{' '}
+                  y los{' '}
+                  <Link to="/terminos" target="_blank" className="text-indigo-400 hover:underline">
+                    Términos y Condiciones
+                  </Link>
+                  .
+                </span>
+              </label>
+
+              <label className="flex items-start gap-2.5 text-xs text-slate-400 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={marketingConsent}
+                  onChange={(e) => setMarketingConsent(e.target.checked)}
+                  className="rounded border-slate-800 text-indigo-650 focus:ring-0 bg-slate-950 w-4 h-4 mt-0.5"
+                />
+                <span className="leading-tight text-left">
+                  Acepto recibir correos comerciales y actualizaciones de producto (opcional).
+                </span>
+              </label>
+            </div>
+
             <div>
               <button
                 type="submit"
-                disabled={isLoading}
+                disabled={isLoading || !privacyConsent}
                 className="w-full flex justify-center py-3 px-4 border border-transparent rounded-xl shadow-md text-sm font-bold text-white bg-indigo-600 hover:bg-indigo-500 focus:outline-none focus:ring-0 active:bg-indigo-700 disabled:bg-slate-800 transition-all gap-2"
               >
                 {isLoading ? (

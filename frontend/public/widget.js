@@ -13,7 +13,7 @@
   if (currentScript) {
     const url = new URL(currentScript.src);
     if (url.hostname === 'localhost' || url.hostname === '127.0.0.1') {
-      apiHost = 'http://localhost:3050'; // Fallback mapping matching local ports or main port
+      apiHost = 'http://localhost:3050';
       if (window.location.port) {
         apiHost = window.location.protocol + '//' + window.location.hostname + ':' + window.location.port;
       } else {
@@ -102,7 +102,7 @@
 
     const textDiv = originalCreateElement.call(document, 'div');
     textDiv.style.cssText = 'flex:1;min-width:280px;line-height:1.5;text-align:left;';
-    textDiv.innerHTML = 'Utilizamos cookies esenciales y de analítica para mejorar su experiencia. Revise nuestra <a href="#" id="pt-banner-policy-link" style="color:#6366f1;text-decoration:underline;font-weight:600;">Política de Privacidad</a>.';
+    textDiv.innerHTML = 'Utilizamos cookies esenciales y de analítica para mejorar su experiencia. Revise nuestra <a href="/privacidad" target="_blank" style="color:#6366f1;text-decoration:underline;font-weight:600;">Política de Privacidad</a>.';
 
     const actionsDiv = originalCreateElement.call(document, 'div');
     actionsDiv.style.cssText = 'display:flex;gap:12px;';
@@ -112,7 +112,7 @@
     rejectBtn.style.cssText = 'background-color:#1e293b;color:#cbd5e1;border:1px solid #334155;padding:8px 16px;border-radius:6px;cursor:pointer;font-weight:600;font-size:12px;transition:all 0.2s;outline:none;';
     
     const acceptBtn = originalCreateElement.call(document, 'button');
-    acceptBtn.innerText = 'Aceptar Todas';
+    acceptBtn.innerText = 'Aceptar Cookies';
     acceptBtn.style.cssText = 'background-color:#6366f1;color:#ffffff;border:none;padding:8px 16px;border-radius:6px;cursor:pointer;font-weight:600;font-size:12px;transition:all 0.2s;outline:none;';
 
     actionsDiv.appendChild(rejectBtn);
@@ -128,10 +128,6 @@
     };
     acceptBtn.onclick = function() {
       saveConsent(true);
-    };
-    textDiv.querySelector('#pt-banner-policy-link').onclick = function(e) {
-      e.preventDefault();
-      alert('Política de Privacidad (Art. 12 Ley N° 21.719):\nOrganización Responsable: ' + tenantId + '\nPara ejercer sus derechos ARCO+, contacte a privacidad@' + window.location.host);
     };
   };
 
@@ -165,13 +161,13 @@
     }
   };
 
-  // Initialize
+  // Reliable DOM ready initialization
   const init = () => {
     if (localStorage.getItem('dpo_consent') === null) {
-      if (document.body) {
-        renderBanner();
-      } else {
+      if (document.readyState === 'loading') {
         document.addEventListener('DOMContentLoaded', renderBanner);
+      } else {
+        renderBanner();
       }
     } else if (hasConsent()) {
       unblockScripts();
