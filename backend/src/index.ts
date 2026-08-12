@@ -13,6 +13,7 @@ import authRouter from './routes/auth.js';
 import dpoSuiteRouter from './routes/dpoSuite.js';
 import ropaRouter from './routes/ropa.js';
 import aiRouter from './routes/ai.js';
+import adminRouter from './routes/admin.js';
 
 // Load environment variables
 dotenv.config();
@@ -25,6 +26,7 @@ app.use(express.json());
 
 // API Routes
 app.use('/api/auth', authRouter);
+app.use('/api/admin', adminRouter);
 app.use('/api', apiRouter);
 app.use('/api/transfers', transfersRouter);
 app.use('/api/incidents', incidentsRouter);

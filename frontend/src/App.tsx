@@ -16,6 +16,9 @@ import ArcoRequestPublic from './pages/legal/ArcoRequestPublic';
 import RopaInventoryView from './pages/dashboard/components/RopaInventoryView';
 import ComplianceOverviewView from './pages/dashboard/components/ComplianceOverviewView';
 import LegalCopilot from './components/LegalCopilot';
+import ForgotPasswordView from './pages/auth/ForgotPasswordView';
+import ResetPasswordView from './pages/auth/ResetPasswordView';
+import AdminDashboardView from './pages/admin/AdminDashboardView';
 import { 
   Shield, 
   Activity, 
@@ -132,9 +135,10 @@ interface DashboardProps {
   token: string | null;
   user: any;
   onLogout: () => void;
+  initialTab?: 'scanner' | 'diagnosis' | 'remediation' | 'dpo' | 'dossier' | 'ropa' | 'admin';
 }
 
-export function Dashboard({ token, user, onLogout }: DashboardProps) {
+export function Dashboard({ token, user, onLogout, initialTab }: DashboardProps) {
   const location = useLocation();
   const navigate = useNavigate();
 
@@ -147,7 +151,7 @@ export function Dashboard({ token, user, onLogout }: DashboardProps) {
     return window.fetch(url, { ...options, headers });
   };
 
-  const [activeTab, setActiveTab] = useState<'scanner' | 'diagnosis' | 'remediation' | 'dpo' | 'dossier' | 'ropa'>('scanner');
+  const [activeTab, setActiveTab] = useState<'scanner' | 'diagnosis' | 'remediation' | 'dpo' | 'dossier' | 'ropa' | 'admin'>(initialTab || 'scanner');
   const [remediationSubTab, setRemediationSubTab] = useState<'cmp' | 'arco' | 'transfers' | 'policies' | 'contracts'>('cmp');
   const [diagnosisViewMode, setDiagnosisViewMode] = useState<'overview' | 'questionnaire'>('overview');
   
@@ -1925,6 +1929,19 @@ Firmas autorizadas:
             <FileText size={16} />
             <span>📋 5. Dossier Imprimible</span>
           </div>
+          {user?.role === 'superadmin' && (
+            <div 
+              className={`nav-item ${activeTab === 'admin' ? 'active' : ''}`}
+              style={{ 
+                borderLeft: activeTab === 'admin' ? '3px solid #f59e0b' : 'none',
+                background: activeTab === 'admin' ? 'rgba(245, 158, 11, 0.05)' : 'none'
+              }}
+              onClick={() => setActiveTab('admin')}
+            >
+              <Shield size={16} className="text-amber-500" />
+              <span>👑 Panel Superadmin</span>
+            </div>
+          )}
         </nav>
         
         <div style={{ padding: '12px 16px', borderTop: '1px solid var(--border-color)', borderBottom: '1px solid var(--border-color)', marginBottom: '15px' }}>
@@ -1975,6 +1992,7 @@ Firmas autorizadas:
         {activeTab === 'dpo' && <DpoSuiteView token={token} />}
         {activeTab === 'dossier' && <AuditDossierView token={token} />}
         {activeTab === 'ropa' && <RopaInventoryView token={token} />}
+        {activeTab === 'admin' && <AdminDashboardView token={token} />}
 
         {/* Modal: SCC Agreement Generator Viewer */}
         {isGeneratingScc && (
@@ -2109,10 +2127,30 @@ export default function App() {
           element={<RegisterView onRegisterSuccess={handleAuthSuccess} />} 
         />
         <Route 
+          path="/forgot-password" 
+          element={<ForgotPasswordView />} 
+        />
+        <Route 
+          path="/reset-password/:token" 
+          element={<ResetPasswordView />} 
+        />
+        <Route 
           path="/dashboard" 
           element={
             <ProtectedRoute token={token}>
               <Dashboard token={token} user={user} onLogout={handleLogout} />
+            </ProtectedRoute>
+          } 
+        />
+        <Route 
+          path="/admin" 
+          element={
+            <ProtectedRoute token={token}>
+              {user?.role === 'superadmin' ? (
+                <Dashboard token={token} user={user} onLogout={handleLogout} initialTab="admin" />
+              ) : (
+                <Navigate to="/dashboard" replace />
+              )}
             </ProtectedRoute>
           } 
         />
