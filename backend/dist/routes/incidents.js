@@ -213,7 +213,7 @@ router.post('/scan-vulnerabilities', adminCors, async (req, res) => {
     }
     const db = getDb();
     try {
-        const scanResult = await runSecurityScan(domain);
+        const scanResult = await runSecurityScan(domain, true);
         const incidentsCreated = [];
         // Filter Critical and High severity warnings to auto-escalate
         const targetVulnerabilities = scanResult.vulnerabilities.filter(v => v.severity === 'CRITICAL' || v.severity === 'HIGH');
@@ -251,7 +251,7 @@ router.post('/scan-vulnerabilities', adminCors, async (req, res) => {
     }
     catch (error) {
         console.error('Error running security scan:', error.message);
-        res.status(500).json({ error: 'Error al realizar el escaneo proactivo de seguridad.' });
+        res.status(422).json({ error: error.message });
     }
 });
 // POST /api/incidents/assess-risk - Sandbox Legal Risk Assessor

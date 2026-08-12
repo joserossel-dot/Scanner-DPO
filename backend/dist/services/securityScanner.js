@@ -1,5 +1,28 @@
 import tls from 'tls';
 import https from 'https';
+import dns from 'dns';
+import { promisify } from 'util';
+const dnsLookup = promisify(dns.lookup);
+function isPrivateIp(ip) {
+    const parts = ip.split('.').map(Number);
+    if (parts.length !== 4 || parts.some(isNaN)) {
+        return false;
+    }
+    const [p1, p2] = parts;
+    if (p1 === 10)
+        return true;
+    if (p1 === 127)
+        return true;
+    if (p1 === 172 && p2 >= 16 && p2 <= 31)
+        return true;
+    if (p1 === 192 && p2 === 168)
+        return true;
+    if (p1 === 169 && p2 === 254)
+        return true;
+    if (p1 === 0)
+        return true;
+    return false;
+}
 // Helper to sanitize and get pure hostname from any URL input
 function getHostname(domain) {
     let host = domain.trim();
@@ -171,12 +194,21 @@ function scanExposedFile(hostname, filePath, keywords) {
     });
 }
 // Main scan runner
-export async function runSecurityScan(domain) {
+export async function runSecurityScan(domain, allowDeepPentest = false) {
     const hostname = getHostname(domain);
     console.log(`[SecurityScanner] Iniciando análisis real sobre hostname: ${hostname}`);
-    const isLocalDomain = hostname === 'localhost' || hostname === '127.0.0.1';
-    if (isLocalDomain) {
-        return generateSimulatedResult(domain);
+    // SSRF prevention: DNS resolution check
+    try {
+        const lookupRes = await dnsLookup(hostname);
+        if (isPrivateIp(lookupRes.address)) {
+            throw new Error("No se permite escanear hosts o IPs privadas (Prevención de SSRF).");
+        }
+    }
+    catch (dnsErr) {
+        if (dnsErr.message.includes("SSRF")) {
+            throw dnsErr;
+        }
+        throw new Error("No pudimos resolver el dominio para el análisis automático.");
     }
     try {
         const vulnerabilities = [];
@@ -250,30 +282,32 @@ export async function runSecurityScan(domain) {
                 type: 'HSTS_MISSING'
             });
         }
-        // 3. Exposed Files Pentesting (env, git)
-        const hasExposedEnv = await scanExposedFile(hostname, '/.env', ['DB_', 'JWT_', 'SECRET', 'PASSWORD', 'API_']);
-        if (hasExposedEnv) {
-            score -= 40;
-            vulnerabilities.push({
-                id: 'env_exposed',
-                title: 'Archivo de Variables de Entorno (.env) Expuesto Públicamente',
-                severity: 'CRITICAL',
-                description: 'Se detectó acceso público al archivo /.env conteniendo credenciales de base de datos, llaves de API o secretos de JWT.',
-                recommendation: 'Modificar la configuración del servidor web (Nginx/Apache) para bloquear el acceso a archivos ocultos que inicien con punto.',
-                type: 'LEAKED_CREDENTIALS'
-            });
-        }
-        const hasExposedGit = await scanExposedFile(hostname, '/.git/config', ['[core]', 'repositoryformatversion', '[remote']);
-        if (hasExposedGit) {
-            score -= 40;
-            vulnerabilities.push({
-                id: 'git_exposed',
-                title: 'Carpeta de Repositorio de Git (.git/config) Expuesta Públicamente',
-                severity: 'CRITICAL',
-                description: 'Se detectó acceso público al archivo /.git/config exponiendo la estructura del repositorio de código fuente.',
-                recommendation: 'Bloquear inmediatamente el acceso web a la carpeta /.git y sus subdirectorios en las reglas de Nginx o .htaccess.',
-                type: 'LEAKED_CREDENTIALS'
-            });
+        // 3. Exposed Files Pentesting (env, git) - Only run if allowDeepPentest is enabled
+        if (allowDeepPentest) {
+            const hasExposedEnv = await scanExposedFile(hostname, '/.env', ['DB_', 'JWT_', 'SECRET', 'PASSWORD', 'API_']);
+            if (hasExposedEnv) {
+                score -= 40;
+                vulnerabilities.push({
+                    id: 'env_exposed',
+                    title: 'Archivo de Variables de Entorno (.env) Expuesto Públicamente',
+                    severity: 'CRITICAL',
+                    description: 'Se detectó acceso público al archivo /.env conteniendo credenciales de base de datos, llaves de API o secretos de JWT.',
+                    recommendation: 'Modificar la configuración del servidor web (Nginx/Apache) para bloquear el acceso a archivos ocultos que inicien con punto.',
+                    type: 'LEAKED_CREDENTIALS'
+                });
+            }
+            const hasExposedGit = await scanExposedFile(hostname, '/.git/config', ['[core]', 'repositoryformatversion', '[remote']);
+            if (hasExposedGit) {
+                score -= 40;
+                vulnerabilities.push({
+                    id: 'git_exposed',
+                    title: 'Carpeta de Repositorio de Git (.git/config) Expuesta Públicamente',
+                    severity: 'CRITICAL',
+                    description: 'Se detectó acceso público al archivo /.git/config exponiendo la estructura del repositorio de código fuente.',
+                    recommendation: 'Bloquear inmediatamente el acceso web a la carpeta /.git y sus subdirectorios en las reglas de Nginx o .htaccess.',
+                    type: 'LEAKED_CREDENTIALS'
+                });
+            }
         }
         return {
             domain,
@@ -301,56 +335,4 @@ export async function runSecurityScan(domain) {
             ]
         };
     }
-}
-// Graceful fallback generator using a domain-specific hash for local development testing only
-function generateSimulatedResult(domain) {
-    const vulnerabilities = [];
-    let score = 100;
-    let hash = 0;
-    for (let i = 0; i < domain.length; i++) {
-        hash = domain.charCodeAt(i) + ((hash << 5) - hash);
-    }
-    const absHash = Math.abs(hash);
-    // Simulated SSL Alert
-    if (absHash % 2 === 0) {
-        score -= 30;
-        vulnerabilities.push({
-            id: 'ssl_expired_sim',
-            title: 'Certificado SSL Criptográfico Inválido (Simulación Local)',
-            severity: 'CRITICAL',
-            description: 'El certificado criptográfico SSL/TLS del dominio simulado local expiró o carece de firma autorizada por una CA oficial.',
-            recommendation: 'Instalar un certificado SSL/TLS Let\'s Encrypt válido.',
-            type: 'SSL_EXPIRED'
-        });
-    }
-    // Simulated CSP Alert
-    if (absHash % 3 === 0) {
-        score -= 20;
-        vulnerabilities.push({
-            id: 'csp_missing_sim',
-            title: 'Falta Política de Seguridad de Contenido (CSP) (Simulación Local)',
-            severity: 'HIGH',
-            description: 'No se detectó una cabecera Content-Security-Policy restrictiva en el servidor local.',
-            recommendation: 'Configurar directivas CSP para prevenir inyección de scripts externos de seguimiento.',
-            type: 'CSP_MISSING'
-        });
-    }
-    // Simulated HSTS Alert
-    if (absHash % 4 === 0) {
-        score -= 10;
-        vulnerabilities.push({
-            id: 'hsts_missing_sim',
-            title: 'Falta cabecera de seguridad HSTS (Simulación Local)',
-            severity: 'MEDIUM',
-            description: 'La directiva Strict-Transport-Security no está configurada en los encabezados HTTP del entorno local.',
-            recommendation: 'Configurar HSTS con un max-age de al menos un año en el servidor web.',
-            type: 'HSTS_MISSING'
-        });
-    }
-    return {
-        domain,
-        scanDate: new Date().toISOString(),
-        score: Math.max(0, score),
-        vulnerabilities
-    };
 }

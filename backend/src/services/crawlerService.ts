@@ -1,4 +1,23 @@
 import * as cheerio from 'cheerio';
+import dns from 'dns';
+import { promisify } from 'util';
+
+const dnsLookup = promisify(dns.lookup);
+
+function isPrivateIp(ip: string): boolean {
+  const parts = ip.split('.').map(Number);
+  if (parts.length !== 4 || parts.some(isNaN)) {
+    return false;
+  }
+  const [p1, p2] = parts;
+  if (p1 === 10) return true;
+  if (p1 === 127) return true;
+  if (p1 === 172 && p2 >= 16 && p2 <= 31) return true;
+  if (p1 === 192 && p2 === 168) return true;
+  if (p1 === 169 && p2 === 254) return true;
+  if (p1 === 0) return true;
+  return false;
+}
 
 export interface AuditFinding {
   id: string;
@@ -45,7 +64,20 @@ export async function runAudit(url: string): Promise<AuditResult> {
   try {
     baseUrl = new URL(fetchedUrl);
   } catch (e) {
-    return generateFallbackAudit(url, 'URL Inválida');
+    throw new Error("No pudimos analizar tu sitio automáticamente. Verifica si requiere JavaScript o bloquea bots, y utiliza el cuestionario manual.");
+  }
+
+  // SSRF prevention: DNS resolution check
+  try {
+    const lookupRes = await dnsLookup(baseUrl.hostname);
+    if (isPrivateIp(lookupRes.address)) {
+      throw new Error("No se permite escanear hosts o IPs privadas (Prevención de SSRF).");
+    }
+  } catch (dnsErr: any) {
+    if (dnsErr.message.includes("SSRF")) {
+      throw dnsErr;
+    }
+    throw new Error("No pudimos analizar tu sitio automáticamente. Verifica si requiere JavaScript o bloquea bots, y utiliza el cuestionario manual.");
   }
 
   const queue: string[] = [fetchedUrl];
@@ -178,9 +210,9 @@ export async function runAudit(url: string): Promise<AuditResult> {
     }
   }
 
-  // If no pages were crawled successfully, fallback
+  // If no pages were crawled successfully, throw exception
   if (crawledHtmls.length === 0) {
-    return generateFallbackAudit(url, 'No se pudo cargar ninguna página del sitio');
+    throw new Error("No pudimos analizar tu sitio automáticamente. Verifica si requiere JavaScript o bloquea bots, y utiliza el cuestionario manual.");
   }
 
   const findings: AuditFinding[] = [];
@@ -320,106 +352,7 @@ export async function runAudit(url: string): Promise<AuditResult> {
   };
 }
 
-function generateFallbackAudit(url: string, errMsg: string): AuditResult {
-  const isHealthy = url.includes('compliance-perfect') || url.includes('cumple');
-  
-  if (isHealthy) {
-    return {
-      url,
-      score: 100,
-      findings: [],
-      severityCounts: { leve: 0, grave: 0, gravisima: 0 },
-      actionPlan: generateActionPlan([]),
-      pagesAnalyzed: [url],
-      pagesSkipped: [],
-      isSimulated: true
-    };
-  }
 
-  // Generate a pseudo-random hash from the domain name
-  let hash = 0;
-  for (let i = 0; i < url.length; i++) {
-    hash = url.charCodeAt(i) + ((hash << 5) - hash);
-  }
-  const absHash = Math.abs(hash);
-
-  // Score between 45 and 85
-  const score = 45 + (absHash % 41);
-
-  const findingsPool: AuditFinding[] = [
-    {
-      id: 'unconsented_scripts',
-      category: 'cookies_scripts',
-      severity: 'Grave',
-      description: 'Se detectaron scripts de seguimiento de terceros (Google Analytics y Meta Pixel) cargándose sin consentimiento previo.',
-      recommendation: 'Implementar el CMP (Consent Management Platform) del Widget para bloquear estos scripts dinámicamente.',
-      details: 'El rastreo de usuarios sin consentimiento explícito vulnera el principio de licitud de la Ley N° 21.719.'
-    },
-    {
-      id: 'missing_opt_in',
-      category: 'forms',
-      severity: 'Grave',
-      description: 'Se detectó un formulario de contacto principal sin casilla de consentimiento explícito (opt-in).',
-      recommendation: 'Integrar una casilla de verificación no pre-marcada con enlace a los términos.',
-      details: 'La ley exige que el consentimiento sea una acción afirmativa inequívoca.'
-    },
-    {
-      id: 'prechecked_opt_in',
-      category: 'forms',
-      severity: 'Gravísima',
-      description: 'Se detectaron casillas de verificación de consentimiento pre-marcadas en el formulario de suscripción.',
-      recommendation: 'Modificar las casillas para que aparezcan vacías por defecto.',
-      details: 'Las casillas pre-marcadas no constituyen consentimiento válido bajo la nueva normativa.'
-    },
-    {
-      id: 'incomplete_policy_content',
-      category: 'policy_content',
-      severity: 'Grave',
-      description: 'La Política de Privacidad del sitio omite declarar los plazos de retención de datos (Art. 14 ter).',
-      recommendation: 'Actualizar el apartado de conservación de datos en la política de privacidad.',
-      details: 'El Art. 14 ter exige detallar el plazo durante el cual se conservarán los datos personales.'
-    },
-    {
-      id: 'missing_privacy_link',
-      category: 'privacy_policy',
-      severity: 'Gravísima',
-      description: 'No se detectó un enlace visible a la Política de Privacidad en el pie de página.',
-      recommendation: 'Agregar un enlace claro a la Política de Privacidad visible en todo el sitio web.',
-      details: 'Infracción grave al deber de información y transparencia legal.'
-    }
-  ];
-
-  const selectedFindings: AuditFinding[] = [];
-  
-  if (score < 60) {
-    selectedFindings.push(findingsPool[0]);
-    selectedFindings.push(findingsPool[1]);
-    selectedFindings.push(findingsPool[4]);
-  } else if (score < 75) {
-    selectedFindings.push(findingsPool[0]);
-    selectedFindings.push(findingsPool[3]);
-  } else {
-    selectedFindings.push(findingsPool[1]);
-  }
-
-  const actionPlan = generateActionPlan(selectedFindings);
-  const baseSlash = url.endsWith('/') ? url.slice(0, -1) : url;
-
-  return {
-    url,
-    score,
-    findings: selectedFindings,
-    severityCounts: {
-      leve: selectedFindings.filter(f => f.severity === 'Leve').length,
-      grave: selectedFindings.filter(f => f.severity === 'Grave').length,
-      gravisima: selectedFindings.filter(f => f.severity === 'Gravísima').length
-    },
-    actionPlan,
-    pagesAnalyzed: [url, `${baseSlash}/contacto`, `${baseSlash}/nosotros`],
-    pagesSkipped: [`${baseSlash}/terminos-y-condiciones`, `${baseSlash}/blog`, `${baseSlash}/tienda-online`],
-    isSimulated: true
-  };
-}
 
 function generateActionPlan(findings: AuditFinding[]): ActionStep[] {
   const plan: ActionStep[] = [];

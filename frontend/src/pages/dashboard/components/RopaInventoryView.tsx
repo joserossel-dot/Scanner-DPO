@@ -26,6 +26,8 @@ interface RopaRecord {
   data_categories: string[];
   retention_period: string;
   cross_border_transfer: boolean;
+  source?: string;
+  status?: string;
   created_at: string;
 }
 
@@ -106,7 +108,7 @@ export default function RopaInventoryView({ token }: RopaInventoryViewProps) {
     setIsModalOpen(true);
   };
 
-  // Open modal for editing
+  // Open modal for editing/confirming draft
   const handleOpenEditModal = (record: RopaRecord) => {
     setEditingRecord(record);
     setProcessName(record.process_name);
@@ -120,7 +122,7 @@ export default function RopaInventoryView({ token }: RopaInventoryViewProps) {
     setIsModalOpen(true);
   };
 
-  // Handle submit (Create or Update)
+  // Handle submit (Create or Update, automatically setting status to 'confirmed')
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!processName || !purpose || !legalBasis || dataCategories.length === 0 || !retentionPeriod) {
@@ -134,7 +136,9 @@ export default function RopaInventoryView({ token }: RopaInventoryViewProps) {
       legal_basis: legalBasis,
       data_categories: dataCategories,
       retention_period: retentionPeriod,
-      cross_border_transfer: crossBorderTransfer
+      cross_border_transfer: crossBorderTransfer,
+      source: editingRecord?.source || 'manual',
+      status: 'confirmed' // Submitting changes always transitions the process to confirmed status
     };
 
     try {
@@ -187,44 +191,81 @@ export default function RopaInventoryView({ token }: RopaInventoryViewProps) {
     }
   };
 
-  // Toggle Category Selection
-  const handleCategoryToggle = (cat: string) => {
-    setDataCategories(prev => 
-      prev.includes(cat) 
-        ? prev.filter(c => c !== cat) 
-        : [...prev, cat]
-    );
+  // Handle Reject Draft
+  const handleRejectDraft = async (record: RopaRecord) => {
+    if (!window.confirm(`¿Está seguro de rechazar la sugerencia '${record.process_name}'?`)) return;
+
+    try {
+      const response = await fetch(`${API_BASE}/api/ropa/${record.id}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          process_name: record.process_name,
+          purpose: record.purpose,
+          legal_basis: record.legal_basis,
+          data_categories: record.data_categories,
+          retention_period: record.retention_period,
+          cross_border_transfer: record.cross_border_transfer,
+          source: record.source,
+          status: 'rejected'
+        })
+      });
+
+      if (response.ok) {
+        fetchRopa();
+      } else {
+        alert('Error al rechazar el borrador sugerido.');
+      }
+    } catch (err) {
+      console.error(err);
+      alert('Error de comunicación al rechazar el borrador.');
+    }
   };
 
-  // Trigger simulated/real vision AI endpoint with FormData
+  // Toggle Category Selection
+  const handleCategoryToggle = (category: string) => {
+    if (dataCategories.includes(category)) {
+      setDataCategories(dataCategories.filter(c => c !== category));
+    } else {
+      setDataCategories([...dataCategories, category]);
+    }
+  };
+
+  // AI vision autofill trigger
   const handleAnalyzeEvidence = async () => {
-    if (!evidenceFile) return;
+    if (!evidenceFile || !token) return;
+
     setIsAnalyzing(true);
     setAnalysisResultMsg('');
-    try {
-      const formDataBody = new FormData();
-      formDataBody.append('evidence', evidenceFile);
 
+    const formData = new FormData();
+    formData.append('evidence', evidenceFile);
+
+    try {
       const response = await fetch(`${API_BASE}/api/ropa/analyze-evidence`, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${token}`
         },
-        body: formDataBody
+        body: formData
       });
+
       if (response.ok) {
         const data = await response.json();
-        const detected = data.categories || [];
-        
-        // Auto-check data categories detected by AI
-        setDataCategories(prev => {
-          const combined = new Set([...prev, ...detected]);
-          return Array.from(combined);
-        });
-
-        setAnalysisResultMsg(`✨ ${data.reasoning}`);
+        if (data.categories) {
+          setDataCategories(data.categories);
+        }
+        if (data.reasoning) {
+          setAnalysisResultMsg(`✨ Analizado con IA: ${data.reasoning}`);
+        } else {
+          setAnalysisResultMsg('✨ Análisis de evidencia completado con éxito.');
+        }
       } else {
-        alert('Error al analizar la evidencia de tratamiento.');
+        const errData = await response.json();
+        alert(errData.error || 'Error al analizar evidencia con IA.');
       }
     } catch (e) {
       console.error(e);
@@ -234,10 +275,12 @@ export default function RopaInventoryView({ token }: RopaInventoryViewProps) {
     }
   };
 
-  // Export to CSV Function
+  // Export to CSV Function (Confirmed only)
   const handleExportCSV = () => {
-    if (ropaList.length === 0) {
-      alert('No hay actividades de tratamiento mapeadas para exportar.');
+    const confirmedList = ropaList.filter(r => r.status === 'confirmed' || !r.status);
+    
+    if (confirmedList.length === 0) {
+      alert('No hay actividades de tratamiento confirmadas para exportar.');
       return;
     }
 
@@ -252,7 +295,7 @@ export default function RopaInventoryView({ token }: RopaInventoryViewProps) {
       'Fecha de Registro'
     ];
 
-    const rows = ropaList.map(item => [
+    const rows = confirmedList.map(item => [
       item.id,
       `"${item.process_name.replace(/"/g, '""')}"`,
       `"${item.purpose.replace(/"/g, '""')}"`,
@@ -280,23 +323,27 @@ export default function RopaInventoryView({ token }: RopaInventoryViewProps) {
 
   const showSecurityWarning = dataCategories.includes('Salud/Sensibles') || dataCategories.includes('Biométricos');
 
+  // Filter records into Draft suggestions vs Confirmed official inventory
+  const drafts = ropaList.filter(r => r.status === 'draft');
+  const confirmed = ropaList.filter(r => r.status === 'confirmed' || !r.status);
+
   return (
     <div className="space-y-6">
       
-      {/* Header section with Actions */}
-      <header className="flex flex-col sm:flex-row justify-between sm:items-center gap-4">
-        <div className="text-left">
+      {/* Header */}
+      <header className="flex flex-col sm:flex-row justify-between sm:items-center gap-4 text-left">
+        <div>
           <h1 className="text-xl font-bold text-white tracking-wide">📓 Registro de Actividades de Tratamiento (RoPA - Art. 12)</h1>
-          <p className="text-xs text-slate-400 mt-0.5">Gestione y mantenga el inventario legalizado de procesamiento de datos personales de la organización.</p>
+          <p className="text-xs text-slate-400 mt-0.5">Inventario formalizado de actividades de datos personales de la empresa.</p>
         </div>
-        
+
         <div className="flex gap-3">
           <button
             onClick={handleExportCSV}
-            className="flex items-center gap-2 py-2 px-4 bg-slate-900 border border-slate-800 hover:border-slate-700 text-slate-350 hover:text-slate-100 font-bold text-xs rounded-xl transition-all shadow-md"
+            className="flex items-center gap-2 py-2 px-4 bg-slate-900 border border-slate-800 hover:border-slate-700 text-slate-300 font-bold text-xs rounded-xl transition-all shadow-md"
           >
-            <Download size={14} />
-            <span>Exportar para Auditoría (CSV)</span>
+            <Download size={15} />
+            <span>Exportar CSV (Auditores)</span>
           </button>
 
           <button
@@ -326,7 +373,7 @@ export default function RopaInventoryView({ token }: RopaInventoryViewProps) {
       {isLoading ? (
         <div className="text-center py-12 text-slate-500 text-sm">Consultando inventario RoPA...</div>
       ) : errorMsg ? (
-        <div className="p-4 bg-rose-950/20 border border-rose-900/40 text-rose-450 rounded-xl text-xs">{errorMsg}</div>
+        <div className="p-4 bg-rose-950/20 border border-rose-900/40 text-rose-455 rounded-xl text-xs">{errorMsg}</div>
       ) : ropaList.length === 0 ? (
         <div className="space-y-8">
           <div className="bg-slate-900/30 border border-slate-850 rounded-2xl p-8 md:p-12 text-center max-w-xl mx-auto space-y-4">
@@ -355,7 +402,7 @@ export default function RopaInventoryView({ token }: RopaInventoryViewProps) {
             </h4>
             
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <div className="bg-slate-900/30 border border-slate-850 p-4 rounded-xl space-y-2">
+              <div className="bg-slate-900/30 border border-slate-855 p-4 rounded-xl space-y-2">
                 <div className="flex items-center gap-2.5">
                   <div className="p-1.5 bg-slate-950 text-indigo-400 rounded-lg border border-slate-850">
                     <Users size={14} />
@@ -367,7 +414,7 @@ export default function RopaInventoryView({ token }: RopaInventoryViewProps) {
                 </p>
               </div>
 
-              <div className="bg-slate-900/30 border border-slate-850 p-4 rounded-xl space-y-2">
+              <div className="bg-slate-900/30 border border-slate-855 p-4 rounded-xl space-y-2">
                 <div className="flex items-center gap-2.5">
                   <div className="p-1.5 bg-slate-950 text-emerald-400 rounded-lg border border-slate-850">
                     <Megaphone size={14} />
@@ -379,9 +426,9 @@ export default function RopaInventoryView({ token }: RopaInventoryViewProps) {
                 </p>
               </div>
 
-              <div className="bg-slate-900/30 border border-slate-850 p-4 rounded-xl space-y-2">
+              <div className="bg-slate-900/30 border border-slate-855 p-4 rounded-xl space-y-2">
                 <div className="flex items-center gap-2.5">
-                  <div className="p-1.5 bg-slate-950 text-rose-450 rounded-lg border border-slate-850">
+                  <div className="p-1.5 bg-slate-950 text-rose-455 rounded-lg border border-slate-850">
                     <Lock size={14} />
                   </div>
                   <span className="text-xs font-extrabold text-white">Seguridad y Operaciones</span>
@@ -394,72 +441,160 @@ export default function RopaInventoryView({ token }: RopaInventoryViewProps) {
           </div>
         </div>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {ropaList.map(record => {
-            const hasSensitive = record.data_categories.includes('Salud/Sensibles') || record.data_categories.includes('Biométricos');
-            return (
-              <div 
-                key={record.id}
-                className="bg-slate-900/60 border border-slate-800/80 rounded-2xl p-5 hover:border-slate-700/50 transition-all flex flex-col justify-between space-y-4 shadow-md text-left"
-              >
-                <div className="space-y-3">
-                  <div className="flex justify-between items-start gap-2">
-                    <h3 className="font-extrabold text-sm text-white leading-tight">{record.process_name}</h3>
-                    
-                    {/* Actions button group */}
-                    <div className="flex gap-2 flex-shrink-0">
-                      <button 
-                        onClick={() => handleOpenEditModal(record)}
-                        className="p-1.5 bg-slate-950 border border-slate-850 text-slate-450 hover:text-indigo-400 rounded hover:border-indigo-900/40 transition-colors"
-                      >
-                        <Edit3 size={12} />
-                      </button>
-                      <button 
-                        onClick={() => handleDelete(record.id)}
-                        className="p-1.5 bg-slate-950 border border-slate-850 text-slate-450 hover:text-rose-500 rounded hover:border-rose-950/40 transition-colors"
-                      >
-                        <Trash2 size={12} />
-                      </button>
+        <div className="space-y-8">
+          
+          {/* BLOQUE 1: Sugerencias Detectadas (Borradores) */}
+          {drafts.length > 0 && (
+            <div className="space-y-4 text-left bg-amber-500/5 border border-amber-550/15 p-5 rounded-2xl">
+              <h3 className="text-xs font-black text-amber-500 flex items-center gap-2 uppercase tracking-wider">
+                <Sparkles size={16} className="text-amber-500 animate-pulse animate-duration-1000" />
+                <span>Sugerencias del Escáner e IA ({drafts.length} Borradores)</span>
+              </h3>
+              <p className="text-[11px] text-slate-400 leading-relaxed">
+                Detectamos tecnologías y respuestas compatibles con actividades de datos. Revise y confirme estos borradores para agregarlos formalmente a su inventario oficial.
+              </p>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                {drafts.map(record => {
+                  return (
+                    <div 
+                      key={record.id}
+                      className="bg-slate-950 border border-amber-900/35 hover:border-amber-900/60 rounded-2xl p-5 transition-all flex flex-col justify-between space-y-4 shadow-md relative overflow-hidden"
+                    >
+                      <div className="absolute top-0 left-0 right-0 h-0.5 bg-amber-500/30" />
+                      
+                      <div className="space-y-3">
+                        <div className="flex justify-between items-start gap-2">
+                          <h4 className="font-extrabold text-xs text-white leading-tight">{record.process_name}</h4>
+                          <span className={`text-[9px] font-bold px-2 py-0.5 rounded flex-shrink-0 ${
+                            record.source === 'auto_scanner'
+                              ? 'bg-indigo-950 text-indigo-400 border border-indigo-900/40'
+                              : 'bg-teal-950 text-teal-450 border border-teal-900/40'
+                          }`}>
+                            {record.source === 'auto_scanner' ? '🔍 Escáner' : '📋 Cuestionario'}
+                          </span>
+                        </div>
+
+                        <p className="text-[11px] text-slate-400 line-clamp-3 leading-relaxed">{record.purpose}</p>
+
+                        <div className="flex flex-wrap gap-1.5 pt-1 text-[10px]">
+                          <span className="bg-slate-900 text-slate-400 px-2 py-0.5 rounded border border-slate-800">
+                            {record.legal_basis}
+                          </span>
+                          <span className="bg-slate-900 text-slate-400 px-2 py-0.5 rounded border border-slate-800">
+                            conserva: {record.retention_period}
+                          </span>
+                        </div>
+                      </div>
+
+                      <div className="pt-3 border-t border-slate-850 flex gap-2">
+                        <button
+                          onClick={() => handleOpenEditModal(record)}
+                          className="flex-1 py-1.5 px-3 bg-amber-600 hover:bg-amber-500 text-slate-950 font-extrabold rounded-lg text-[11px] transition-all text-center flex items-center justify-center gap-1 shadow-sm"
+                        >
+                          <span>Revisar y Confirmar</span>
+                        </button>
+                        <button
+                          onClick={() => handleRejectDraft(record)}
+                          className="py-1.5 px-2.5 bg-slate-900 hover:bg-slate-850 text-rose-455 hover:text-rose-350 rounded-lg text-[11px] transition-all border border-slate-800"
+                        >
+                          Rechazar
+                        </button>
+                      </div>
                     </div>
-                  </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
 
-                  <p className="text-xs text-slate-400 line-clamp-3 leading-relaxed">{record.purpose}</p>
+          {/* BLOQUE 2: Inventario Oficial Confirmado */}
+          <div className="space-y-4 text-left">
+            <h3 className="text-xs font-bold text-white flex items-center gap-2 uppercase tracking-wider">
+              <FolderLock size={15} className="text-indigo-400" />
+              <span>Inventario Oficial Registrado ({confirmed.length})</span>
+            </h3>
 
-                  <div className="flex flex-wrap gap-1.5 pt-1">
-                    {/* Legal basis badge */}
-                    <span className="text-[10px] uppercase font-extrabold px-2 py-0.5 rounded bg-indigo-950 text-indigo-400 border border-indigo-900/50">
-                      {record.legal_basis}
-                    </span>
-
-                    {/* International transfer badge */}
-                    {record.cross_border_transfer && (
-                      <span className="text-[10px] uppercase font-extrabold px-2 py-0.5 rounded bg-amber-950/40 text-amber-500 border border-amber-900/30">
-                        Transferencia Int.
-                      </span>
-                    )}
-
-                    {/* Sensitive indicator badge */}
-                    {hasSensitive && (
-                      <span className="text-[10px] uppercase font-extrabold px-2 py-0.5 rounded bg-rose-950/40 text-rose-450 border border-rose-900/30">
-                        Datos Sensibles
-                      </span>
-                    )}
-                  </div>
-                </div>
-
-                <div className="pt-4 border-t border-slate-850 space-y-2 text-[11px]">
-                  <div>
-                    <span className="text-slate-500">Categorías:</span>{' '}
-                    <span className="text-slate-300 font-medium">{record.data_categories.join(', ')}</span>
-                  </div>
-                  <div className="flex justify-between items-center text-[10px] text-slate-500">
-                    <div>Conservación: <span className="text-slate-350 font-bold">{record.retention_period}</span></div>
-                    <div>{new Date(record.created_at).toLocaleDateString('es-CL')}</div>
-                  </div>
+            {confirmed.length === 0 ? (
+              <div className="bg-slate-900/30 border border-slate-850 rounded-2xl p-10 text-center max-w-xl mx-auto space-y-4">
+                <FolderLock size={22} className="text-slate-650 mx-auto" />
+                <div>
+                  <h4 className="text-xs font-bold text-slate-300">No hay procesos confirmados</h4>
+                  <p className="text-[11px] text-slate-500 mt-1 leading-relaxed">
+                    Mapee un proceso utilizando el botón superior o valide las sugerencias de la IA para iniciar su RoPA formal.
+                  </p>
                 </div>
               </div>
-            );
-          })}
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                {confirmed.map(record => {
+                  const hasSensitive = record.data_categories.includes('Salud/Sensibles') || record.data_categories.includes('Biométricos');
+                  return (
+                    <div 
+                      key={record.id}
+                      className="bg-slate-900/60 border border-slate-800/80 rounded-2xl p-5 hover:border-slate-700/50 transition-all flex flex-col justify-between space-y-4 shadow-md text-left"
+                    >
+                      <div className="space-y-3">
+                        <div className="flex justify-between items-start gap-2">
+                          <h3 className="font-extrabold text-sm text-white leading-tight">{record.process_name}</h3>
+                          
+                          {/* Actions button group */}
+                          <div className="flex gap-2 flex-shrink-0">
+                            <button 
+                              onClick={() => handleOpenEditModal(record)}
+                              className="p-1.5 bg-slate-950 border border-slate-850 text-slate-450 hover:text-indigo-400 rounded hover:border-indigo-900/40 transition-colors"
+                            >
+                              <Edit3 size={12} />
+                            </button>
+                            <button 
+                              onClick={() => handleDelete(record.id)}
+                              className="p-1.5 bg-slate-950 border border-slate-850 text-slate-450 hover:text-rose-500 rounded hover:border-rose-950/40 transition-colors"
+                            >
+                              <Trash2 size={12} />
+                            </button>
+                          </div>
+                        </div>
+
+                        <p className="text-xs text-slate-400 line-clamp-3 leading-relaxed">{record.purpose}</p>
+
+                        <div className="flex flex-wrap gap-1.5 pt-1">
+                          {/* Legal basis badge */}
+                          <span className="text-[10px] uppercase font-extrabold px-2 py-0.5 rounded bg-indigo-950 text-indigo-400 border border-indigo-900/50">
+                            {record.legal_basis}
+                          </span>
+
+                          {/* International transfer badge */}
+                          {record.cross_border_transfer && (
+                            <span className="text-[10px] uppercase font-extrabold px-2 py-0.5 rounded bg-amber-950/40 text-amber-500 border border-amber-900/30">
+                              Transferencia Int.
+                            </span>
+                          )}
+
+                          {/* Sensitive indicator badge */}
+                          {hasSensitive && (
+                            <span className="text-[10px] uppercase font-extrabold px-2 py-0.5 rounded bg-rose-950/40 text-rose-455 border border-rose-900/30">
+                              Datos Sensibles
+                            </span>
+                          )}
+                        </div>
+                      </div>
+
+                      <div className="pt-4 border-t border-slate-850 space-y-2 text-[11px]">
+                        <div>
+                          <span className="text-slate-500">Categorías:</span>{' '}
+                          <span className="text-slate-300 font-medium">{record.data_categories.join(', ')}</span>
+                        </div>
+                        <div className="flex justify-between items-center text-[10px] text-slate-500">
+                          <div>Conservación: <span className="text-slate-350 font-bold">{record.retention_period}</span></div>
+                          <div>{new Date(record.created_at).toLocaleDateString('es-CL')}</div>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
         </div>
       )}
 
@@ -471,7 +606,7 @@ export default function RopaInventoryView({ token }: RopaInventoryViewProps) {
             <div className="p-5 border-b border-slate-800 bg-slate-950/50 flex justify-between items-center text-left">
               <div>
                 <h3 className="font-extrabold text-sm text-white uppercase tracking-wide">
-                  {editingRecord ? 'Editar Actividad de Tratamiento' : 'Mapear Actividad de Tratamiento (RoPA)'}
+                  {editingRecord ? 'Confirmar Actividad de Tratamiento' : 'Mapear Actividad de Tratamiento (RoPA)'}
                 </h3>
                 <p className="text-[10px] text-slate-400 mt-0.5">Registre los fines y el sustento de licitud de la recolección.</p>
               </div>
@@ -621,7 +756,7 @@ export default function RopaInventoryView({ token }: RopaInventoryViewProps) {
               )}
 
               {/* Toggle for international transfer */}
-              <div className="flex items-center justify-between bg-slate-950/30 p-3 rounded-lg border border-slate-850 select-none">
+              <div className="flex items-center justify-between bg-slate-950/30 p-3 rounded-lg border border-slate-855 select-none">
                 <div className="text-left">
                   <span className="text-xs font-bold text-slate-300 block">Transferencia Internacional de Datos</span>
                   <span className="text-[10px] text-slate-500 mt-0.5">¿Se transfieren estos datos personales a servidores/proveedores en el extranjero?</span>
@@ -629,7 +764,7 @@ export default function RopaInventoryView({ token }: RopaInventoryViewProps) {
                 <button
                   type="button"
                   onClick={() => setCrossBorderTransfer(!crossBorderTransfer)}
-                  className="text-indigo-400 hover:text-indigo-300 transition-colors"
+                  className="text-indigo-400 hover:text-indigo-300 transition-colors bg-transparent border-none p-0 focus:outline-none"
                 >
                   {crossBorderTransfer ? (
                     <ToggleRight className="w-8 h-8 text-indigo-500" />
@@ -649,9 +784,9 @@ export default function RopaInventoryView({ token }: RopaInventoryViewProps) {
                 </button>
                 <button
                   type="submit"
-                  className="px-5 py-2 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold rounded-lg transition-all shadow-md"
+                  className="px-5 py-2 bg-indigo-650 hover:bg-indigo-600 text-white text-xs font-bold rounded-lg transition-all shadow-md"
                 >
-                  {editingRecord ? 'Guardar Cambios' : 'Registrar Actividad'}
+                  {editingRecord ? 'Confirmar y Guardar' : 'Registrar Actividad'}
                 </button>
               </div>
             </form>

@@ -2,6 +2,7 @@ import { Router } from 'express';
 import cors from 'cors';
 import { getDb } from '../database/db.js';
 import { runAudit } from '../services/crawlerService.js';
+import { analyzeScanResults } from '../services/ropaDraftService.js';
 import { authenticateToken } from '../middlewares/auth.js';
 const router = Router();
 // --- CORS CONFIGURATIONS ---
@@ -85,10 +86,15 @@ router.post('/scan', adminCors, authenticateToken, async (req, res) => {
             req.user.id
         ]);
         const reportId = result.rows[0].id;
+        // Asynchronously generate ROPA drafts from scan findings
+        analyzeScanResults(req.user.id, report).catch((err) => {
+            console.error('[RoPADraftService] Error in scan inference:', err.message);
+        });
         return res.json({ id: reportId, ...report });
     }
     catch (error) {
-        return res.status(500).json({ error: 'Error ejecutando auditoría: ' + error.message });
+        console.error('Error running scanner audit:', error.message);
+        return res.status(422).json({ error: error.message });
     }
 });
 // 2. Get latest scan report for user
@@ -398,7 +404,7 @@ router.post('/free-scan', openCors, async (req, res) => {
     }
     catch (error) {
         console.error('Error running public free scan:', error.message);
-        return res.status(500).json({ error: 'Error ejecutando auditoría gratuita: ' + error.message });
+        return res.status(422).json({ error: error.message });
     }
 });
 export default router;

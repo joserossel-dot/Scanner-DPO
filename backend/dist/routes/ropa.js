@@ -47,15 +47,17 @@ router.get('/', adminCors, async (req, res) => {
 });
 // POST /api/ropa - Add a new process to the RoPA inventory
 router.post('/', adminCors, async (req, res) => {
-    const { process_name, purpose, legal_basis, data_categories, retention_period, cross_border_transfer } = req.body;
+    const { process_name, purpose, legal_basis, data_categories, retention_period, cross_border_transfer, source, status } = req.body;
     if (!process_name || !purpose || !legal_basis || !data_categories || !retention_period) {
         return res.status(400).json({ error: 'Faltan parámetros requeridos para registrar la actividad.' });
     }
     const db = getDb();
     try {
+        const sourceVal = source || 'manual';
+        const statusVal = status || 'confirmed';
         const result = await db.query(`
-      INSERT INTO ropa_inventory (user_id, process_name, purpose, legal_basis, data_categories, retention_period, cross_border_transfer)
-      VALUES ($1, $2, $3, $4, $5, $6, $7)
+      INSERT INTO ropa_inventory (user_id, process_name, purpose, legal_basis, data_categories, retention_period, cross_border_transfer, source, status)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
       RETURNING *
     `, [
             req.user.id,
@@ -64,7 +66,9 @@ router.post('/', adminCors, async (req, res) => {
             legal_basis,
             JSON.stringify(data_categories),
             retention_period,
-            cross_border_transfer === true
+            cross_border_transfer === true,
+            sourceVal,
+            statusVal
         ]);
         res.status(201).json(result.rows[0]);
     }
@@ -76,16 +80,18 @@ router.post('/', adminCors, async (req, res) => {
 // PUT /api/ropa/:id - Update an existing process in the RoPA inventory
 router.put('/:id', adminCors, async (req, res) => {
     const { id } = req.params;
-    const { process_name, purpose, legal_basis, data_categories, retention_period, cross_border_transfer } = req.body;
+    const { process_name, purpose, legal_basis, data_categories, retention_period, cross_border_transfer, source, status } = req.body;
     if (!process_name || !purpose || !legal_basis || !data_categories || !retention_period) {
         return res.status(400).json({ error: 'Faltan parámetros requeridos para actualizar la actividad.' });
     }
     const db = getDb();
     try {
+        const sourceVal = source || 'manual';
+        const statusVal = status || 'confirmed';
         const result = await db.query(`
       UPDATE ropa_inventory 
-      SET process_name = $1, purpose = $2, legal_basis = $3, data_categories = $4, retention_period = $5, cross_border_transfer = $6
-      WHERE id = $7 AND user_id = $8
+      SET process_name = $1, purpose = $2, legal_basis = $3, data_categories = $4, retention_period = $5, cross_border_transfer = $6, source = $7, status = $8
+      WHERE id = $9 AND user_id = $10
       RETURNING *
     `, [
             process_name,
@@ -94,6 +100,8 @@ router.put('/:id', adminCors, async (req, res) => {
             JSON.stringify(data_categories),
             retention_period,
             cross_border_transfer === true,
+            sourceVal,
+            statusVal,
             id,
             req.user.id
         ]);

@@ -264,8 +264,17 @@ export async function initDb() {
       data_categories JSONB NOT NULL,
       retention_period VARCHAR(255) NOT NULL,
       cross_border_transfer BOOLEAN NOT NULL DEFAULT FALSE,
+      source VARCHAR(50) DEFAULT 'manual',
+      status VARCHAR(50) DEFAULT 'draft',
       created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
     )
+  `);
+    // Ensure status and source exist in ropa_inventory table for existing databases
+    await pool.query(`
+    ALTER TABLE ropa_inventory ADD COLUMN IF NOT EXISTS source VARCHAR(50) DEFAULT 'manual';
+  `);
+    await pool.query(`
+    ALTER TABLE ropa_inventory ADD COLUMN IF NOT EXISTS status VARCHAR(50) DEFAULT 'draft';
   `);
     console.log('✅ Tablas y esquema de PostgreSQL validados/creados.');
     return pool;

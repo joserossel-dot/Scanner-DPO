@@ -2,6 +2,7 @@ import { Router } from 'express';
 import cors from 'cors';
 import { getDb } from '../database/db.js';
 import { evaluateQuestionnaire } from '../services/diagnosisEngine.js';
+import { analyzeQuestionnaireAnswers } from '../services/ropaDraftService.js';
 import { authenticateToken } from '../middlewares/auth.js';
 
 const router = Router();
@@ -118,12 +119,43 @@ router.get('/diagnosis', adminCors, async (req: any, res) => {
     });
     securityScore = Math.max(0, securityScore);
 
+    // 5.5 Query ROPA confirmed count to apply exclusion / compliance gap check
+    const ropaRes = await db.query(
+      "SELECT COUNT(*)::int as count FROM ropa_inventory WHERE user_id = $1 AND status = 'confirmed'",
+      [req.user.id]
+    );
+    const confirmedRopaCount = ropaRes.rows[0]?.count || 0;
+
+    let crawlScoreAdjusted = crawlScore;
+    const ropaFindings: any[] = [];
+    const ropaActions: any[] = [];
+
+    if (confirmedRopaCount === 0) {
+      crawlScoreAdjusted = Math.max(0, crawlScore - 15);
+      ropaFindings.push({
+        id: 'FIND_ROPA_MISSING',
+        category: 'Gobernanza',
+        severity: 'Grave',
+        description: 'Infracción Grave (Art. 12) - Inexistencia de un Registro de Actividades de Tratamiento (RoPA) confirmado y formalizado.',
+        recommendation: 'Completar y confirmar el inventario de actividades en la pestaña RoPA para mapear el ciclo de vida de los datos personales.',
+        details: 'El Registro de Actividades de Tratamiento es obligatorio para demostrar cumplimiento ante fiscalizaciones del regulador.'
+      });
+      ropaActions.push({
+        step: 0, // re-enumerated later
+        title: 'Formalizar y confirmar el inventario RoPA',
+        description: 'Mapear e inventariar las actividades de tratamiento de datos personales de la empresa (Art. 12).',
+        priority: 'Alta',
+        estimatedEffort: '3 horas',
+        details: 'Ingresar al módulo RoPA, revisar las sugerencias automáticas generadas y confirmar los borradores correspondientes.'
+      });
+    }
+
     // 6. Calculate unified Global Compliance Score
-    const globalScore = Math.round((crawlScore * 0.5) + (transfersScore * 0.3) + (securityScore * 0.2));
+    const globalScore = Math.round((crawlScoreAdjusted * 0.5) + (transfersScore * 0.3) + (securityScore * 0.2));
 
     // Combine findings and re-enumerate action steps
-    const combinedFindings = [...findings, ...transferFindings];
-    const combinedActions = [...actionPlan, ...transferActions];
+    const combinedFindings = [...findings, ...transferFindings, ...ropaFindings];
+    const combinedActions = [...actionPlan, ...transferActions, ...ropaActions];
     
     // Sort combined actions by priority
     const priorityOrder: Record<string, number> = { 'Alta': 1, 'Media': 2, 'Baja': 3 };
@@ -161,11 +193,17 @@ router.get('/diagnosis', adminCors, async (req: any, res) => {
 // POST /api/reports/evaluate - Evaluate diagnostic questionnaire and save report
 router.post('/evaluate', adminCors, async (req: any, res) => {
   try {
-    const answers = req.body;
-    const evaluation = evaluateQuestionnaire(answers);
-    
-    // Save as an audit report to the database
     const db = getDb();
+
+    // Fetch count of confirmed ROPA records
+    const ropaRes = await db.query(
+      "SELECT COUNT(*)::int as count FROM ropa_inventory WHERE user_id = $1 AND status = 'confirmed'",
+      [req.user.id]
+    );
+    const confirmed_ropa_count = ropaRes.rows[0]?.count || 0;
+
+    const answers = { ...req.body, confirmed_ropa_count };
+    const evaluation = evaluateQuestionnaire(answers);
     const domain = answers.domain || 'localhost:3000';
     
     const severityCounts = {
@@ -187,6 +225,11 @@ router.post('/evaluate', adminCors, async (req: any, res) => {
         req.user.id
       ]
     );
+
+    // Asynchronously generate ROPA drafts from questionnaire answers
+    analyzeQuestionnaireAnswers(req.user.id, answers).catch((err: any) => {
+      console.error('[RoPADraftService] Error in questionnaire inference:', err.message);
+    });
 
     res.json({
       id: result.rows[0]?.id || 1,
@@ -236,6 +279,13 @@ router.get('/dossier', adminCors, async (req: any, res) => {
     const totalTransfers = transfersRes.rowCount;
     const transfersWithScc = transfersRes.rows.filter((t: any) => t.has_scc).length;
 
+    // 4.5 Get confirmed RoPA count
+    const ropaRes = await db.query(
+      "SELECT COUNT(*)::int as count FROM ropa_inventory WHERE user_id = $1 AND status = 'confirmed'",
+      [req.user.id]
+    );
+    const confirmedRopaCount = ropaRes.rows[0]?.count || 0;
+
     // 5. Count risk matrix entries
     const risksRes = await db.query(
       'SELECT * FROM risk_matrix WHERE user_id = $1',
@@ -258,6 +308,9 @@ router.get('/dossier', adminCors, async (req: any, res) => {
       risks: {
         total: totalRisks,
         mitigated: mitigatedRisks
+      },
+      ropa: {
+        confirmed_count: confirmedRopaCount
       }
     });
   } catch (error: any) {

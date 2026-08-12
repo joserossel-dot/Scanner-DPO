@@ -252,7 +252,7 @@ router.post('/scan-vulnerabilities', adminCors, async (req: any, res) => {
 
   const db = getDb();
   try {
-    const scanResult = await runSecurityScan(domain);
+    const scanResult = await runSecurityScan(domain, true);
     const incidentsCreated: any[] = [];
 
     // Filter Critical and High severity warnings to auto-escalate
@@ -301,7 +301,7 @@ router.post('/scan-vulnerabilities', adminCors, async (req: any, res) => {
     });
   } catch (error: any) {
     console.error('Error running security scan:', error.message);
-    res.status(500).json({ error: 'Error al realizar el escaneo proactivo de seguridad.' });
+    res.status(422).json({ error: error.message });
   }
 });
 

@@ -5,7 +5,12 @@ import { getDb } from '../database/db.js';
 import crypto from 'crypto';
 
 const router = Router();
-const JWT_SECRET = process.env.JWT_SECRET || 'fallback_secret_key_123456';
+
+const JWT_SECRET = process.env.JWT_SECRET;
+if (!JWT_SECRET) {
+  console.error('FATAL ERROR: JWT_SECRET environment variable is missing.');
+  process.exit(1);
+}
 
 // POST /api/auth/register
 router.post('/register', async (req, res) => {
@@ -20,7 +25,7 @@ router.post('/register', async (req, res) => {
     
     // Check if user already exists
     const userCheck = await db.query('SELECT 1 FROM users WHERE email = $1', [email]);
-    if (userCheck.rowCount > 0) {
+    if (userCheck.rowCount && userCheck.rowCount > 0) {
       return res.status(400).json({ error: 'El correo electrónico ingresado ya está registrado.' });
     }
 
@@ -72,7 +77,7 @@ router.post('/login', async (req, res) => {
 
     // Find user
     const userRes = await db.query('SELECT * FROM users WHERE email = $1', [email]);
-    if (userRes.rowCount === 0) {
+    if (!userRes.rowCount || userRes.rowCount === 0) {
       return res.status(400).json({ error: 'Credenciales inválidas. Usuario no registrado.' });
     }
 
@@ -120,7 +125,7 @@ router.post('/forgot-password', async (req, res) => {
 
     // Find user
     const userRes = await db.query('SELECT id FROM users WHERE email = $1', [email]);
-    if (userRes.rowCount === 0) {
+    if (!userRes.rowCount || userRes.rowCount === 0) {
       return res.status(400).json({ error: 'No existe ningún usuario registrado con ese correo.' });
     }
 
@@ -166,7 +171,7 @@ router.post('/reset-password', async (req, res) => {
       [token]
     );
 
-    if (userRes.rowCount === 0) {
+    if (!userRes.rowCount || userRes.rowCount === 0) {
       return res.status(400).json({ error: 'El enlace de recuperación es inválido o ha expirado.' });
     }
 

@@ -194,6 +194,32 @@ export function evaluateQuestionnaire(answers) {
             details: 'Identificar y firmar contratos DPA con todos los proveedores de software declarados (ej. AWS, HubSpot, Slack, Zoom, Google Analytics, etc.).'
         });
     }
+    // Rule 8: RoPA Obligation (Art. 12)
+    const confirmedRopa = answers.confirmed_ropa_count ?? 0;
+    if (confirmedRopa === 0) {
+        const penalty = 15;
+        const riskUtm = 10000; // Infracción Grave (hasta 10.000 UTM)
+        scoreTotal -= penalty;
+        if (riskUtm > maxRiskUtm)
+            maxRiskUtm = riskUtm;
+        findings.push({
+            id: 'FIND_ROPA_MISSING',
+            category: 'Gobernanza',
+            severity: 'Grave',
+            description: 'Infracción Grave (Art. 12) - Inexistencia de un Registro de Actividades de Tratamiento (RoPA) confirmado y formalizado.',
+            recommendation: 'Completar y confirmar el inventario de actividades en la pestaña RoPA para mapear el ciclo de vida de los datos personales.',
+            penalty,
+            riskUtm
+        });
+        actionPlan.push({
+            step: stepCounter++,
+            title: 'Formalizar y confirmar el inventario RoPA',
+            description: 'Mapear e inventariar las actividades de tratamiento de datos personales de la empresa (Art. 12).',
+            priority: 'Alta',
+            estimatedEffort: '3 horas',
+            details: 'Ingresar al módulo RoPA, revisar las sugerencias automáticas generadas y confirmar los borradores correspondientes a analítica web, videovigilancia y nóminas.'
+        });
+    }
     // Cap score between 0 and 100
     scoreTotal = Math.max(0, Math.min(100, scoreTotal));
     return {

@@ -36,6 +36,9 @@ interface DossierData {
     total: number;
     mitigated: number;
   };
+  ropa?: {
+    confirmed_count: number;
+  };
 }
 
 export default function AuditDossierView({ token }: AuditDossierViewProps) {
@@ -288,10 +291,16 @@ export default function AuditDossierView({ token }: AuditDossierViewProps) {
               <p className="leading-relaxed">
                 En cumplimiento del principio de transparencia informativa activa, se mantiene una política oficial disponible para todos los titulares de datos.
               </p>
-              <div className="pt-2">
-                <span className="text-[10px] text-slate-450 uppercase font-extrabold block">Fecha Última Política Registrada</span>
-                <span className="text-xs font-bold text-slate-800 mt-1 block">
-                  {data.last_policy_updated ? new Date(data.last_policy_updated).toLocaleString('es-CL') : 'Sin política activa generada'}
+              <div className="pt-2 flex justify-between items-center">
+                <span className="text-[10px] text-slate-455 uppercase font-extrabold">Última Actualización de Política</span>
+                <span className="text-xs font-bold text-slate-800">
+                  {data.last_policy_updated ? new Date(data.last_policy_updated).toLocaleDateString('es-CL') : 'Sin política activa'}
+                </span>
+              </div>
+              <div className="pt-2 border-t border-slate-150 flex justify-between items-center">
+                <span className="text-[10px] text-slate-455 uppercase font-extrabold">Inventario RoPA Confirmado (Art. 12)</span>
+                <span className="text-xs font-bold text-indigo-750">
+                  {data.ropa?.confirmed_count || 0} Procesos
                 </span>
               </div>
             </div>
