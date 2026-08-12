@@ -14,23 +14,23 @@ import {
 
 interface QuestionnaireState {
   // Area 1: RRHH
-  rrhh_storage_type: string;
+  rrhh_storage_type: string[];
   rrhh_storage_details: string;
   rrhh_health_data: string[];
   rrhh_destruction_proc: string;
-  rrhh_attendance_tech: string;
+  rrhh_attendance_tech: string[];
   rrhh_biometric_consent: string;
   rrhh_biometric_vendor: string;
   
   // Area 2: Comercial & Marketing
-  commercial_db_type: string;
+  commercial_db_type: string[];
   commercial_tool_volume: string;
   commercial_server_country: string;
-  commercial_record_meetings: string;
+  commercial_record_meetings: string[];
   commercial_record_notice: string;
 
   // Area 3: TI & Ciberseguridad
-  ti_rbac_type: string;
+  ti_rbac_type: string[];
   ti_sensitive_access_roles: string;
   ti_encryption_type: string;
   ti_backup_frequency: string;
@@ -46,21 +46,21 @@ interface QuestionnaireState {
 }
 
 const initialFormState: QuestionnaireState = {
-  rrhh_storage_type: '',
+  rrhh_storage_type: [],
   rrhh_storage_details: '',
   rrhh_health_data: [],
   rrhh_destruction_proc: '',
-  rrhh_attendance_tech: '',
+  rrhh_attendance_tech: [],
   rrhh_biometric_consent: '',
   rrhh_biometric_vendor: '',
   
-  commercial_db_type: '',
+  commercial_db_type: [],
   commercial_tool_volume: '',
   commercial_server_country: '',
-  commercial_record_meetings: '',
+  commercial_record_meetings: [],
   commercial_record_notice: '',
 
-  ti_rbac_type: '',
+  ti_rbac_type: [],
   ti_sensitive_access_roles: '',
   ti_encryption_type: '',
   ti_backup_frequency: '',
@@ -81,6 +81,7 @@ export default function DiagnosticQuestionnaire({ onSubmit }: DiagnosticQuestion
   const [formData, setFormData] = useState<QuestionnaireState>(initialFormState);
   const [activeAccordion, setActiveAccordion] = useState<number | null>(0);
   const [formSubmitted, setFormSubmitted] = useState(false);
+  const [validationError, setValidationError] = useState('');
 
   const toggleAccordion = (index: number) => {
     setActiveAccordion(activeAccordion === index ? null : index);
@@ -93,8 +94,8 @@ export default function DiagnosticQuestionnaire({ onSubmit }: DiagnosticQuestion
     }));
   };
 
-  const handleCheckboxChange = (field: 'rrhh_health_data' | 'vendors_transfer_types', value: string) => {
-    const currentList = formData[field] as string[];
+  const handleMultiSelectToggle = (field: keyof QuestionnaireState, value: string) => {
+    const currentList = (formData[field] as string[]) || [];
     const updatedList = currentList.includes(value)
       ? currentList.filter(item => item !== value)
       : [...currentList, value];
@@ -102,8 +103,41 @@ export default function DiagnosticQuestionnaire({ onSubmit }: DiagnosticQuestion
     handleInputChange(field, updatedList);
   };
 
+  const handleCheckboxChange = (field: 'rrhh_health_data' | 'vendors_transfer_types', value: string) => {
+    handleMultiSelectToggle(field, value);
+  };
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    setValidationError('');
+
+    // Custom validations for multi-select groups (ensuring at least one selection)
+    if (formData.rrhh_storage_type.length === 0) {
+      setValidationError('Por favor seleccione al menos una opción en: ¿Dónde se almacenan los CVs? (Área 1)');
+      setActiveAccordion(0);
+      return;
+    }
+    if (formData.rrhh_attendance_tech.length === 0) {
+      setValidationError('Por favor seleccione al menos una opción en: ¿Qué tecnología utiliza para control de asistencia? (Área 1)');
+      setActiveAccordion(0);
+      return;
+    }
+    if (formData.commercial_db_type.length === 0) {
+      setValidationError('Por favor seleccione al menos una opción en: ¿Dónde reside la base de datos principal? (Área 2)');
+      setActiveAccordion(1);
+      return;
+    }
+    if (formData.commercial_record_meetings.length === 0) {
+      setValidationError('Por favor seleccione al menos una opción en: ¿Se graban las llamadas o reuniones? (Área 2)');
+      setActiveAccordion(1);
+      return;
+    }
+    if (formData.ti_rbac_type.length === 0) {
+      setValidationError('Por favor seleccione al menos una opción en: ¿Cómo se gestiona el acceso a las bases de datos? (Área 3)');
+      setActiveAccordion(2);
+      return;
+    }
+
     console.log('📊 [Diagnóstico Legal] Cuestionario Operativo Interno Enviado:', formData);
     setFormSubmitted(true);
     onSubmit(formData);
@@ -119,10 +153,11 @@ export default function DiagnosticQuestionnaire({ onSubmit }: DiagnosticQuestion
     setFormData(initialFormState);
     setFormSubmitted(false);
     setActiveAccordion(0);
+    setValidationError('');
   };
 
   return (
-    <div id="diagnostic-questionnaire-root" className="w-full bg-slate-900/40 border border-slate-800/80 rounded-xl overflow-hidden shadow-xl">
+    <div id="diagnostic-questionnaire-root" className="w-full bg-slate-900/40 border border-slate-800/80 rounded-xl overflow-hidden shadow-xl text-left">
       <div className="p-6 border-b border-slate-800 bg-slate-900/20 flex items-center justify-between">
         <div className="flex items-center gap-3">
           <div className="p-2 bg-indigo-950 text-indigo-400 rounded-lg border border-indigo-850">
@@ -143,6 +178,13 @@ export default function DiagnosticQuestionnaire({ onSubmit }: DiagnosticQuestion
           </button>
         )}
       </div>
+
+      {validationError && (
+        <div className="p-4 bg-rose-950/30 border-b border-rose-900/40 text-rose-400 text-xs font-semibold flex items-center gap-2">
+          <AlertCircle className="w-4 h-4 text-rose-500" />
+          <span>{validationError}</span>
+        </div>
+      )}
 
       {formSubmitted ? (
         <div className="p-8 text-center max-w-xl mx-auto my-4">
@@ -183,21 +225,29 @@ export default function DiagnosticQuestionnaire({ onSubmit }: DiagnosticQuestion
             
             {activeAccordion === 0 && (
               <div className="px-6 pb-6 pt-2 grid grid-cols-1 md:grid-cols-2 gap-5 bg-slate-900/5">
-                <div>
-                  <label className="text-xs font-semibold text-slate-300 block mb-1.5">¿Dónde se almacenan los CVs y fichas de empleados?</label>
-                  <select 
-                    value={formData.rrhh_storage_type} 
-                    onChange={e => handleInputChange('rrhh_storage_type', e.target.value)}
-                    required
-                    className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-indigo-500/50"
-                  >
-                    <option value="">Selecciona una opción</option>
-                    <option value="Físico">Archiveros Físicos</option>
-                    <option value="Nube">Almacenamiento en la Nube (Drive, Dropbox)</option>
-                    <option value="Software RRHH">Software especializado de RRHH (ej. Buk, Talana)</option>
-                    <option value="Correo">Casillas de Correo Electrónico</option>
-                    <option value="Híbrido">Esquema Híbrido (Papel y Digital)</option>
-                  </select>
+                
+                {/* PREGUNTA 1 (CHECKBOXES MULTIPLE) */}
+                <div className="md:col-span-2">
+                  <label className="text-xs font-semibold text-slate-300 block mb-2">¿Dónde se almacenan los CVs y fichas de empleados?</label>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 bg-slate-950/40 p-4 rounded-lg border border-slate-800/80">
+                    {[
+                      { value: 'Físico', label: 'Archiveros Físicos' },
+                      { value: 'Nube', label: 'Almacenamiento en la Nube (Drive, Dropbox)' },
+                      { value: 'Software RRHH', label: 'Software especializado de RRHH (ej. Buk, Talana)' },
+                      { value: 'Correo', label: 'Casillas de Correo Electrónico' },
+                      { value: 'Híbrido', label: 'Esquema Híbrido (Papel y Digital)' }
+                    ].map(item => (
+                      <label key={item.value} className="flex items-center gap-2.5 text-xs text-slate-400 cursor-pointer select-none hover:text-slate-200">
+                        <input 
+                          type="checkbox"
+                          checked={formData.rrhh_storage_type.includes(item.value)}
+                          onChange={() => handleMultiSelectToggle('rrhh_storage_type', item.value)}
+                          className="rounded border-slate-800 text-indigo-600 focus:ring-0 bg-slate-950 w-4 h-4"
+                        />
+                        <span>{item.label}</span>
+                      </label>
+                    ))}
+                  </div>
                 </div>
 
                 <div>
@@ -207,7 +257,7 @@ export default function DiagnosticQuestionnaire({ onSubmit }: DiagnosticQuestion
                     value={formData.rrhh_storage_details}
                     onChange={e => handleInputChange('rrhh_storage_details', e.target.value)}
                     placeholder="ej. Bóveda oficina central / Buk Chile"
-                    className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-sm text-slate-200 placeholder:text-slate-655 focus:outline-none focus:border-indigo-500/50"
+                    className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-sm text-slate-200 placeholder:text-slate-700 focus:outline-none focus:border-indigo-500/50"
                   />
                 </div>
 
@@ -241,25 +291,32 @@ export default function DiagnosticQuestionnaire({ onSubmit }: DiagnosticQuestion
                     value={formData.rrhh_destruction_proc}
                     onChange={e => handleInputChange('rrhh_destruction_proc', e.target.value)}
                     placeholder="Describa el protocolo de eliminación de licencias u otros antecedentes de salud..."
-                    className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-sm text-slate-200 placeholder:text-slate-655 focus:outline-none focus:border-indigo-500/50"
+                    className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-sm text-slate-200 placeholder:text-slate-700 focus:outline-none focus:border-indigo-500/50"
                   />
                 </div>
 
-                <div>
-                  <label className="text-xs font-semibold text-slate-300 block mb-1.5">¿Qué tecnología utiliza para control de asistencia? (Art. 16 ter)</label>
-                  <select 
-                    value={formData.rrhh_attendance_tech} 
-                    onChange={e => handleInputChange('rrhh_attendance_tech', e.target.value)}
-                    required
-                    className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-indigo-500/50"
-                  >
-                    <option value="">Selecciona una opción</option>
-                    <option value="Huella">Biometría Dactilar (Huella)</option>
-                    <option value="Rostro/Iris">Biometría Facial / Iris</option>
-                    <option value="Papel">Libro de Asistencia Físico (Papel)</option>
-                    <option value="Tarjeta">Tarjeta de Proximidad RFID</option>
-                    <option value="App sin biometría">Aplicación móvil (Marcaje sin biométricos)</option>
-                  </select>
+                {/* PREGUNTA 2 (CHECKBOXES MULTIPLE) */}
+                <div className="md:col-span-2">
+                  <label className="text-xs font-semibold text-slate-300 block mb-2">¿Qué tecnología utiliza para control de asistencia? (Art. 16 ter)</label>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 bg-slate-950/40 p-4 rounded-lg border border-slate-800/80">
+                    {[
+                      { value: 'Huella', label: 'Biometría Dactilar (Huella)' },
+                      { value: 'Rostro/Iris', label: 'Biometría Facial / Iris' },
+                      { value: 'Papel', label: 'Libro de Asistencia Físico (Papel)' },
+                      { value: 'Tarjeta', label: 'Tarjeta de Proximidad RFID' },
+                      { value: 'App sin biometría', label: 'Aplicación móvil (Marcaje sin biométricos)' }
+                    ].map(item => (
+                      <label key={item.value} className="flex items-center gap-2.5 text-xs text-slate-400 cursor-pointer select-none hover:text-slate-200">
+                        <input 
+                          type="checkbox"
+                          checked={formData.rrhh_attendance_tech.includes(item.value)}
+                          onChange={() => handleMultiSelectToggle('rrhh_attendance_tech', item.value)}
+                          className="rounded border-slate-800 text-indigo-600 focus:ring-0 bg-slate-950 w-4 h-4"
+                        />
+                        <span>{item.label}</span>
+                      </label>
+                    ))}
+                  </div>
                 </div>
 
                 <div>
@@ -284,7 +341,7 @@ export default function DiagnosticQuestionnaire({ onSubmit }: DiagnosticQuestion
                     value={formData.rrhh_biometric_vendor}
                     onChange={e => handleInputChange('rrhh_biometric_vendor', e.target.value)}
                     placeholder="ej. GeoVictoria, ZKTeco, Relojcontrol"
-                    className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-sm text-slate-200 placeholder:text-slate-655 focus:outline-none focus:border-indigo-500/50"
+                    className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-sm text-slate-200 placeholder:text-slate-700 focus:outline-none focus:border-indigo-500/50"
                   />
                 </div>
               </div>
@@ -307,20 +364,28 @@ export default function DiagnosticQuestionnaire({ onSubmit }: DiagnosticQuestion
             
             {activeAccordion === 1 && (
               <div className="px-6 pb-6 pt-2 grid grid-cols-1 md:grid-cols-2 gap-5 bg-slate-900/5">
-                <div>
-                  <label className="text-xs font-semibold text-slate-300 block mb-1.5">¿Dónde reside la base de datos principal de clientes?</label>
-                  <select 
-                    value={formData.commercial_db_type} 
-                    onChange={e => handleInputChange('commercial_db_type', e.target.value)}
-                    required
-                    className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-indigo-500/50"
-                  >
-                    <option value="">Selecciona una opción</option>
-                    <option value="CRM Cloud">CRM en la Nube (Salesforce, HubSpot)</option>
-                    <option value="Excel locales">Hojas de cálculo locales (Excel, CSV)</option>
-                    <option value="ERP">Base integrada del ERP de la empresa (SAP, Defontana)</option>
-                    <option value="Bases desorganizadas">Correos y carpetas compartidas desorganizadas</option>
-                  </select>
+                
+                {/* PREGUNTA 3 (CHECKBOXES MULTIPLE) */}
+                <div className="md:col-span-2">
+                  <label className="text-xs font-semibold text-slate-300 block mb-2">¿Dónde reside la base de datos principal de clientes?</label>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 bg-slate-950/40 p-4 rounded-lg border border-slate-800/80">
+                    {[
+                      { value: 'CRM Cloud', label: 'CRM en la Nube (Salesforce, HubSpot)' },
+                      { value: 'Excel locales', label: 'Hojas de cálculo locales (Excel, CSV)' },
+                      { value: 'ERP', label: 'Base integrada del ERP de la empresa (SAP, Defontana)' },
+                      { value: 'Bases desorganizadas', label: 'Correos y carpetas compartidas desorganizadas' }
+                    ].map(item => (
+                      <label key={item.value} className="flex items-center gap-2.5 text-xs text-slate-400 cursor-pointer select-none hover:text-slate-200">
+                        <input 
+                          type="checkbox"
+                          checked={formData.commercial_db_type.includes(item.value)}
+                          onChange={() => handleMultiSelectToggle('commercial_db_type', item.value)}
+                          className="rounded border-slate-800 text-indigo-600 focus:ring-0 bg-slate-950 w-4 h-4"
+                        />
+                        <span>{item.label}</span>
+                      </label>
+                    ))}
+                  </div>
                 </div>
 
                 <div>
@@ -330,7 +395,7 @@ export default function DiagnosticQuestionnaire({ onSubmit }: DiagnosticQuestion
                     value={formData.commercial_tool_volume}
                     onChange={e => handleInputChange('commercial_tool_volume', e.target.value)}
                     placeholder="ej. HubSpot - 12,500 leads"
-                    className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-sm text-slate-200 placeholder:text-slate-655 focus:outline-none focus:border-indigo-500/50"
+                    className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-sm text-slate-200 placeholder:text-slate-700 focus:outline-none focus:border-indigo-500/50"
                   />
                 </div>
 
@@ -351,19 +416,26 @@ export default function DiagnosticQuestionnaire({ onSubmit }: DiagnosticQuestion
                   </select>
                 </div>
 
-                <div>
-                  <label className="text-xs font-semibold text-slate-300 block mb-1.5">¿Se graban las llamadas o reuniones virtuales?</label>
-                  <select 
-                    value={formData.commercial_record_meetings} 
-                    onChange={e => handleInputChange('commercial_record_meetings', e.target.value)}
-                    required
-                    className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-indigo-500/50"
-                  >
-                    <option value="">Selecciona una opción</option>
-                    <option value="Sí en teléfono">Sí, llamadas de soporte/venta telefónica</option>
-                    <option value="Sí en reuniones virtuales">Sí, reuniones virtuales (ej. Zoom, Teams, Meet)</option>
-                    <option value="No">No, no se graba ningún tipo de comunicación</option>
-                  </select>
+                {/* PREGUNTA 4 (CHECKBOXES MULTIPLE) */}
+                <div className="md:col-span-2">
+                  <label className="text-xs font-semibold text-slate-300 block mb-2">¿Se graban las llamadas o reuniones virtuales?</label>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 bg-slate-950/40 p-4 rounded-lg border border-slate-800/80">
+                    {[
+                      { value: 'Sí en teléfono', label: 'Sí, llamadas de soporte/venta telefónica' },
+                      { value: 'Sí en reuniones virtuales', label: 'Sí, reuniones virtuales (ej. Zoom, Teams, Meet)' },
+                      { value: 'No', label: 'No, no se graba ningún tipo de comunicación' }
+                    ].map(item => (
+                      <label key={item.value} className="flex items-center gap-2.5 text-xs text-slate-400 cursor-pointer select-none hover:text-slate-200">
+                        <input 
+                          type="checkbox"
+                          checked={formData.commercial_record_meetings.includes(item.value)}
+                          onChange={() => handleMultiSelectToggle('commercial_record_meetings', item.value)}
+                          className="rounded border-slate-800 text-indigo-600 focus:ring-0 bg-slate-950 w-4 h-4"
+                        />
+                        <span>{item.label}</span>
+                      </label>
+                    ))}
+                  </div>
                 </div>
 
                 <div className="md:col-span-2">
@@ -400,20 +472,28 @@ export default function DiagnosticQuestionnaire({ onSubmit }: DiagnosticQuestion
             
             {activeAccordion === 2 && (
               <div className="px-6 pb-6 pt-2 grid grid-cols-1 md:grid-cols-2 gap-5 bg-slate-900/5">
-                <div>
-                  <label className="text-xs font-semibold text-slate-300 block mb-1.5">¿Cómo se gestiona el acceso a las bases de datos? (RBAC)</label>
-                  <select 
-                    value={formData.ti_rbac_type} 
-                    onChange={e => handleInputChange('ti_rbac_type', e.target.value)}
-                    required
-                    className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-indigo-500/50"
-                  >
-                    <option value="">Selecciona una opción</option>
-                    <option value="Control estricto por Roles">Control estricto basado en roles (RBAC) con accesos mínimos</option>
-                    <option value="Mismo usuario compartido">Credencial única o mismo usuario administrador compartido</option>
-                    <option value="Todos tienen acceso">Toda la organización tiene acceso de manera predeterminada</option>
-                    <option value="Sin política">No se cuenta con una política formal de accesos</option>
-                  </select>
+                
+                {/* PREGUNTA 5 (CHECKBOXES MULTIPLE) */}
+                <div className="md:col-span-2">
+                  <label className="text-xs font-semibold text-slate-300 block mb-2">¿Cómo se gestiona el acceso a las bases de datos? (RBAC)</label>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 bg-slate-950/40 p-4 rounded-lg border border-slate-800/80">
+                    {[
+                      { value: 'Control estricto por Roles', label: 'Control estricto basado en roles (RBAC) con accesos mínimos' },
+                      { value: 'Mismo usuario compartido', label: 'Credencial única o mismo usuario administrador compartido' },
+                      { value: 'Todos tienen acceso', label: 'Toda la organización tiene acceso de manera predeterminada' },
+                      { value: 'Sin política', label: 'No se cuenta con una política formal de accesos' }
+                    ].map(item => (
+                      <label key={item.value} className="flex items-center gap-2.5 text-xs text-slate-400 cursor-pointer select-none hover:text-slate-200">
+                        <input 
+                          type="checkbox"
+                          checked={formData.ti_rbac_type.includes(item.value)}
+                          onChange={() => handleMultiSelectToggle('ti_rbac_type', item.value)}
+                          className="rounded border-slate-800 text-indigo-600 focus:ring-0 bg-slate-950 w-4 h-4"
+                        />
+                        <span>{item.label}</span>
+                      </label>
+                    ))}
+                  </div>
                 </div>
 
                 <div>
@@ -423,7 +503,7 @@ export default function DiagnosticQuestionnaire({ onSubmit }: DiagnosticQuestion
                     value={formData.ti_sensitive_access_roles}
                     onChange={e => handleInputChange('ti_sensitive_access_roles', e.target.value)}
                     placeholder="ej. Administrador TI, Jefes de Operaciones, DPO"
-                    className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-sm text-slate-200 placeholder:text-slate-655 focus:outline-none focus:border-indigo-500/50"
+                    className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-sm text-slate-200 placeholder:text-slate-700 focus:outline-none focus:border-indigo-500/50"
                   />
                 </div>
 
@@ -449,7 +529,7 @@ export default function DiagnosticQuestionnaire({ onSubmit }: DiagnosticQuestion
                     value={formData.ti_backup_frequency}
                     onChange={e => handleInputChange('ti_backup_frequency', e.target.value)}
                     placeholder="ej. Diario automatizado en AWS S3 región Virginia con cifrado"
-                    className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-sm text-slate-200 placeholder:text-slate-655 focus:outline-none focus:border-indigo-500/50"
+                    className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-sm text-slate-200 placeholder:text-slate-700 focus:outline-none focus:border-indigo-500/50"
                   />
                 </div>
               </div>
@@ -494,7 +574,7 @@ export default function DiagnosticQuestionnaire({ onSubmit }: DiagnosticQuestion
                     value={formData.finances_retention_rules}
                     onChange={e => handleInputChange('finances_retention_rules', e.target.value)}
                     placeholder="ej. Conservación por 6 años por regulaciones del SII"
-                    className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-sm text-slate-200 placeholder:text-slate-655 focus:outline-none focus:border-indigo-500/50"
+                    className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-sm text-slate-200 placeholder:text-slate-700 focus:outline-none focus:border-indigo-500/50"
                   />
                 </div>
               </div>
@@ -547,7 +627,7 @@ export default function DiagnosticQuestionnaire({ onSubmit }: DiagnosticQuestion
                     value={formData.vendors_main_names}
                     onChange={e => handleInputChange('vendors_main_names', e.target.value)}
                     placeholder="ej. Amazon Web Services, Mailchimp Inc, Deloitte"
-                    className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-sm text-slate-200 placeholder:text-slate-655 focus:outline-none focus:border-indigo-500/50"
+                    className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-sm text-slate-200 placeholder:text-slate-700 focus:outline-none focus:border-indigo-500/50"
                   />
                 </div>
 
