@@ -10,7 +10,11 @@ import {
   AlertTriangle,
   X,
   CheckCircle,
-  HelpCircle
+  HelpCircle,
+  Info,
+  Users,
+  Megaphone,
+  Lock
 } from 'lucide-react';
 
 interface RopaRecord {
@@ -216,7 +220,6 @@ export default function RopaInventoryView({ token }: RopaInventoryViewProps) {
       ...rows.map(r => r.join(','))
     ].join('\n');
 
-    // Encode to UTF-8 BOM to display special characters correctly in Microsoft Excel
     const blob = new Blob([new Uint8Array([0xEF, 0xBB, 0xBF]), csvContent], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
@@ -227,7 +230,6 @@ export default function RopaInventoryView({ token }: RopaInventoryViewProps) {
     document.body.removeChild(link);
   };
 
-  // Show legal warning if biometric or sensitive categories are checked
   const showSecurityWarning = dataCategories.includes('Salud/Sensibles') || dataCategories.includes('Biométricos');
 
   return (
@@ -235,7 +237,7 @@ export default function RopaInventoryView({ token }: RopaInventoryViewProps) {
       
       {/* Header section with Actions */}
       <header className="flex flex-col sm:flex-row justify-between sm:items-center gap-4">
-        <div>
+        <div className="text-left">
           <h1 className="text-xl font-bold text-white tracking-wide">📓 Registro de Actividades de Tratamiento (RoPA - Art. 12)</h1>
           <p className="text-xs text-slate-400 mt-0.5">Gestione y mantenga el inventario legalizado de procesamiento de datos personales de la organización.</p>
         </div>
@@ -259,28 +261,89 @@ export default function RopaInventoryView({ token }: RopaInventoryViewProps) {
         </div>
       </header>
 
+      {/* UX/UI Banner Informativo */}
+      <div className="bg-indigo-950/20 border border-indigo-900/30 rounded-2xl p-4 md:p-5 flex items-start gap-4 text-left">
+        <div className="p-2 bg-indigo-900/20 text-indigo-400 rounded-xl border border-indigo-850 flex-shrink-0">
+          <Info size={18} />
+        </div>
+        <div className="space-y-1">
+          <h3 className="text-xs font-bold text-indigo-300 uppercase tracking-wider">¿Qué es el inventario RoPA?</h3>
+          <p className="text-xs text-slate-350 leading-relaxed">
+            El RoPA es la columna vertebral de su cumplimiento (Art. 12, Ley N° 21.719). Es un inventario obligatorio donde usted declara qué datos personales recopila su empresa, para qué los usa, dónde los guarda y con quién los comparte. Sin este mapa, es imposible demostrar cumplimiento ante una fiscalización.
+          </p>
+        </div>
+      </div>
+
       {/* Main Grid View */}
       {isLoading ? (
         <div className="text-center py-12 text-slate-500 text-sm">Consultando inventario RoPA...</div>
       ) : errorMsg ? (
         <div className="p-4 bg-rose-950/20 border border-rose-900/40 text-rose-450 rounded-xl text-xs">{errorMsg}</div>
       ) : ropaList.length === 0 ? (
-        <div className="bg-slate-900/30 border border-slate-850 rounded-2xl p-12 text-center max-w-xl mx-auto space-y-4">
-          <div className="w-12 h-12 bg-slate-950 border border-slate-800 text-slate-500 rounded-full flex items-center justify-center mx-auto">
-            <FolderLock size={20} />
+        <div className="space-y-8">
+          <div className="bg-slate-900/30 border border-slate-850 rounded-2xl p-8 md:p-12 text-center max-w-xl mx-auto space-y-4">
+            <div className="w-12 h-12 bg-slate-950 border border-slate-800 text-slate-500 rounded-full flex items-center justify-center mx-auto">
+              <FolderLock size={20} />
+            </div>
+            <div>
+              <h4 className="text-sm font-bold text-white">No se han registrado procesos</h4>
+              <p className="text-xs text-slate-450 mt-1 leading-relaxed">
+                Mapee las actividades de tratamiento de su empresa (RoPA) para cumplir formalmente con las obligaciones de inventariado ante fiscalizaciones del regulador.
+              </p>
+            </div>
+            <button
+              onClick={handleOpenCreateModal}
+              className="py-1.5 px-4 bg-indigo-600/10 hover:bg-indigo-600/20 text-indigo-400 font-bold text-xs rounded-lg transition-all border border-indigo-900/50"
+            >
+              Registrar Primer Proceso
+            </button>
           </div>
-          <div>
-            <h4 className="text-sm font-bold text-white">No se han registrado procesos</h4>
-            <p className="text-xs text-slate-450 mt-1 leading-relaxed">
-              Mapee las actividades de tratamiento de su empresa (RoPA) para cumplir formalmente con las obligaciones de inventariado ante fiscalizaciones del regulador.
-            </p>
+
+          {/* Estado Vacío Enriquecido (Ejemplos Comunes) */}
+          <div className="max-w-4xl mx-auto space-y-4 text-left">
+            <h4 className="text-xs font-bold text-slate-300 uppercase tracking-wider flex items-center gap-2">
+              <HelpCircle size={14} className="text-indigo-400" />
+              <span>¿Por dónde empezar? Ejemplos comunes:</span>
+            </h4>
+            
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div className="bg-slate-900/30 border border-slate-850 p-4 rounded-xl space-y-2">
+                <div className="flex items-center gap-2.5">
+                  <div className="p-1.5 bg-slate-950 text-indigo-400 rounded-lg border border-slate-850">
+                    <Users size={14} />
+                  </div>
+                  <span className="text-xs font-extrabold text-white">Recursos Humanos</span>
+                </div>
+                <p className="text-[11px] text-slate-400 leading-relaxed">
+                  Tratamiento de planillas para pago de nómina, control de asistencia (reloj biométrico), y base de reclutamiento de candidatos.
+                </p>
+              </div>
+
+              <div className="bg-slate-900/30 border border-slate-850 p-4 rounded-xl space-y-2">
+                <div className="flex items-center gap-2.5">
+                  <div className="p-1.5 bg-slate-950 text-emerald-400 rounded-lg border border-slate-850">
+                    <Megaphone size={14} />
+                  </div>
+                  <span className="text-xs font-extrabold text-white">Marketing y Ventas</span>
+                </div>
+                <p className="text-[11px] text-slate-400 leading-relaxed">
+                  Bases de clientes alojadas en el CRM, listas de suscripción para envíos de newsletters, y captación mediante cookies de analítica web.
+                </p>
+              </div>
+
+              <div className="bg-slate-900/30 border border-slate-850 p-4 rounded-xl space-y-2">
+                <div className="flex items-center gap-2.5">
+                  <div className="p-1.5 bg-slate-950 text-rose-450 rounded-lg border border-slate-850">
+                    <Lock size={14} />
+                  </div>
+                  <span className="text-xs font-extrabold text-white">Seguridad y Operaciones</span>
+                </div>
+                <p className="text-[11px] text-slate-400 leading-relaxed">
+                  Registros de cámaras de videovigilancia (CCTV) en sucursales, bitácora física de visitas en portería, y credenciales de acceso a redes locales.
+                </p>
+              </div>
+            </div>
           </div>
-          <button
-            onClick={handleOpenCreateModal}
-            className="py-1.5 px-4 bg-indigo-600/10 hover:bg-indigo-600/20 text-indigo-400 font-bold text-xs rounded-lg transition-all border border-indigo-900/50"
-          >
-            Registrar Primer Proceso
-          </button>
         </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
@@ -374,7 +437,7 @@ export default function RopaInventoryView({ token }: RopaInventoryViewProps) {
 
             <form onSubmit={handleSubmit} className="p-6 space-y-4 text-left">
               <div>
-                <label className="text-xs font-semibold text-slate-300 block mb-1">Nombre del Proceso o Actividad *</label>
+                <label className="text-xs font-semibold text-slate-300 block mb-0.5">Nombre del Proceso o Actividad *</label>
                 <input
                   type="text"
                   required
@@ -383,10 +446,13 @@ export default function RopaInventoryView({ token }: RopaInventoryViewProps) {
                   placeholder="ej. Envío de Boletines Comerciales / Registro de Clientes"
                   className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-xs text-slate-200 focus:outline-none focus:border-indigo-500/50"
                 />
+                <span className="text-[10px] text-slate-500 block mt-1">
+                  Ej: Liquidación de Sueldos, Campaña de Email Marketing, CCTV.
+                </span>
               </div>
 
               <div>
-                <label className="text-xs font-semibold text-slate-300 block mb-1">Finalidad y Alcance del Tratamiento *</label>
+                <label className="text-xs font-semibold text-slate-300 block mb-0.5">Finalidad y Alcance del Tratamiento *</label>
                 <textarea
                   required
                   value={purpose}
@@ -395,6 +461,9 @@ export default function RopaInventoryView({ token }: RopaInventoryViewProps) {
                   rows={2}
                   className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-xs text-slate-200 focus:outline-none focus:border-indigo-500/50"
                 />
+                <span className="text-[10px] text-slate-500 block mt-1">
+                  Explique brevemente para qué usa estos datos. La ley prohíbe usarlos para fines distintos a los declarados.
+                </span>
               </div>
 
               <div className="grid grid-cols-2 gap-4">
