@@ -1,19 +1,19 @@
 export interface DiagnosisAnswers {
-  rrhh_storage_type?: string;
+  rrhh_storage_type?: string[];
   rrhh_storage_details?: string;
   rrhh_health_data?: string[];
   rrhh_destruction_proc?: string;
-  rrhh_attendance_tech?: string;
+  rrhh_attendance_tech?: string[];
   rrhh_biometric_consent?: string;
   rrhh_biometric_vendor?: string;
   
-  commercial_db_type?: string;
+  commercial_db_type?: string[];
   commercial_tool_volume?: string;
   commercial_server_country?: string;
-  commercial_record_meetings?: string;
+  commercial_record_meetings?: string[];
   commercial_record_notice?: string;
 
-  ti_rbac_type?: string;
+  ti_rbac_type?: string[];
   ti_sensitive_access_roles?: string;
   ti_encryption_type?: string;
   ti_backup_frequency?: string;
@@ -86,65 +86,132 @@ export function evaluateQuestionnaire(answers: DiagnosisAnswers): EvaluationResu
     });
   }
 
-  // Rule 2: Vendors DPA Contracts (Art. 15 bis)
-  if (answers.vendors_dpa_contracts === 'Ninguno') {
+  // Rule 2: Biometría (Art. 16 ter)
+  // Condition: Si rrhh_attendance_tech incluye alguna opción con "Biométrico" (huella, facial) Y rrhh_biometric_consent es "No" o "En Proceso"
+  const isBiometricAttendance = Array.isArray(answers.rrhh_attendance_tech) && 
+    (answers.rrhh_attendance_tech.includes('Huella') || answers.rrhh_attendance_tech.includes('Rostro/Iris'));
+
+  if (isBiometricAttendance && (answers.rrhh_biometric_consent === 'No' || answers.rrhh_biometric_consent === 'En proceso')) {
     const penalty = 15;
     const riskUtm = 10000;
     scoreTotal -= penalty;
     if (riskUtm > maxRiskUtm) maxRiskUtm = riskUtm;
 
     findings.push({
-      id: 'FIND_VENDORS_DPA',
-      category: 'Proveedores',
+      id: 'FIND_BIOMETRICS_UNCONSENTED',
+      category: 'Recursos Humanos',
       severity: 'Grave',
-      description: 'Infracción Grave (Art. 15 bis) - Proveedores y encargados de tratamiento operando sin acuerdo contractual DPA.',
-      recommendation: 'Generar y firmar Anexos de Procesamiento de Datos (DPA) con todos los encargados externos.',
+      description: 'Infracción Grave (Art. 16 ter) - Control de asistencia mediante tecnologías biométricas sin consentimiento previo e informado del trabajador.',
+      recommendation: 'Obtener la firma explícita e individual del consentimiento de biometría para todos los trabajadores enrolados en el sistema de control de acceso.',
       penalty,
       riskUtm
     });
 
     actionPlan.push({
       step: stepCounter++,
-      title: 'Generar y firmar Anexos DPA',
-      description: 'Regularizar relación contractual con proveedores y procesadores de datos (Art. 15 bis).',
+      title: 'Implementar Anexo de Consentimiento Biométrico e Información Técnica',
+      description: 'Regularizar el uso de tecnologías biométricas en el control de asistencia (Art. 16 ter).',
       priority: 'Alta',
-      estimatedEffort: '2 días',
-      details: 'Indexar anexos legales estandarizados para garantizar las obligaciones del Art. 15 bis de la ley.'
+      estimatedEffort: '2 horas',
+      details: 'Generar la declaración de aviso de biometría y obtener la aceptación de los empleados antes del marcaje.'
     });
   }
 
-  // Rule 3: International Transfers (TID) without DPA (Art. 27 y 28)
-  const isForeignServer = answers.commercial_server_country === 'EE.UU.' || 
-                          (answers.commercial_server_country !== 'Chile' && 
-                           answers.commercial_server_country !== 'Unión Europea');
-  
-  if (isForeignServer && answers.vendors_dpa_contracts === 'Ninguno') {
+  // Rule 3: Datos Sensibles sin Seguridad (Art. 14 quinquies y 16 bis)
+  // Condition: Si rrhh_health_data incluye "licencias", "examenes_ocup" o "drogas" Y ti_encryption_type es "Sin cifrar"
+  const hasSensitiveHealthData = Array.isArray(answers.rrhh_health_data) && 
+    (answers.rrhh_health_data.includes('licencias') || 
+     answers.rrhh_health_data.includes('examenes_ocup') || 
+     answers.rrhh_health_data.includes('drogas'));
+
+  if (hasSensitiveHealthData && answers.ti_encryption_type === 'Sin cifrar') {
+    const penalty = 15;
+    const riskUtm = 10000;
+    scoreTotal -= penalty;
+    if (riskUtm > maxRiskUtm) maxRiskUtm = riskUtm;
+
+    findings.push({
+      id: 'FIND_SENSITIVE_UNSECURE',
+      category: 'Ciberseguridad',
+      severity: 'Grave',
+      description: 'Infracción Grave (Art. 14 quinquies y 16 bis) - Tratamiento de datos de salud y licencias médicas sin medidas de cifrado activas.',
+      recommendation: 'Aplicar políticas de cifrado estricto (AES-256) sobre bases de datos de personal y repositorios con archivos de licencias médicas.',
+      penalty,
+      riskUtm
+    });
+
+    actionPlan.push({
+      step: stepCounter++,
+      title: 'Cifrar bases de datos de salud en reposo y tránsito (AES-256)',
+      description: 'Asegurar la confidencialidad de datos sensibles y licencias de personal (Art. 16 bis).',
+      priority: 'Alta',
+      estimatedEffort: '3 horas',
+      details: 'Cifrar carpetas de red y bases de datos que almacenen certificados médicos, licencias y exámenes ocupacionales.'
+    });
+  }
+
+  // Rule 4: Encargados sin Contrato (Art. 15 bis)
+  // Condition: Si vendors_transfer_types tiene longitud > 0 (no incluye "none") Y vendors_dpa_contracts es "Ninguno" o "Solo algunos"
+  const transfersDataToVendors = Array.isArray(answers.vendors_transfer_types) && 
+    answers.vendors_transfer_types.length > 0 && 
+    !answers.vendors_transfer_types.includes('none');
+
+  if (transfersDataToVendors && (answers.vendors_dpa_contracts === 'Ninguno' || answers.vendors_dpa_contracts === 'Solo algunos')) {
+    const penalty = 15;
+    const riskUtm = 10000;
+    scoreTotal -= penalty;
+    if (riskUtm > maxRiskUtm) maxRiskUtm = riskUtm;
+
+    findings.push({
+      id: 'FIND_VENDORS_NO_DPA',
+      category: 'Proveedores',
+      severity: 'Grave',
+      description: 'Infracción Grave (Art. 15 bis) - Transferencia de bases de datos a proveedores externos sin acuerdo contractual DPA.',
+      recommendation: 'Establecer acuerdos de procesamiento de datos (DPA) con todos los encargados de tratamiento identificados.',
+      penalty,
+      riskUtm
+    });
+
+    actionPlan.push({
+      step: stepCounter++,
+      title: 'Firmar Acuerdos DPA con todos los proveedores externos mediante el Centro de Remedición',
+      description: 'Regularizar la relación de tratamiento de datos con proveedores (Art. 15 bis).',
+      priority: 'Alta',
+      estimatedEffort: '2 días',
+      details: 'Utilizar el generador de contratos para emitir el anexo DPA, enviándolo para firma de proveedores SaaS y agencias externas.'
+    });
+  }
+
+  // Rule 5: Transferencia Internacional (TID) (Art. 27 y 28)
+  // Condition: Si commercial_server_country es "EE.UU." o "Otro" Y vendors_dpa_contracts es "Ninguno" o "Solo algunos"
+  const isForeignServerCountry = answers.commercial_server_country === 'EE.UU.' || answers.commercial_server_country === 'Otro';
+  if (isForeignServerCountry && (answers.vendors_dpa_contracts === 'Ninguno' || answers.vendors_dpa_contracts === 'Solo algunos')) {
     const penalty = 25;
     const riskUtm = 20000;
     scoreTotal -= penalty;
     if (riskUtm > maxRiskUtm) maxRiskUtm = riskUtm;
 
     findings.push({
-      id: 'FIND_ILLEGAL_TID',
+      id: 'FIND_TID_UNREGULATED',
       category: 'Transferencias_Internacionales',
       severity: 'Gravísima',
-      description: 'Infracción Gravísima (Art. 27 y 28) - Transferencia Internacional de Datos Ilícita a países no adecuados sin salvaguardas.',
-      recommendation: 'Firmar Cláusulas Contractuales Tipo (Standard Contractual Clauses - SCC) con proveedores extranjeros y regularizar ante la Agencia.',
+      description: 'Infracción Gravísima (Art. 27 y 28) - Transferencia transfronteriza de datos sin Cláusulas Contractuales Tipo (SCC).',
+      recommendation: 'Implementar Cláusulas Contractuales Tipo (SCC) para regular la transferencia de datos a países que no cumplan con niveles adecuados de protección.',
       penalty,
       riskUtm
     });
 
     actionPlan.push({
       step: stepCounter++,
-      title: 'Firmar Cláusulas Contractuales Tipo (SCC)',
-      description: 'Establecer salvaguardas de protección para transferencias internacionales (Art. 28).',
+      title: 'Generar y firmar Cláusulas Contractuales Tipo (SCC) con proveedores extranjeros',
+      description: 'Regularizar las transferencias internacionales de datos (Art. 28).',
       priority: 'Alta',
       estimatedEffort: '3 días',
-      details: 'Completar y firmar el anexo modelo de Cláusulas Contractuales Tipo (SCC) con proveedores no adecuados.'
+      details: 'Firmar e indexar Cláusulas Contractuales Tipo (SCC) con proveedores extranjeros cuyos servidores no residan en Chile o la Unión Europea.'
     });
   }
 
-  // Rule 4: Prescribed debt deletion (Art. 17)
+  // Rule 6: Prescribed debt deletion (Art. 17)
   if (answers.finances_debt_deletion === 'No se eliminan') {
     const penalty = 10;
     const riskUtm = 10000; // Grave
