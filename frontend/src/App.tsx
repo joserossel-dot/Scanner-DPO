@@ -198,6 +198,7 @@ export function Dashboard({ token, user, onLogout, initialTab }: DashboardProps)
   const [configBannerDesc, setConfigBannerDesc] = useState('Utilizamos cookies esenciales para el funcionamiento del sitio, y cookies analíticas/comerciales opcionales. Puede aceptar todas o rechazarlas. Consulte nuestra Política de Privacidad para más detalles conforme a la Ley N° 21.719.');
   const [configVersion, setConfigVersion] = useState('');
   const [isSavingConfig, setIsSavingConfig] = useState(false);
+  const [ropaList, setRopaList] = useState<any[]>([]);
 
   // Module 3 State Variables (International Transfers - TID)
   const [transfers, setTransfers] = useState<any[]>([]);
@@ -436,6 +437,7 @@ export function Dashboard({ token, user, onLogout, initialTab }: DashboardProps)
     fetchConfig();
     fetchIncidents();
     handleFetchDiagnosis();
+    fetchRopaList();
   }, []);
 
   const fetchLatestScan = async () => {
@@ -504,6 +506,18 @@ export function Dashboard({ token, user, onLogout, initialTab }: DashboardProps)
       }
     } catch (e) {
       console.error(e);
+    }
+  };
+
+  const fetchRopaList = async () => {
+    try {
+      const response = await fetch(`${API_BASE}/api/ropa`);
+      if (response.ok) {
+        const data = await response.json();
+        setRopaList(data);
+      }
+    } catch (e) {
+      console.error('Error fetching ROPA in App.tsx:', e);
     }
   };
 
@@ -1123,18 +1137,7 @@ Firmas autorizadas:
             }}
             onClick={() => setRemediationSubTab('cmp')}
           >
-            🍪 CMP & Consentimientos
-          </button>
-          <button 
-            className="btn-action" 
-            style={{ 
-              background: remediationSubTab === 'arco' ? 'var(--color-primary)' : 'rgba(255,255,255,0.01)',
-              color: remediationSubTab === 'arco' ? 'white' : 'var(--text-secondary)',
-              border: remediationSubTab === 'arco' ? '1px solid var(--color-primary)' : '1px solid var(--border-color)'
-            }}
-            onClick={() => setRemediationSubTab('arco')}
-          >
-            📨 Solicitudes ARCO+
+            🌐 Adecuación Web
           </button>
           <button 
             className="btn-action" 
@@ -1174,6 +1177,41 @@ Firmas autorizadas:
         {/* Sub-tab: CMP & Consent Logs */}
         {remediationSubTab === 'cmp' && (
           <div className="dashboard-grid text-left">
+            {/* Pedagogical Guidance Card */}
+            <div className="card col-12 text-left bg-indigo-950/10 border border-indigo-900/30 p-6 rounded-xl space-y-4" style={{ marginBottom: '20px' }}>
+              <h3 className="text-base font-bold text-white flex items-center gap-2">
+                🧭 Guía Operativa de Adecuación Web (Ley N° 21.719)
+              </h3>
+              <p className="text-xs text-slate-350 leading-relaxed">
+                Para asegurar la conformidad legal de su portal web y la correcta interacción con los titulares de datos, debe implementar dos pilares fundamentales:
+              </p>
+              
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mt-2">
+                <div className="bg-slate-900/40 border border-slate-800 p-4 rounded-lg space-y-2">
+                  <div className="flex justify-between items-center" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <h4 className="font-extrabold text-white text-xs" style={{ margin: 0 }}>1. Consentimiento de Cookies (CMP)</h4>
+                    <span className="text-[9px] font-black uppercase px-2 py-0.5 rounded bg-indigo-950 text-indigo-400 border border-indigo-900/40">
+                      Requiere Implementación Técnica (TI)
+                    </span>
+                  </div>
+                  <p className="text-[11.5px] text-slate-400 leading-relaxed" style={{ marginTop: '10px' }}>
+                    El consentimiento es la base de licitud para trackers web. Debe integrar el widget SDK en su frontend. Las preferencias de los usuarios alimentarán automáticamente su inventario legal e histórico de consentimientos.
+                  </p>
+                </div>
+                
+                <div className="bg-slate-900/40 border border-slate-800 p-4 rounded-lg space-y-2">
+                  <div className="flex justify-between items-center" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <h4 className="font-extrabold text-white text-xs" style={{ margin: 0 }}>2. Ejercicio de Derechos ARCO+</h4>
+                    <span className="text-[9px] font-black uppercase px-2 py-0.5 rounded bg-amber-950 text-amber-400 border border-amber-900/40">
+                      Gestión Administrativa
+                    </span>
+                  </div>
+                  <p className="text-[11.5px] text-slate-400 leading-relaxed" style={{ marginTop: '10px' }}>
+                    Debe canalizar y atender las solicitudes de los titulares. Se instruye a la organización a crear una casilla dedicada (ej. <code className="text-amber-400 bg-slate-950 px-1.5 py-0.5 rounded">privacidad@su-dominio.cl</code>) y definir un procedimiento interno para responder formalmente en un plazo menor a 30 días.
+                  </p>
+                </div>
+              </div>
+            </div>
             <div className="card col-12 text-left">
               <h3 style={{ margin: '0 0 10px 0', fontSize: '15px', fontWeight: 600 }}>Configuración del Banner del CMP</h3>
               <p style={{ fontSize: '13px', color: 'var(--text-secondary)', marginBottom: '15px' }}>Personaliza las alertas que visualiza el cliente al ingresar a tu portal.</p>
@@ -1257,12 +1295,6 @@ Firmas autorizadas:
                 <p style={{ margin: 0, fontSize: '13px', color: 'var(--text-secondary)' }}>Esperando logs de consentimientos...</p>
               )}
             </div>
-          </div>
-        )}
-
-        {/* Sub-tab: ARCO+ Inbox */}
-        {remediationSubTab === 'arco' && (
-          <div className="dashboard-grid text-left">
             <div className="card col-12 text-left">
               <h3 style={{ margin: '0 0 10px 0', fontSize: '15px', fontWeight: 600 }}>Bandeja de Entrada ARCO+</h3>
               <p style={{ fontSize: '13px', color: 'var(--text-secondary)', marginBottom: '15px' }}>Bandeja legal para responder requerimientos del titular de datos dentro de los plazos de la ley.</p>
@@ -1357,6 +1389,26 @@ Firmas autorizadas:
                   <strong>⚠️ Conexión Legal:</strong> Los proveedores extranjeros que registre en esta matriz DEBEN ser declarados en su 'Política de Privacidad' y obligan a generar un anexo en la pestaña 'Contratos DPA/SCC'.
                 </span>
               </div>
+
+              {/* Dynamic Providers Detected from RoPA */}
+              {ropaList && ropaList.filter(item => item.cross_border_transfer && (item.status === 'confirmed' || !item.status)).length > 0 && (
+                <div className="bg-indigo-950/20 border border-indigo-900/35 p-4 rounded-xl mb-4 text-left space-y-2">
+                  <h4 className="text-xs font-bold text-indigo-400 uppercase tracking-wide">🔍 Proveedores de Transferencia Internacional Detectados en su RoPA:</h4>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+                    {ropaList.filter(item => item.cross_border_transfer && (item.status === 'confirmed' || !item.status)).map((p, idx) => (
+                      <div key={idx} className="bg-slate-900/60 border border-slate-800 p-2.5 rounded-lg flex justify-between items-center text-xs">
+                        <div>
+                          <p className="font-extrabold text-white">{p.process_name}</p>
+                          <p className="text-[10px] text-slate-400 mt-0.5">{p.purpose}</p>
+                        </div>
+                        <span className="text-[9px] font-black bg-indigo-950 text-indigo-400 px-2 py-0.5 rounded border border-indigo-900/30">
+                          RoPA Sync
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
 
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px', flexWrap: 'wrap', gap: '10px' }}>
                 <div>
@@ -1545,7 +1597,7 @@ Firmas autorizadas:
 
         {/* Sub-tab: Contract Builder (DPA/SCC) */}
         {remediationSubTab === 'contracts' && (
-          <ContractBuilderView token={token} />
+          <ContractBuilderView token={token} ropaList={ropaList} />
         )}
       </div>
     );
@@ -1616,7 +1668,7 @@ Firmas autorizadas:
           
           <div 
             className={`nav-item ${activeTab === 'remediation' ? 'active' : ''}`}
-            onClick={() => { setActiveTab('remediation'); fetchConsentLogs(); fetchArcoTickets(); fetchTransfers(); fetchConfig(); }}
+            onClick={() => { setActiveTab('remediation'); fetchConsentLogs(); fetchArcoTickets(); fetchTransfers(); fetchConfig(); fetchRopaList(); }}
           >
             <Settings size={16} />
             <span>🛠️ 3. Herramientas de Cumplimiento</span>
