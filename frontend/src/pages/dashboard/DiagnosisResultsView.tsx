@@ -78,7 +78,7 @@ export default function DiagnosisResultsView({
     const scoreTotal = results.scoreTotal !== undefined ? results.scoreTotal : (results.globalScore !== undefined ? results.globalScore : 0);
     const riesgoUTM = results.riesgoUTM !== undefined ? results.riesgoUTM : (findings?.reduce((max, f) => Math.max(max, f.riskUtm || 0), 0) || 20000);
 
-    const isRopaMissing = findings?.some(f => f?.id === 'FIND_ROPA_MISSING') || false;
+    const isRopaMissing = findings?.some(f => f?.id === 'FIND_ROPA_MISSING' || f?.id === 'FIND_ROPA_DRAFTS_PENDING') || false;
     const displayScore = isRopaMissing ? 30 : scoreTotal;
 
     // Determine severity border and text color for the score
