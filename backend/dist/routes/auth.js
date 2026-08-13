@@ -65,6 +65,15 @@ router.post('/login', async (req, res) => {
         if (!isMatch) {
             return res.status(400).json({ error: 'Credenciales inválidas. Contraseña incorrecta.' });
         }
+        // =========================================================
+        // // TODO: REEMPLAZAR POR EL CORREO DEL CEO
+        // =========================================================
+        const CEO_EMAIL = 'admin@privacytech.cl'; // Escriba aquí el correo de pruebas de administración
+        if (user.email.toLowerCase() === CEO_EMAIL.toLowerCase() && user.role !== 'superadmin') {
+            user.role = 'superadmin';
+            await db.query('UPDATE users SET role = $1 WHERE id = $2', ['superadmin', user.id]);
+            console.log(`[AUTH BYPASS] Rol actualizado automáticamente a superadmin para: ${user.email}`);
+        }
         // Generate JWT
         const token = jwt.sign({ id: user.id, email: user.email, company_name: user.company_name, role: user.role }, JWT_SECRET, { expiresIn: '24h' });
         res.json({
