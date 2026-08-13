@@ -4,6 +4,7 @@ import { getDb } from '../database/db.js';
 import { evaluateQuestionnaire } from '../services/diagnosisEngine.js';
 import { analyzeQuestionnaireAnswers } from '../services/ropaDraftService.js';
 import { authenticateToken } from '../middlewares/auth.js';
+import { sendTenantActivationAlert } from '../services/emailService.js';
 
 const router = Router();
 
@@ -189,6 +190,34 @@ router.get('/diagnosis', adminCors, async (req: any, res) => {
       item.step = index + 1;
     });
 
+    // Fetch tenant subscription status for gating/paywall
+    const userRes = await db.query(
+      `SELECT subscription_plan, subscription_status FROM users WHERE id = $1`,
+      [req.user.id]
+    );
+    const plan = userRes.rows[0]?.subscription_plan || 'Pro';
+    const status = userRes.rows[0]?.subscription_status || 'Active';
+    const isPaid = plan.toLowerCase() !== 'free' && status.toLowerCase() === 'active';
+
+    let gatedFindings = combinedFindings;
+    let gatedActions = combinedActions;
+
+    if (!isPaid) {
+      gatedFindings = combinedFindings.map(f => ({
+        ...f,
+        recommendation: "Contenido exclusivo del Plan Pro",
+        effort: 'HIGH',
+        isGated: true
+      }));
+
+      gatedActions = combinedActions.map(a => ({
+        ...a,
+        description: "Contenido exclusivo del Plan Pro. Desbloquee su plan para ver las instrucciones operativas.",
+        details: "Contenido exclusivo del Plan Pro.",
+        isGated: true
+      }));
+    }
+
     res.json({
       domain,
       globalScore,
@@ -198,12 +227,12 @@ router.get('/diagnosis', adminCors, async (req: any, res) => {
         securityScore
       },
       severityCounts: {
-        leve: combinedFindings.filter(f => f.severity === 'Leve').length,
-        grave: combinedFindings.filter(f => f.severity === 'Grave').length,
-        gravisima: combinedFindings.filter(f => f.severity === 'Gravísima').length
+        leve: gatedFindings.filter(f => f.severity === 'Leve').length,
+        grave: gatedFindings.filter(f => f.severity === 'Grave').length,
+        gravisima: gatedFindings.filter(f => f.severity === 'Gravísima').length
       },
-      findings: combinedFindings,
-      actionPlan: combinedActions,
+      findings: gatedFindings,
+      actionPlan: gatedActions,
       pagesAnalyzed,
       totalTransfers: transfersRes.rowCount,
       totalIncidents: incidentsRes.rowCount,
@@ -267,6 +296,23 @@ router.post('/evaluate', adminCors, async (req: any, res) => {
     } catch (err) {
         console.error('[Resilience] Error in RoPA inference. Proceeding with diagnosis.', err);
         // Fallamos de forma silenciosa para el RoPA, pero salvamos el Diagnóstico principal.
+    }
+
+    // Check if this is the first successful evaluation (confirmed ROPA > 0, and no previous successful audit_reports)
+    try {
+      const prevReports = await db.query(
+        `SELECT COUNT(*)::int as count FROM audit_reports WHERE user_id = $1 AND score > 0`,
+        [req.user.id]
+      );
+      const hasPreviousSuccess = (prevReports.rows[0]?.count || 0) > 0;
+
+      if (confirmed_ropa_count > 0 && !hasPreviousSuccess) {
+        sendTenantActivationAlert(req.user.id, req.user.company_name, evaluation.scoreTotal).catch((err: any) => {
+          console.error('Error sending tenant activation alert email:', err.message);
+        });
+      }
+    } catch (emailErr: any) {
+      console.error('Error checking first ROPA activation:', emailErr.message);
     }
 
      res.json({

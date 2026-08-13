@@ -32,6 +32,7 @@ export interface DiagnosisFinding {
   penalty: number;
   riskUtm: number;
   effort: 'LOW' | 'MEDIUM' | 'HIGH';
+  isGated?: boolean;
 }
 
 export interface DiagnosisResults {
@@ -180,6 +181,10 @@ export default function DiagnosisResultsView({
     setExpandedPhase(expandedPhase === phaseNum ? null : phaseNum);
   };
 
+  const handleTriggerPaywallAlert = () => {
+    alert("Esta funcionalidad requiere actualizar al Plan Pro de Scanner DPO. Póngase en contacto con ventas para activar su cuenta.");
+  };
+
   return (
     <div className="w-full space-y-6">
       
@@ -294,15 +299,33 @@ export default function DiagnosisResultsView({
                         <span className="text-xs font-black text-white">{f.description}</span>
                         <span className="bg-rose-950/30 text-rose-400 border border-rose-900/10 text-[9px] font-black px-1.5 rounded">-{f.penalty} pts</span>
                       </div>
-                      <p className="text-xs text-slate-400">{f.recommendation}</p>
+                      
+                      {f.isGated ? (
+                        <div className="relative mt-1">
+                          <p className="text-xs text-slate-400 blur-sm select-none opacity-40">
+                            Lorem ipsum dolor sit amet, consectetur adipiscing elit. Proin sed diam ut diam sodales scelerisque. Curabitur vel leo id urna convallis convallis.
+                          </p>
+                          <button
+                            onClick={handleTriggerPaywallAlert}
+                            className="absolute inset-0 flex items-center justify-center m-auto bg-slate-950/60 hover:bg-slate-950/80 border border-slate-800 text-white font-bold text-xs px-3 py-1.5 rounded-lg transition-all w-fit shadow-lg gap-1.5"
+                          >
+                            <span>🔒 Desbloquear Plan de Acción detallado</span>
+                          </button>
+                        </div>
+                      ) : (
+                        <p className="text-xs text-slate-400">{f.recommendation}</p>
+                      )}
                     </div>
-                    <button
-                      onClick={() => onNavigateToRemediation(getSubTabForFinding(f))}
-                      className="flex items-center gap-1.5 px-3 py-1.5 bg-indigo-650 hover:bg-indigo-500 text-white font-bold text-xs rounded-lg transition-all flex-shrink-0"
-                    >
-                      <span>Resolver ahora</span>
-                      <ArrowRight size={12} />
-                    </button>
+
+                    {!f.isGated && (
+                      <button
+                        onClick={() => onNavigateToRemediation(getSubTabForFinding(f))}
+                        className="flex items-center gap-1.5 px-3 py-1.5 bg-indigo-650 hover:bg-indigo-500 text-white font-bold text-xs rounded-lg transition-all flex-shrink-0"
+                      >
+                        <span>Resolver ahora</span>
+                        <ArrowRight size={12} />
+                      </button>
+                    )}
                   </div>
                 ))
               )}
@@ -343,15 +366,33 @@ export default function DiagnosisResultsView({
                         <span className="text-xs font-black text-white">{f.description}</span>
                         <span className="bg-amber-950/30 text-amber-400 border border-amber-900/10 text-[9px] font-black px-1.5 rounded">-{f.penalty} pts</span>
                       </div>
-                      <p className="text-xs text-slate-400">{f.recommendation}</p>
+
+                      {f.isGated ? (
+                        <div className="relative mt-1">
+                          <p className="text-xs text-slate-400 blur-sm select-none opacity-40">
+                            Lorem ipsum dolor sit amet, consectetur adipiscing elit. Proin sed diam ut diam sodales scelerisque. Curabitur vel leo id urna convallis convallis.
+                          </p>
+                          <button
+                            onClick={handleTriggerPaywallAlert}
+                            className="absolute inset-0 flex items-center justify-center m-auto bg-slate-950/60 hover:bg-slate-950/80 border border-slate-800 text-white font-bold text-xs px-3 py-1.5 rounded-lg transition-all w-fit shadow-lg gap-1.5"
+                          >
+                            <span>🔒 Desbloquear Plan de Acción detallado</span>
+                          </button>
+                        </div>
+                      ) : (
+                        <p className="text-xs text-slate-400">{f.recommendation}</p>
+                      )}
                     </div>
-                    <button
-                      onClick={() => onNavigateToRemediation(getSubTabForFinding(f))}
-                      className="flex items-center gap-1.5 px-3 py-1.5 bg-indigo-650 hover:bg-indigo-500 text-white font-bold text-xs rounded-lg transition-all flex-shrink-0"
-                    >
-                      <span>Resolver ahora</span>
-                      <ArrowRight size={12} />
-                    </button>
+
+                    {!f.isGated && (
+                      <button
+                        onClick={() => onNavigateToRemediation(getSubTabForFinding(f))}
+                        className="flex items-center gap-1.5 px-3 py-1.5 bg-indigo-650 hover:bg-indigo-500 text-white font-bold text-xs rounded-lg transition-all flex-shrink-0"
+                      >
+                        <span>Resolver ahora</span>
+                        <ArrowRight size={12} />
+                      </button>
+                    )}
                   </div>
                 ))
               )}
@@ -392,25 +433,48 @@ export default function DiagnosisResultsView({
                         <span className="text-xs font-black text-white">{f.description}</span>
                         <span className="bg-indigo-950/30 text-indigo-400 border border-indigo-900/10 text-[9px] font-black px-1.5 rounded">-{f.penalty} pts</span>
                       </div>
-                      <p className="text-xs text-slate-400">{f.recommendation}</p>
-                    </div>
-                    
-                    {/* Business Impact block */}
-                    <div className="p-3 bg-amber-500/5 border border-amber-500/10 rounded-lg space-y-1">
-                      <span className="text-[10px] font-black text-amber-500 uppercase tracking-wider block">⚠️ Impacto en su forma de trabajar</span>
-                      <p className="text-[11px] text-slate-350 leading-relaxed">{getBusinessImpact(f)}</p>
-                    </div>
 
-                    {/* Quick navigation to ROPA Hub if relevant */}
-                    {(f.id === 'FIND_ROPA_MISSING' || f.id === 'FIND_ROPA_DRAFTS_PENDING') && (
-                      <button
-                        onClick={() => onNavigateToRemediation('ropa_hub')}
-                        className="flex items-center gap-1.5 px-3 py-1 bg-indigo-650/10 hover:bg-indigo-650 text-indigo-400 hover:text-white font-bold text-[10px] rounded border border-indigo-900/30 hover:border-indigo-600 transition-all w-fit"
-                      >
-                        <span>Ir al Panel de Inventario RoPA</span>
-                        <ArrowRight size={10} />
-                      </button>
-                    )}
+                      {f.isGated ? (
+                        <div className="relative mt-1">
+                          <div className="blur-sm select-none opacity-40 space-y-2">
+                            <p className="text-xs text-slate-400">
+                              Lorem ipsum dolor sit amet, consectetur adipiscing elit. Proin sed diam ut diam sodales scelerisque. Curabitur vel leo id urna convallis convallis.
+                            </p>
+                            <div className="p-3 bg-amber-500/5 border border-amber-500/10 rounded-lg space-y-1">
+                              <span className="text-[10px] font-black text-amber-500 uppercase tracking-wider block">⚠️ Impacto en su forma de trabajar</span>
+                              <p className="text-[11px] text-slate-350 leading-relaxed">Lorem ipsum dolor sit amet...</p>
+                            </div>
+                          </div>
+                          <button
+                            onClick={handleTriggerPaywallAlert}
+                            className="absolute inset-0 flex items-center justify-center m-auto bg-slate-950/60 hover:bg-slate-950/80 border border-slate-800 text-white font-bold text-xs px-3 py-1.5 rounded-lg transition-all w-fit shadow-lg gap-1.5"
+                          >
+                            <span>🔒 Desbloquear Plan de Acción detallado</span>
+                          </button>
+                        </div>
+                      ) : (
+                        <>
+                          <p className="text-xs text-slate-400">{f.recommendation}</p>
+                          
+                          {/* Business Impact block */}
+                          <div className="p-3 bg-amber-500/5 border border-amber-500/10 rounded-lg space-y-1">
+                            <span className="text-[10px] font-black text-amber-500 uppercase tracking-wider block">⚠️ Impacto en su forma de trabajar</span>
+                            <p className="text-[11px] text-slate-350 leading-relaxed">{getBusinessImpact(f)}</p>
+                          </div>
+
+                          {/* Quick navigation to ROPA Hub if relevant */}
+                          {(f.id === 'FIND_ROPA_MISSING' || f.id === 'FIND_ROPA_DRAFTS_PENDING') && (
+                            <button
+                              onClick={() => onNavigateToRemediation('ropa_hub')}
+                              className="flex items-center gap-1.5 px-3 py-1 bg-indigo-650/10 hover:bg-indigo-650 text-indigo-400 hover:text-white font-bold text-[10px] rounded border border-indigo-900/30 hover:border-indigo-600 transition-all w-fit"
+                            >
+                              <span>Ir al Panel de Inventario RoPA</span>
+                              <ArrowRight size={10} />
+                            </button>
+                          )}
+                        </>
+                      )}
+                    </div>
                   </div>
                 ))
               )}
@@ -447,17 +511,24 @@ export default function DiagnosisResultsView({
                     </td>
                     <td className="py-3.5 px-2 space-y-1">
                       <span className="font-semibold text-white block">{f.description}</span>
-                      <span className="text-[11px] text-slate-400 block"><strong>Recomendación:</strong> {f.recommendation}</span>
-                      {f.effort && (
-                        <span className={`inline-block text-[9px] uppercase font-black px-2 py-0.5 rounded mt-1 border ${
-                          f.effort === 'LOW'
-                            ? 'bg-emerald-950/60 text-emerald-450 border-emerald-900/40'
-                            : f.effort === 'MEDIUM'
-                              ? 'bg-amber-950/60 text-amber-500 border-amber-900/40'
-                              : 'bg-rose-950/60 text-rose-455 border-rose-900/40'
-                        }`}>
-                          Esfuerzo: {f.effort === 'LOW' ? 'Bajo' : f.effort === 'MEDIUM' ? 'Medio' : 'Alto'}
-                        </span>
+                      
+                      {f.isGated ? (
+                        <span className="text-[11px] text-slate-500 italic">Contenido exclusivo del Plan Pro</span>
+                      ) : (
+                        <>
+                          <span className="text-[11px] text-slate-400 block"><strong>Recomendación:</strong> {f.recommendation}</span>
+                          {f.effort && (
+                            <span className={`inline-block text-[9px] uppercase font-black px-2 py-0.5 rounded mt-1 border ${
+                              f.effort === 'LOW'
+                                ? 'bg-emerald-950/60 text-emerald-450 border-emerald-900/40'
+                                : f.effort === 'MEDIUM'
+                                  ? 'bg-amber-950/60 text-amber-500 border-amber-900/40'
+                                  : 'bg-rose-950/60 text-rose-455 border-rose-900/40'
+                            }`}>
+                              Esfuerzo: {f.effort === 'LOW' ? 'Bajo' : f.effort === 'MEDIUM' ? 'Medio' : 'Alto'}
+                            </span>
+                          )}
+                        </>
                       )}
                     </td>
                     <td className="py-3.5 px-2 text-center font-bold text-rose-500">-{f.penalty}</td>

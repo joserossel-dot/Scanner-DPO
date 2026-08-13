@@ -4,6 +4,7 @@ import { getDb } from '../database/db.js';
 import { runAudit } from '../services/crawlerService.js';
 import { analyzeScanResults } from '../services/ropaDraftService.js';
 import { authenticateToken } from '../middlewares/auth.js';
+import { sendLeadAlert } from '../services/emailService.js';
 const router = Router();
 // --- CORS CONFIGURATIONS ---
 // Public endpoints (Widget CMP and ARCO Form): accessible from anywhere
@@ -397,7 +398,11 @@ router.post('/free-scan', openCors, async (req, res) => {
         db.query(`
       INSERT INTO leads (domain, email, score_detected)
       VALUES ($1, $2, $3)
-    `, [domain, email, report.score]).catch((err) => {
+    `, [domain, email, report.score]).then(() => {
+            sendLeadAlert(domain, email, report.score).catch((err) => {
+                console.error('Error sending lead alert email:', err.message);
+            });
+        }).catch((err) => {
             console.error('Error inserting lead asynchronously:', err.message);
         });
         return res.json(report);
