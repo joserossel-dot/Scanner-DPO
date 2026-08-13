@@ -546,6 +546,8 @@ export default function DiagnosisResultsView({
           )}
         </div>
       </div>
+      </>
+      )}
 
       {/* Meeting modal */}
       {meetingAlertText && (
