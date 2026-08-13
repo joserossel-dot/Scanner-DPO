@@ -344,10 +344,10 @@ router.get('/dossier', adminCors, async (req: any, res) => {
 
     // 2. Get latest score
     const reportRes = await db.query(
-      'SELECT score, severity_counts, created_at FROM audit_reports WHERE user_id = $1 ORDER BY created_at DESC LIMIT 1',
+      'SELECT score, severity_counts, findings, action_plan, created_at FROM audit_reports WHERE user_id = $1 ORDER BY created_at DESC LIMIT 1',
       [req.user.id]
     );
-    const latestReport = reportRes.rows[0] || { score: 100, severity_counts: { leve: 0, grave: 0, gravisima: 0 } };
+    const latestReport = reportRes.rows[0] || { score: 100, severity_counts: { leve: 0, grave: 0, gravisima: 0 }, findings: [], action_plan: [] };
 
     // 3. Get latest privacy policy timestamp
     const policyRes = await db.query(
@@ -364,12 +364,13 @@ router.get('/dossier', adminCors, async (req: any, res) => {
     const totalTransfers = transfersRes.rowCount;
     const transfersWithScc = transfersRes.rows.filter((t: any) => t.has_scc).length;
 
-    // 4.5 Get confirmed RoPA count
+    // 4.5 Get confirmed RoPA processes
     const ropaRes = await db.query(
-      "SELECT COUNT(*)::int as count FROM ropa_inventory WHERE user_id = $1 AND status = 'confirmed'",
+      "SELECT * FROM ropa_inventory WHERE user_id = $1 AND status = 'confirmed'",
       [req.user.id]
     );
-    const confirmedRopaCount = ropaRes.rows[0]?.count || 0;
+    const confirmedRopaCount = ropaRes.rowCount;
+    const ropaProcesses = ropaRes.rows;
 
     // 5. Count risk matrix entries
     const risksRes = await db.query(
@@ -378,6 +379,12 @@ router.get('/dossier', adminCors, async (req: any, res) => {
     );
     const totalRisks = risksRes.rowCount;
     const mitigatedRisks = risksRes.rows.filter((r: any) => r.status === 'IMPLEMENTED').length;
+
+    // Filter action plan items by priority (High and Medium, corresponding to Grave and Gravísima)
+    const rawActionPlan = latestReport.action_plan || [];
+    const prioritizedActions = rawActionPlan.filter(
+      (a: any) => a.priority === 'Alta' || a.priority === 'Media'
+    );
 
     res.json({
       company_name: company.company_name,
@@ -396,7 +403,9 @@ router.get('/dossier', adminCors, async (req: any, res) => {
       },
       ropa: {
         confirmed_count: confirmedRopaCount
-      }
+      },
+      ropa_processes: ropaProcesses,
+      action_plan: prioritizedActions
     });
   } catch (error: any) {
     console.error('Error compiling audit dossier:', error.message);

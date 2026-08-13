@@ -34,6 +34,27 @@ interface AuditDossierViewProps {
   token: string | null;
 }
 
+interface RopaProcess {
+  id: string;
+  process_name: string;
+  purpose: string;
+  legal_basis: string;
+  data_categories: string[];
+  retention_period: string;
+  cross_border_transfer: boolean;
+  status: string;
+  created_at: string;
+}
+
+interface ActionPlanStep {
+  step: number;
+  title: string;
+  description: string;
+  priority: 'Alta' | 'Media' | 'Baja';
+  estimatedEffort: string;
+  details: string;
+}
+
 interface DossierData {
   company_name: string;
   company_email: string;
@@ -56,6 +77,8 @@ interface DossierData {
   ropa?: {
     confirmed_count: number;
   };
+  ropa_processes?: RopaProcess[];
+  action_plan?: ActionPlanStep[];
 }
 
 export default function AuditDossierView({ token }: AuditDossierViewProps) {
@@ -166,6 +189,13 @@ export default function AuditDossierView({ token }: AuditDossierViewProps) {
             border: 1px solid #000000 !important;
             background: transparent !important;
             color: #000000 !important;
+          }
+          .print-disclaimer {
+            page-break-inside: avoid;
+            margin-top: 30px !important;
+            border-top: 1px solid #e2e8f0 !important;
+            padding-top: 15px !important;
+            color: #64748b !important;
           }
         }
       `}</style>
@@ -324,6 +354,43 @@ export default function AuditDossierView({ token }: AuditDossierViewProps) {
           </div>
         </div>
 
+        {/* SECTION 2.1: Detailed RoPA Inventory */}
+        <div className="py-5 space-y-4 border-b border-slate-200">
+          <div className="flex items-center gap-2">
+            <CheckSquare className="text-indigo-650 w-5 h-5" />
+            <h2 className="text-sm font-bold uppercase tracking-wider text-slate-900 font-serif">Sección 2.1: Inventario Detallado de Actividades (RoPA - Art. 12)</h2>
+          </div>
+          
+          {data.ropa_processes && data.ropa_processes.length > 0 ? (
+            <div className="overflow-x-auto">
+              <table className="w-full text-left border-collapse border border-slate-200 text-[11px]">
+                <thead>
+                  <tr className="bg-slate-100 border-b border-slate-200 text-[10px] uppercase font-bold text-slate-700">
+                    <th className="py-2 px-3 border border-slate-200">Proceso</th>
+                    <th className="py-2 px-3 border border-slate-200">Finalidad</th>
+                    <th className="py-2 px-3 border border-slate-200">Categorías de Datos</th>
+                    <th className="py-2 px-3 border border-slate-200">Base Lícita</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {data.ropa_processes.map((p, idx) => (
+                    <tr key={idx} className="hover:bg-slate-50 border-b border-slate-150">
+                      <td className="py-2 px-3 font-semibold text-slate-950 border border-slate-200">{p.process_name}</td>
+                      <td className="py-2 px-3 text-slate-700 border border-slate-200">{p.purpose}</td>
+                      <td className="py-2 px-3 text-slate-650 border border-slate-200">
+                        {p.data_categories.join(', ')}
+                      </td>
+                      <td className="py-2 px-3 text-slate-700 font-mono text-[10px] border border-slate-200">{p.legal_basis}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ) : (
+            <p className="text-xs text-slate-500 italic">No se han registrado procesos confirmados en el inventario RoPA.</p>
+          )}
+        </div>
+
         {/* SECTION 3: Traceability & Contracts */}
         <div className="py-5 space-y-4">
           <div className="flex items-center gap-2">
@@ -355,6 +422,47 @@ export default function AuditDossierView({ token }: AuditDossierViewProps) {
           </div>
         </div>
 
+        {/* SECTION 4: Mitigation and Accountability Plan */}
+        <div className="py-5 space-y-4 border-t border-slate-200">
+          <div className="flex items-center gap-2">
+            <ShieldCheck className="text-indigo-650 w-5 h-5" />
+            <h2 className="text-sm font-bold uppercase tracking-wider text-slate-900 font-serif">Sección 4: Plan de Mitigación de Brechas de Seguridad (Accountability)</h2>
+          </div>
+          <p className="text-xs text-slate-700 leading-relaxed font-semibold" style={{ margin: 0 }}>
+            Las siguientes medidas y acciones recomendadas constituyen el compromiso de debida diligencia de la organización para subsanar los riesgos identificados:
+          </p>
+          
+          {data.action_plan && data.action_plan.length > 0 ? (
+            <div className="space-y-3">
+              {data.action_plan.map((action, idx) => (
+                <div key={idx} className="p-3.5 bg-slate-50 border border-slate-200 rounded-lg flex flex-col md:flex-row gap-4 justify-between items-start md:items-center text-xs">
+                  <div className="space-y-1 flex-1 text-left">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="font-extrabold text-slate-900">{action.title}</span>
+                      <span className={`text-[9px] font-bold px-1.5 py-0.2 rounded border ${
+                        action.priority === 'Alta' 
+                          ? 'bg-rose-50 border-rose-250 text-rose-700' 
+                          : 'bg-amber-50 border-amber-250 text-amber-700'
+                      }`}>
+                        Prioridad {action.priority}
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-slate-650 leading-relaxed">{action.description}</p>
+                    <div className="text-[10px] text-slate-500 pt-1">
+                      <strong>Recomendación técnica:</strong> {action.details}
+                    </div>
+                  </div>
+                  <div className="text-right font-semibold text-slate-550 text-[10px] flex-shrink-0">
+                    Esfuerzo: {action.estimatedEffort}
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="text-xs text-emerald-600 font-semibold">🟢 Sin brechas de cumplimiento críticas (graves o gravísimas) pendientes de mitigar.</p>
+          )}
+        </div>
+
         {/* Signatures block */}
         <div className="mt-12 pt-8 border-t border-slate-200 grid grid-cols-2 gap-10">
           <div className="text-center space-y-1">
@@ -367,6 +475,11 @@ export default function AuditDossierView({ token }: AuditDossierViewProps) {
             <div className="text-xs font-bold text-slate-900">Delegado de Protección de Datos (DPO)</div>
             <div className="text-[10px] text-slate-500 uppercase font-mono">DPO Suite Validado</div>
           </div>
+        </div>
+
+        {/* Legal Disclaimer */}
+        <div className="mt-8 pt-6 border-t border-slate-200 text-[10px] text-slate-455 leading-relaxed text-justify print-disclaimer">
+          <strong>AVISO LEGAL Y LIMITACIÓN DE RESPONSABILIDAD:</strong> Este documento ha sido generado automáticamente por Scanner DPO en base a la información declarada por el cliente. Constituye una propuesta base y no reemplaza la asesoría jurídica. Scanner DPO no se responsabiliza por modificaciones posteriores u omisiones. Versión: DISCLAIMER_V1.
         </div>
 
       </div>
