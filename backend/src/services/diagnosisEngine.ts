@@ -42,6 +42,7 @@ export interface DiagnosisAnswers {
 
   // Shadow IT list
   shadow_it_providers?: string[];
+  shadow_it_providers_other?: string;
 
   // Confirmed ROPA count check
   confirmed_ropa_count?: number;

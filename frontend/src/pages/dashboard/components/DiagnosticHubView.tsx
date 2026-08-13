@@ -202,11 +202,6 @@ export default function DiagnosticHubView({ token, onEvaluationSuccess }: Diagno
   // Transition to results (fetching latest if not locally present)
   const handleTransitionToResults = async () => {
     if (!onEvaluationSuccess) return;
-
-    if (drafts.length > 0) {
-      const confirmProceed = window.confirm("Tiene borradores sugeridos pendientes de confirmar en su inventario. ¿Desea continuar al plan de acción de todas formas?");
-      if (!confirmProceed) return;
-    }
     
     if (evaluationData) {
       onEvaluationSuccess(evaluationData);
@@ -357,7 +352,7 @@ export default function DiagnosticHubView({ token, onEvaluationSuccess }: Diagno
               ) : (
                 <>
                   <CheckCircle size={14} />
-                  <span>Finalizar Inventario y Ver Plan de Acción</span>
+                  <span>Confirmar Inventario y Ver Resultados</span>
                 </>
               )}
             </button>

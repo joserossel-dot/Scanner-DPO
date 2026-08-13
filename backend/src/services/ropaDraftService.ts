@@ -236,5 +236,19 @@ export async function analyzeQuestionnaireAnswers(userId: string, answers: any) 
         'auto_questionnaire'
       );
     }
+
+    // G. Otro proveedor SaaS personalizado (Shadow IT)
+    if (providers.includes('otro_shadow') && answers.shadow_it_providers_other) {
+      await createRopaDraft(
+        userId,
+        `Tratamiento de Datos en ${answers.shadow_it_providers_other}`,
+        `Actividad de tratamiento de datos personales utilizando la herramienta SaaS externa declarada: ${answers.shadow_it_providers_other}.`,
+        'Consentimiento / Ejecución del Contrato',
+        ['Identificatorios', 'Datos de navegación y operación de la cuenta'],
+        'Indefinido mientras se mantenga activa la cuenta en el servicio',
+        true,
+        'auto_questionnaire'
+      );
+    }
   }
 }

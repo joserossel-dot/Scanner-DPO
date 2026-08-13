@@ -60,6 +60,7 @@ interface QuestionnaireState {
 
   // Shadow IT List
   shadow_it_providers: string[];
+  shadow_it_providers_other: string;
 
   // Behavior tracking question (auto-filled by scanner)
   commercial_track_behavior: string;
@@ -106,6 +107,7 @@ const initialFormState: QuestionnaireState = {
   vendors_dpa_contracts_other: '',
 
   shadow_it_providers: [],
+  shadow_it_providers_other: '',
   commercial_track_behavior: ''
 };
 
@@ -282,7 +284,8 @@ export default function DiagnosticQuestionnaire({ onSubmit, token }: DiagnosticQ
       { key: 'meta_pixel', label: 'Meta Pixel [EE.UU.]' },
       { key: 'hotjar', label: 'Hotjar [EE.UU.]' },
       { key: 'zendesk', label: 'Zendesk [EE.UU.]' },
-      { key: 'intercom', label: 'Intercom [EE.UU.]' }
+      { key: 'intercom', label: 'Intercom [EE.UU.]' },
+      { key: 'otro_shadow', label: 'Otro (especificar)' }
     ] }
   ];
 
@@ -315,29 +318,7 @@ export default function DiagnosticQuestionnaire({ onSubmit, token }: DiagnosticQ
           <span>{validationError}</span>
         </div>
       )}
-
-      {formSubmitted ? (
-        <div className="p-8 text-center max-w-xl mx-auto my-4">
-          <div className="w-16 h-16 bg-emerald-950 text-emerald-400 border border-emerald-800 rounded-full flex items-center justify-center mx-auto mb-4 animate-bounce">
-            <CheckCircle size={32} />
-          </div>
-          <h4 className="text-lg font-bold text-white">¡Cuestionario Procesado Exitosamente!</h4>
-          <p className="text-sm text-slate-400 mt-2 leading-relaxed">
-            Las respuestas operativas internas han sido consolidadas de forma exitosa. El diagnóstico legal se ha guardado en la consola técnica del navegador para su posterior análisis.
-          </p>
-          <div className="mt-6 p-4 bg-slate-950 rounded-lg text-left text-xs font-mono border border-slate-800 text-indigo-400 max-h-48 overflow-y-auto">
-            {JSON.stringify(formData, null, 2)}
-          </div>
-          <button
-            type="button"
-            onClick={() => setFormSubmitted(false)}
-            className="mt-6 px-6 py-2.5 bg-indigo-600 hover:bg-indigo-500 active:bg-indigo-700 text-white font-semibold text-sm rounded-lg shadow-lg shadow-indigo-600/20 hover:shadow-indigo-600/30 transition-all"
-          >
-            Modificar Respuestas
-          </button>
-        </div>
-      ) : (
-        <form onSubmit={handleSubmit} className="divide-y divide-slate-800">
+      <form onSubmit={handleSubmit} className="divide-y divide-slate-800">
           
           {/* ACORDEÓN 1: Recursos Humanos y Gestión de Personas */}
           <div className="transition-all duration-300">
@@ -956,23 +937,37 @@ export default function DiagnosticQuestionnaire({ onSubmit, token }: DiagnosticQ
                       <div key={group.id} className="bg-slate-950/40 p-4 rounded-lg border border-slate-850">
                         <span className="text-xs font-bold text-indigo-400 block mb-3">{group.title}</span>
                         <div className="space-y-2">
-                          {group.options.map(opt => {
+                           {group.options.map(opt => {
                             const isChecked = formData.shadow_it_providers.includes(opt.key);
                             return (
-                              <label key={opt.key} className="flex items-start gap-2.5 text-xs text-slate-450 cursor-pointer select-none hover:text-slate-200 transition-colors">
-                                <input
-                                  type="checkbox"
-                                  checked={isChecked}
-                                  onChange={() => {
-                                    const nextList = isChecked
-                                      ? formData.shadow_it_providers.filter(k => k !== opt.key)
-                                      : [...formData.shadow_it_providers, opt.key];
-                                    handleInputChange('shadow_it_providers', nextList);
-                                  }}
-                                  className="rounded border-slate-850 text-indigo-600 focus:ring-0 bg-slate-950 w-3.5 h-3.5 mt-0.5"
-                                />
-                                <span>{opt.label}</span>
-                              </label>
+                              <div key={opt.key} className="space-y-1.5">
+                                <label className="flex items-start gap-2.5 text-xs text-slate-450 cursor-pointer select-none hover:text-slate-200 transition-colors">
+                                  <input
+                                    type="checkbox"
+                                    checked={isChecked}
+                                    onChange={() => {
+                                      const nextList = isChecked
+                                        ? formData.shadow_it_providers.filter(k => k !== opt.key)
+                                        : [...formData.shadow_it_providers, opt.key];
+                                      handleInputChange('shadow_it_providers', nextList);
+                                    }}
+                                    className="rounded border-slate-850 text-indigo-600 focus:ring-0 bg-slate-950 w-3.5 h-3.5 mt-0.5"
+                                  />
+                                  <span>{opt.label}</span>
+                                </label>
+                                {opt.key === 'otro_shadow' && isChecked && (
+                                  <div className="pt-1 pl-6">
+                                    <input 
+                                      type="text"
+                                      required
+                                      value={formData.shadow_it_providers_other || ''}
+                                      onChange={e => handleInputChange('shadow_it_providers_other', e.target.value)}
+                                      placeholder="Especifique el proveedor..."
+                                      className="w-full bg-slate-950 border border-slate-850 rounded-lg px-2.5 py-1.5 text-xs text-slate-200 placeholder:text-slate-700 focus:outline-none focus:border-indigo-500/50"
+                                    />
+                                  </div>
+                                )}
+                              </div>
                             );
                           })}
                         </div>
@@ -986,7 +981,15 @@ export default function DiagnosticQuestionnaire({ onSubmit, token }: DiagnosticQ
           </div>
           
           {/* Action Row */}
-          <div className="p-6 bg-slate-900/30 flex justify-end gap-3 rounded-b-xl border-t border-slate-850">
+          <div className="p-6 bg-slate-900/30 flex justify-between items-center rounded-b-xl border-t border-slate-850">
+            <div>
+              {formSubmitted && (
+                <span className="text-xs font-semibold text-emerald-450 flex items-center gap-1.5 animate-pulse">
+                  <CheckCircle size={14} />
+                  <span>¡Respuestas guardadas silenciosamente en segundo plano!</span>
+                </span>
+              )}
+            </div>
             <button
               type="submit"
               className="px-6 py-2.5 bg-indigo-600 hover:bg-indigo-500 active:bg-indigo-700 text-white font-semibold text-sm rounded-lg shadow-lg shadow-indigo-600/20 hover:shadow-indigo-600/30 transition-all flex items-center gap-2"
@@ -997,7 +1000,6 @@ export default function DiagnosticQuestionnaire({ onSubmit, token }: DiagnosticQ
           </div>
 
         </form>
-      )}
-    </div>
+      </div>
   );
 }

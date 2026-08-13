@@ -56,14 +56,19 @@ export default function DiagnosisResultsView({
   const { scoreTotal, riesgoUTM, findings } = results;
   const [expandedPhase, setExpandedPhase] = useState<number | null>(1);
 
+  const isRopaMissing = findings.some(f => f.id === 'FIND_ROPA_MISSING');
+  const displayScore = isRopaMissing ? 30 : scoreTotal;
+
   // Determine severity border and text color for the score
   const getScoreColor = () => {
+    if (isRopaMissing) return 'text-amber-500 stroke-amber-500 animate-pulse';
     if (scoreTotal >= 80) return 'text-emerald-500 stroke-emerald-500';
     if (scoreTotal >= 50) return 'text-amber-500 stroke-amber-500';
     return 'text-rose-500 stroke-rose-500';
   };
 
   const getScoreBgColorClass = () => {
+    if (isRopaMissing) return 'bg-amber-950/20 border-amber-900/30';
     if (scoreTotal >= 80) return 'bg-emerald-950/20 border-emerald-900/30';
     if (scoreTotal >= 50) return 'bg-amber-950/20 border-amber-900/30';
     return 'bg-rose-950/20 border-rose-900/30';
@@ -193,7 +198,9 @@ export default function DiagnosisResultsView({
         
         {/* Score Ring column */}
         <div className="md:col-span-4 flex flex-col items-center justify-center text-center">
-          <span className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-3">Nivel de Cumplimiento</span>
+          <span className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-3">
+            {isRopaMissing ? "Progreso de Evaluación" : "Nivel de Cumplimiento"}
+          </span>
           
           <div className="relative w-36 h-36 flex items-center justify-center">
             {/* SVG Donut Circle */}
@@ -210,7 +217,7 @@ export default function DiagnosisResultsView({
                 className={getScoreColor()}
                 strokeWidth="10" 
                 strokeDasharray="377" 
-                strokeDashoffset={377 - (377 * scoreTotal) / 100} 
+                strokeDashoffset={377 - (377 * displayScore) / 100} 
                 strokeLinecap="round" 
                 fill="transparent" 
                 r="60" 
@@ -219,7 +226,7 @@ export default function DiagnosisResultsView({
               />
             </svg>
             <div className="text-center z-10">
-              <span className="text-3xl font-black text-white">{scoreTotal}%</span>
+              <span className="text-3xl font-black text-white">{displayScore}%</span>
               <span className="text-[10px] text-slate-400 block uppercase font-bold tracking-wider mt-0.5">Diagnóstico</span>
             </div>
           </div>
@@ -234,33 +241,57 @@ export default function DiagnosisResultsView({
             </p>
           </div>
 
-          <div className="p-4 bg-slate-950/60 border border-slate-850 rounded-lg flex items-center gap-4">
-            <div className="w-10 h-10 rounded-full bg-rose-950/50 border border-rose-900/30 flex items-center justify-center text-rose-500 flex-shrink-0">
-              <ShieldAlert size={18} />
+          {isRopaMissing ? (
+            <div className="p-4 bg-amber-950/20 border border-amber-900/30 rounded-lg flex items-start gap-4 shadow-md">
+              <div className="w-10 h-10 rounded-full bg-amber-950/50 border border-amber-900/30 flex items-center justify-center text-amber-500 flex-shrink-0 animate-pulse mt-0.5">
+                <AlertTriangle size={18} />
+              </div>
+              <div className="space-y-2">
+                <span className="text-[10px] font-black text-amber-500 uppercase tracking-wider block">Inventario Incompleto</span>
+                <span className="text-xs font-bold text-slate-200 block leading-relaxed">
+                  Plan de Acción Bloqueado. Debe confirmar su Inventario de Datos (RoPA) en el paso anterior para generar sus acciones correctivas.
+                </span>
+                <button 
+                  onClick={onReset}
+                  className="flex items-center gap-1.5 px-3 py-1.5 bg-amber-600 hover:bg-amber-500 text-white font-bold text-xs rounded-lg transition-all shadow-md mt-1"
+                >
+                  <RotateCcw size={12} />
+                  <span>Volver al Inventario RoPA</span>
+                </button>
+              </div>
             </div>
-            <div>
-              <span className="text-[10px] font-black text-rose-500 uppercase tracking-wider block">Exposición Financiera Estimada</span>
-              <span className="text-base font-extrabold text-white">{riesgoUTM.toLocaleString()} UTM</span>
-              <span className="text-[11px] text-slate-400 ml-2">
-                (Aprox. ${(riesgoUTM * 65000).toLocaleString('es-CL')} CLP en multas potenciales de la Agencia DPA)
-              </span>
-            </div>
-          </div>
+          ) : (
+            <>
+              <div className="p-4 bg-slate-950/60 border border-slate-850 rounded-lg flex items-center gap-4">
+                <div className="w-10 h-10 rounded-full bg-rose-950/50 border border-rose-900/30 flex items-center justify-center text-rose-500 flex-shrink-0">
+                  <ShieldAlert size={18} />
+                </div>
+                <div>
+                  <span className="text-[10px] font-black text-rose-500 uppercase tracking-wider block">Exposición Financiera Estimada</span>
+                  <span className="text-base font-extrabold text-white">{riesgoUTM.toLocaleString()} UTM</span>
+                  <span className="text-[11px] text-slate-400 ml-2">
+                    (Aprox. ${(riesgoUTM * 65000).toLocaleString('es-CL')} CLP en multas potenciales de la Agencia DPA)
+                  </span>
+                </div>
+              </div>
 
-          <div className="flex gap-3">
-            <button 
-              onClick={onReset}
-              className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-900 hover:bg-slate-800 text-slate-350 font-semibold text-xs rounded-lg border border-slate-800 transition-all"
-            >
-              <RotateCcw size={12} />
-              <span>Volver a Evaluar Cuestionario</span>
-            </button>
-          </div>
+              <div className="flex gap-3">
+                <button 
+                  onClick={onReset}
+                  className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-900 hover:bg-slate-800 text-slate-350 font-semibold text-xs rounded-lg border border-slate-800 transition-all"
+                >
+                  <RotateCcw size={12} />
+                  <span>Volver a Evaluar Cuestionario</span>
+                </button>
+              </div>
+            </>
+          )}
         </div>
       </div>
 
       {/* 2. ROADMAP POR FASES (Con Acordeones) */}
-      <div className="space-y-4 text-left">
+      {!isRopaMissing && (
+        <div className="space-y-4 text-left">
         <div className="flex items-center gap-2">
           <Sparkles size={16} className="text-indigo-400 animate-pulse" />
           <h3 className="text-base font-bold text-white tracking-wide">Plan de Acción Estratégico (Fases de Implementación)</h3>
@@ -539,6 +570,7 @@ export default function DiagnosisResultsView({
             </table>
           </div>
         </div>
+      )}
       )}
 
     </div>
