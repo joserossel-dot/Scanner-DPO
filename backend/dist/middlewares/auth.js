@@ -5,6 +5,9 @@ if (!JWT_SECRET) {
     process.exit(1);
 }
 export function authenticateToken(req, res, next) {
+    if (req.method === 'OPTIONS') {
+        return next();
+    }
     const authHeader = req.headers['authorization'];
     // Authorization header: Bearer <token>
     const token = authHeader && authHeader.split(' ')[1];

@@ -18,6 +18,10 @@ export interface AuthenticatedRequest extends Request {
 }
 
 export function authenticateToken(req: AuthenticatedRequest, res: Response, next: NextFunction) {
+  if (req.method === 'OPTIONS') {
+    return next();
+  }
+
   const authHeader = req.headers['authorization'];
   // Authorization header: Bearer <token>
   const token = authHeader && authHeader.split(' ')[1];
