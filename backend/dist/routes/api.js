@@ -63,6 +63,27 @@ function addBusinessDays(date, days) {
 }
 // Enable OPTIONS pre-flight calls globally
 router.options('*', cors());
+// --- TESTING ENDPOINTS ---
+router.delete('/testing/reset-my-data', adminCors, authenticateToken, async (req, res) => {
+    const db = getDb();
+    const userId = req.user.id;
+    try {
+        await db.query("DELETE FROM ropa_inventory WHERE user_id = $1", [userId]);
+        await db.query("DELETE FROM audit_reports WHERE user_id = $1", [userId]);
+        await db.query("DELETE FROM privacy_policies WHERE user_id = $1", [userId]);
+        await db.query("DELETE FROM consent_logs WHERE user_id = $1", [userId]);
+        await db.query("DELETE FROM arco_requests WHERE user_id = $1", [userId]);
+        await db.query("DELETE FROM international_transfers WHERE user_id = $1", [userId]);
+        await db.query("DELETE FROM security_incidents WHERE user_id = $1", [userId]);
+        await db.query("DELETE FROM site_configs WHERE user_id = $1", [userId]);
+        await db.query("DELETE FROM document_downloads WHERE user_id = $1", [userId]);
+        res.json({ success: true, message: "Todos los datos de prueba han sido reseteados correctamente." });
+    }
+    catch (error) {
+        console.error("Error resetting testing data:", error.message);
+        res.status(500).json({ error: "Error al resetear los datos de prueba: " + error.message });
+    }
+});
 // --- ADMIN ENDPOINTS (Requires authenticateToken) ---
 // 1. Audit Scan Endpoint
 router.post('/scan', adminCors, authenticateToken, async (req, res) => {

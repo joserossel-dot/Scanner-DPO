@@ -395,6 +395,38 @@ export function Dashboard({ token, user, onLogout, initialTab }: DashboardProps)
     }
   };
 
+  const handleResetTestData = async () => {
+    if (!window.confirm("¿Está seguro de que desea resetear todos los datos de prueba? Esta acción eliminará permanentemente su inventario RoPA, diagnósticos, textos legales e incidentes.")) {
+      return;
+    }
+    
+    try {
+      const res = await fetch(`${API_BASE}/api/testing/reset-my-data`, {
+        method: 'DELETE'
+      });
+      
+      if (res.ok) {
+        showToast("Datos de prueba reseteados correctamente.", "success");
+        setEvalResults(null);
+        setLatestScan(null);
+        setDiagnosisData(null);
+        setConsentLogs([]);
+        setArcoTickets([]);
+        setTransfers([]);
+        
+        setTimeout(() => {
+          window.location.reload();
+        }, 1500);
+      } else {
+        const err = await res.json();
+        showToast("Error al resetear datos: " + (err.error || res.statusText), "warning");
+      }
+    } catch (err: any) {
+      console.error(err);
+      showToast("Error de red al conectar con el servidor.", "warning");
+    }
+  };
+
   // Load basic statistics on mount
   useEffect(() => {
     fetchLatestScan();
@@ -1030,18 +1062,12 @@ Firmas autorizadas:
         />
       );
     }
-
-    const finalScore = diagnosisData ? diagnosisData.globalScore : (latestScan ? latestScan.score : 100);
-    const breakdown = diagnosisData ? diagnosisData.breakdown : { crawlScore: latestScan ? latestScan.score : 100, transfersScore: 100, securityScore: 100 };
-    const findings = diagnosisData ? diagnosisData.findings : (latestScan ? latestScan.findings : []);
-    const actionPlan = diagnosisData ? diagnosisData.actionPlan : (latestScan ? latestScan.actionPlan : []);
-
     return (
       <div>
         <header className="page-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '15px' }}>
           <div>
             <h1 className="page-title">📊 Diagnóstico & Plan de Acción Priorizado</h1>
-            <p className="page-subtitle">Evaluación normativa consolidada frente a la Ley N° 21.719. Ponderación de auditoría web, garantías de transferencias y brechas.</p>
+            <p className="page-subtitle">Evaluación normativa consolidada frente a la Ley N° 21.719. Ponderación de la gobernanza de datos.</p>
           </div>
           <div style={{ display: 'flex', gap: '10px' }}>
             <button className="btn-action" onClick={() => setDiagnosisViewMode('overview')}>
@@ -1053,367 +1079,26 @@ Firmas autorizadas:
             </button>
           </div>
         </header>
-
-        {isAddingIncident ? (
-          /* Render React wizard incident reporting form */
-          <div className="card" style={{ maxWidth: '800px', margin: '0 auto' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', borderBottom: '1px solid var(--border-color)', paddingBottom: '10px' }}>
-              <h3 style={{ margin: 0, fontSize: '18px', fontWeight: 600 }}>Reportar Nuevo Incidente de Seguridad</h3>
-              <button className="btn-action" onClick={() => setIsAddingIncident(false)}>Cancelar</button>
-            </div>
-            
-            {/* Wizard Stepper */}
-            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '30px', position: 'relative' }}>
-              <div style={{ position: 'absolute', top: '15px', left: 0, right: 0, height: '2px', background: 'var(--border-color)', zIndex: 1 }}></div>
-              <div style={{ position: 'absolute', top: '15px', left: 0, width: `${((wizardIncidentStep - 1) / 3) * 100}%`, height: '2px', background: 'var(--color-primary)', zIndex: 2, transition: 'width 0.3s ease' }}></div>
-              {[1, 2, 3, 4].map(s => (
-                <div key={s} style={{ zIndex: 3, display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
-                  <div style={{
-                    width: '32px', height: '32px', borderRadius: '50%',
-                    background: wizardIncidentStep === s ? 'var(--color-primary)' : wizardIncidentStep > s ? 'var(--color-success)' : 'var(--bg-card)',
-                    color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 'bold', fontSize: '13px'
-                  }}>{wizardIncidentStep > s ? '✓' : s}</div>
-                  <span style={{ fontSize: '11px', marginTop: '6px', color: wizardIncidentStep === s ? 'white' : 'var(--text-secondary)' }}>
-                    {s === 1 ? 'Datos' : s === 2 ? 'Impacto' : s === 3 ? 'Riesgo Legal' : 'Mitigación'}
-                  </span>
-                </div>
-              ))}
-            </div>
-
-            <form onSubmit={handleCreateIncident}>
-              {wizardIncidentStep === 1 && (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
-                  <div>
-                    <label className="form-label">Título descriptivo del incidente</label>
-                    <input type="text" className="input-text" style={{ width: '100%' }} value={incidentTitle} onChange={e => setIncidentTitle(e.target.value)} required placeholder="ej. Acceso no autorizado a BBDD de clientes" />
-                  </div>
-                  <div>
-                    <label className="form-label">Fecha y Hora de Detección</label>
-                    <input type="datetime-local" className="input-text" style={{ width: '100%' }} value={incidentDate} onChange={e => setIncidentDate(e.target.value)} required />
-                  </div>
-                  <div>
-                    <label className="form-label">Tipo de Brecha de Seguridad</label>
-                    <select className="input-text" style={{ width: '100%', background: '#0a0a14' }} value={incidentType} onChange={e => setIncidentType(e.target.value)}>
-                      <option value="DATA_LEAK">Filtración de Datos (Data Leak)</option>
-                      <option value="RANSOMWARE_HACK">Secuestro de Servidor (Ransomware / Hack)</option>
-                      <option value="UNAUTHORIZED_ACCESS">Acceso No Autorizado</option>
-                      <option value="LOST_DEVICE">Pérdida de Dispositivo</option>
-                      <option value="HUMAN_ERROR">Error Humano</option>
-                      <option value="OTHER">Otro</option>
-                    </select>
-                  </div>
-                  <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '20px' }}>
-                    <button type="button" className="btn-save" onClick={() => setWizardIncidentStep(2)}>Siguiente: Evaluar Impacto</button>
-                  </div>
-                </div>
-              )}
-
-              {wizardIncidentStep === 2 && (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
-                  <div>
-                    <label className="form-label">Categorías de Datos Afectadas (Selección Múltiple)</label>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', background: 'rgba(255,255,255,0.01)', padding: '12px', borderRadius: '6px', border: '1px solid var(--border-color)' }}>
-                      {[
-                        'Datos Bancarios u Obligaciones Financieras (Financieros)',
-                        'Datos Sensibles (Salud, Biométricos, Ideología)',
-                        'Datos de Menores de 14 Años',
-                        'Datos de Contacto General (Emails, Teléfonos)',
-                        'Datos de Identidad (RUT, Claves de Acceso)'
-                      ].map(cat => {
-                        const hasCat = affectedCategories.includes(cat);
-                        return (
-                          <label key={cat} style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', cursor: 'pointer' }}>
-                            <input 
-                              type="checkbox" 
-                              checked={hasCat} 
-                              onChange={() => {
-                                if (hasCat) {
-                                  setAffectedCategories(prev => prev.filter(c => c !== cat));
-                                } else {
-                                  setAffectedCategories(prev => [...prev, cat]);
-                                }
-                              }}
-                            />
-                            <span>{cat}</span>
-                          </label>
-                        );
-                      })}
-                    </div>
-                  </div>
-                  <div>
-                    <label className="form-label">Número Aproximado de Titulares Afectados</label>
-                    <input type="number" className="input-text" style={{ width: '100%' }} value={approxAffectedTitulars} onChange={e => setApproxAffectedTitulars(Number(e.target.value))} required />
-                  </div>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '20px' }}>
-                    <button type="button" className="btn-action" onClick={() => setWizardIncidentStep(1)}>Atrás</button>
-                    <button type="button" className="btn-save" onClick={() => setWizardIncidentStep(3)}>Siguiente: Riesgo Legal</button>
-                  </div>
-                </div>
-              )}
-
-              {wizardIncidentStep === 3 && (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
-                  <h4 style={{ margin: 0, fontSize: '14px', fontWeight: 600 }}>Cálculo de Riesgo Legal (Art. 14 sexies & Art. 34)</h4>
-                  
-                  {/* Dynamic Alert Verdict Cards */}
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                    {/* Check if agency report required */}
-                    {['DATA_LEAK', 'RANSOMWARE_HACK', 'UNAUTHORIZED_ACCESS', 'LOST_DEVICE'].includes(incidentType) || approxAffectedTitulars > 0 ? (
-                      <div style={{ background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.2)', padding: '12px', borderRadius: '8px' }}>
-                        <div style={{ color: 'var(--color-danger)', fontWeight: 600, fontSize: '13.5px' }}>🚨 Obligación de Reportar a la Agencia DPA</div>
-                        <p style={{ margin: '4px 0 0 0', fontSize: '12px', color: 'var(--text-secondary)', lineHeight: 1.4 }}>
-                          La ley exige notificar a la Agencia en un plazo expedito tras detectar la vulneración. Omitir esta notificación constituye una infracción Grave o Gravísima.
-                        </p>
-                      </div>
-                    ) : (
-                      <div style={{ background: 'rgba(16,185,129,0.08)', border: '1px solid rgba(16,185,129,0.2)', padding: '12px', borderRadius: '8px' }}>
-                        <div style={{ color: 'var(--color-success)', fontWeight: 600, fontSize: '13.5px' }}>🟢 Sin Obligación Crítica Directa a la Agencia</div>
-                        <p style={{ margin: '4px 0 0 0', fontSize: '12px', color: 'var(--text-secondary)' }}>
-                          El tipo de brecha e impacto no exige reportar legalmente de forma obligatoria. Se aconseja documentar de forma preventiva.
-                        </p>
-                      </div>
-                    )}
-
-                    {/* Check if titulars report required */}
-                    {affectedCategories.some(cat => ['Financieros', 'Sensibles', 'Menores'].some(kw => cat.includes(kw))) ? (
-                      <div style={{ background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.2)', padding: '12px', borderRadius: '8px' }}>
-                        <div style={{ color: 'var(--color-warning)', fontWeight: 600, fontSize: '13.5px' }}>⚠️ Obligación de Comunicar a los Titulares Afectados</div>
-                        <p style={{ margin: '4px 0 0 0', fontSize: '12px', color: 'var(--text-secondary)', lineHeight: 1.4 }}>
-                          Debido a la recolección de datos sensibles, financieros o de menores de 14 años, debes enviar comunicados claros e informativos a tus clientes para mitigar riesgos de suplantación.
-                        </p>
-                      </div>
-                    ) : (
-                      <div style={{ background: 'rgba(16,185,129,0.08)', border: '1px solid rgba(16,185,129,0.2)', padding: '12px', borderRadius: '8px' }}>
-                        <div style={{ color: 'var(--color-success)', fontWeight: 600, fontSize: '13.5px' }}>🟢 Sin Obligación Directa a Clientes</div>
-                        <p style={{ margin: '4px 0 0 0', fontSize: '12px', color: 'var(--text-secondary)' }}>
-                          La naturaleza de los datos afectados no exige comunicaciones masivas externas obligatorias.
-                        </p>
-                      </div>
-                    )}
-                  </div>
-
-                  <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '20px' }}>
-                    <button type="button" className="btn-action" onClick={() => setWizardIncidentStep(2)}>Atrás</button>
-                    <button type="button" className="btn-save" onClick={() => setWizardIncidentStep(4)}>Siguiente: Plan de Mitigación</button>
-                  </div>
-                </div>
-              )}
-
-              {wizardIncidentStep === 4 && (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
-                  <div>
-                    <label className="form-label">Descripción Técnica de la Contingencia</label>
-                    <textarea className="input-text" style={{ width: '100%' }} rows={4} value={descriptionAndEffects} onChange={e => setDescriptionAndEffects(e.target.value)} required placeholder="Describa cómo ocurrió y los posibles efectos colaterales detectados." />
-                  </div>
-                  <div>
-                    <label className="form-label">Medidas de Contención y Mitigación Adoptadas</label>
-                    <textarea className="input-text" style={{ width: '100%' }} rows={4} value={mitigationMeasures} onChange={e => setMitigationMeasures(e.target.value)} required placeholder="ej. Aislamiento del servidor, rotación de claves API, revocación de accesos..." />
-                  </div>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '20px' }}>
-                    <button type="button" className="btn-action" onClick={() => setWizardIncidentStep(3)}>Atrás</button>
-                    <button type="submit" className="btn-save">Registrar Incidente Oficial</button>
-                  </div>
-                </div>
-              )}
-            </form>
-          </div>
-        ) : (
-          <div className="dashboard-grid">
-            {/* Widget 1: Compliance Ring */}
-            <div className="card col-4" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
-              <h3 style={{ margin: '0 0 20px 0', fontSize: '15px', fontWeight: 600 }}>Nivel de Cumplimiento Global</h3>
-              <div className="score-container">
-                <svg className="score-svg">
-                  <circle className="score-bg-circle" cx="70" cy="70" r="58" />
-                  <circle 
-                    className="score-fill-circle" 
-                    cx="70" cy="70" r="58" 
-                    strokeDasharray={364.4}
-                    strokeDashoffset={364.4 - (364.4 * finalScore) / 100}
-                    style={{ stroke: finalScore >= 80 ? 'var(--color-success)' : finalScore >= 50 ? 'var(--color-warning)' : 'var(--color-danger)' }}
-                  />
-                </svg>
-                <div className="score-text">
-                  <span className="score-num">{finalScore}%</span>
-                  <span className="score-label">Score</span>
-                </div>
-              </div>
-              
-              <div className="stats-row" style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '8px', width: '100%', marginTop: '15px', fontSize: '12px' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px', background: 'rgba(255,255,255,0.02)', borderRadius: '4px' }}>
-                  <span>Auditoría Web:</span>
-                  <span style={{ fontWeight: 600 }}>{breakdown.crawlScore}%</span>
-                </div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px', background: 'rgba(255,255,255,0.02)', borderRadius: '4px' }}>
-                  <span>Garantías TID (Art. 28):</span>
-                  <span style={{ fontWeight: 600 }}>{breakdown.transfersScore}%</span>
-                </div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px', background: 'rgba(255,255,255,0.02)', borderRadius: '4px' }}>
-                  <span>Contingencias (Art. 14):</span>
-                  <span style={{ fontWeight: 600 }}>{breakdown.securityScore}%</span>
-                </div>
-              </div>
-            </div>
-
-            {/* Widget 2: Action Plan Roadmap */}
-            <div className="card col-8">
-              <h3 style={{ margin: '0 0 10px 0', fontSize: '15px', fontWeight: 600, color: 'var(--color-primary)' }}>Plan de Mitigación y Plan de Acción Priorizado</h3>
-              <p style={{ fontSize: '13px', color: 'var(--text-secondary)', marginBottom: '15px' }}>Acciones correctivas ordenadas por impacto legal y multas asociadas.</p>
-              
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', maxHeight: '320px', overflowY: 'auto' }}>
-                {actionPlan && actionPlan.length > 0 ? (
-                  actionPlan.map((step: any) => (
-                    <div key={step.step} style={{ display: 'flex', gap: '15px', padding: '12px', background: 'rgba(255,255,255,0.01)', border: '1px solid var(--border-color)', borderRadius: '8px' }}>
-                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: '28px', height: '28px', borderRadius: '50%', background: 'var(--color-primary)', color: 'white', fontWeight: 'bold', fontSize: '12px', flexShrink: 0 }}>
-                        {step.step}
-                      </div>
-                      <div style={{ flexGrow: 1 }}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '5px' }}>
-                          <span style={{ fontWeight: 600, fontSize: '13px' }}>{step.title}</span>
-                          <span className={`badge ${step.priority === 'Alta' ? 'badge-gravisima' : step.priority === 'Media' ? 'badge-grave' : 'badge-success'}`}>{step.priority}</span>
-                        </div>
-                        <p style={{ margin: '4px 0 0 0', fontSize: '12px', color: 'var(--text-secondary)' }}>{step.description}</p>
-                        <p style={{ margin: '6px 0 0 0', fontSize: '11px', color: 'var(--color-primary)' }}><strong>Acción Técnica:</strong> {step.details} (Esfuerzo: {step.estimatedEffort})</p>
-                      </div>
-                    </div>
-                  ))
-                ) : (
-                  <div style={{ textAlign: 'center', padding: '30px' }}>
-                    <CheckCircle color="var(--color-success)" size={32} />
-                    <p style={{ marginTop: '10px', fontSize: '13px' }}>¡Felicitaciones! Cumples al 100% con todos los requisitos del plan de acción.</p>
-                  </div>
-                )}
-              </div>
-            </div>
-
-            {/* Widget 3: Vulnerabilities Findings Grid */}
-            <div className="card col-12">
-              <h3 style={{ margin: '0 0 15px 0', fontSize: '15px', fontWeight: 600 }}>Brechas de Cumplimiento Detectadas</h3>
-              {findings && findings.length > 0 ? (
-                <div style={{ overflowX: 'auto' }}>
-                  <table className="transfers-table">
-                    <thead>
-                      <tr>
-                        <th>Categoría</th>
-                        <th>Gravedad</th>
-                        <th>Descripción del Hallazgo</th>
-                        <th>Recomendación Correctiva</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {findings.map((f: any, idx: number) => (
-                        <tr key={idx}>
-                          <td><span className="badge badge-success">{f.category?.replace('_', ' ')}</span></td>
-                          <td>
-                            <span className={`badge ${f.severity === 'Gravísima' ? 'badge-gravisima' : f.severity === 'Grave' ? 'badge-grave' : 'badge-leve'}`}>
-                              {f.severity}
-                            </span>
-                          </td>
-                          <td style={{ fontSize: '12px' }}>{f.description}</td>
-                          <td style={{ fontSize: '11.5px', color: 'var(--color-primary)' }}>{f.recommendation}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              ) : (
-                <p style={{ margin: 0, fontSize: '13px', color: 'var(--color-success)', fontWeight: 600 }}>🟢 No se encontraron brechas abiertas en la auditoría.</p>
-              )}
-            </div>
-
-            {/* Widget 4: Security Incidents Registry */}
-            <div className="card col-12">
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px', flexWrap: 'wrap', gap: '10px' }}>
-                <div>
-                  <h3 style={{ margin: 0, fontSize: '15px', fontWeight: 600 }}>Bitácora Histórica de Brechas & Incidentes</h3>
-                  <p style={{ margin: '2px 0 0 0', fontSize: '13px', color: 'var(--text-secondary)' }}>Artículos 14 sexies y 34 quáter: reporte mandatorio ante fugas y hackeos.</p>
-                </div>
-                <button className="btn-save" onClick={() => { setIsAddingIncident(true); setWizardIncidentStep(1); }}>
-                  <AlertTriangle size={14} />
-                  <span style={{ marginLeft: '6px' }}>Reportar Brecha</span>
-                </button>
-              </div>
-
-              {incidents && incidents.length > 0 ? (
-                <div style={{ overflowX: 'auto' }}>
-                  <table className="transfers-table">
-                    <thead>
-                      <tr>
-                        <th>Título</th>
-                        <th>Fecha de Ocurrencia</th>
-                        <th>Tipo</th>
-                        <th>Afectados</th>
-                        <th>Estado</th>
-                        <th>Notificar</th>
-                        <th>Acción</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {incidents.map((i: any) => (
-                        <tr key={i.id}>
-                          <td style={{ fontSize: '12.5px', fontWeight: 600 }}>{i.incident_title}</td>
-                          <td style={{ fontSize: '12px' }}>{new Date(i.incident_date).toLocaleString()}</td>
-                          <td><span className="badge badge-success" style={{ fontSize: '10px' }}>{i.incident_type}</span></td>
-                          <td style={{ fontSize: '12px', fontWeight: 700 }}>{i.approx_affected_titulars || 0}</td>
-                          <td>
-                            <select 
-                              value={i.status} 
-                              onChange={e => handleUpdateIncidentStatus(i.id, e.target.value)}
-                              style={{ background: '#0a0a14', color: 'white', border: '1px solid var(--border-color)', borderRadius: '4px', fontSize: '11px', padding: '3px' }}
-                            >
-                              <option value="DETECTED">Detectado</option>
-                              <option value="UNDER_ANALYSIS">Bajo Análisis</option>
-                              <option value="MITIGATED">Mitigado</option>
-                              <option value="REPORTED_AND_CLOSED">Reportado & Cerrado</option>
-                            </select>
-                          </td>
-                          <td>
-                            <div style={{ display: 'flex', flexDirection: 'column', gap: '3px', fontSize: '10.5px' }}>
-                              <span>DPA: {i.requires_agency_notification ? '🔴 Requerido' : '🟢 No requiere'}</span>
-                              <span>Clientes: {i.requires_titulars_notification ? '🟠 Requerido' : '🟢 No requiere'}</span>
-                            </div>
-                          </td>
-                          <td>
-                            <button 
-                              className="btn-action" 
-                              style={{ padding: '3px 8px', fontSize: '10.5px', background: 'rgba(99,102,241,0.12)' }}
-                              onClick={() => handleGenerateIncidentNotice(i)}
-                            >
-                              Generar Oficios
-                            </button>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              ) : (
-                <p style={{ margin: 0, fontSize: '13px', color: 'var(--text-secondary)' }}>No hay incidentes de seguridad registrados en la bitácora legal.</p>
-              )}
-            </div>
-
-            {/* Cuestionario Operativo Interno (Ley N° 21.719) */}
-            <div className="col-12" style={{ marginTop: '20px' }}>
-              {evalResults ? (
-                <DiagnosisResultsView 
-                  results={evalResults}
-                  onNavigateToRemediation={(subTab) => {
-                    if (subTab === 'ropa_hub') {
-                      setActiveTab('diagnosis');
-                      setEvalResults(null);
-                    } else {
-                      setActiveTab('remediation');
-                      setRemediationSubTab(subTab as any);
-                    }
-                  }}
-                  onReset={() => setEvalResults(null)}
-                />
-              ) : (
-                <DiagnosticHubView token={token} onEvaluationSuccess={(data) => setEvalResults(data)} />
-              )}
-            </div>
-          </div>
-        )}
+        <div className="col-12" style={{ marginTop: '20px' }}>
+          {evalResults ? (
+            <DiagnosisResultsView 
+              results={evalResults}
+              onNavigateToRemediation={(subTab) => {
+                if (subTab === 'ropa_hub') {
+                  setActiveTab('diagnosis');
+                  setEvalResults(null);
+                } else {
+                  setActiveTab('remediation');
+                  setRemediationSubTab(subTab as any);
+                }
+              }}
+              onReset={() => setEvalResults(null)}
+              isLoading={isFetchingDiagnosis}
+            />
+          ) : (
+            <DiagnosticHubView token={token} onEvaluationSuccess={(data) => setEvalResults(data)} />
+          )}
+        </div>
       </div>
     );
   };
@@ -1988,7 +1673,29 @@ Firmas autorizadas:
           </div>
         </div>
 
-        <div style={{ padding: '0 16px 15px 16px' }}>
+        <div style={{ padding: '0 16px 15px 16px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+          <button 
+            onClick={handleResetTestData}
+            style={{
+              width: '100%',
+              padding: '8px 12px',
+              background: 'rgba(239, 68, 68, 0.15)',
+              color: '#f87171',
+              border: '1px solid #ef4444',
+              borderRadius: '8px',
+              fontSize: '11.5px',
+              fontWeight: 'bold',
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              transition: 'all 0.2s',
+              outline: 'none'
+            }}
+          >
+            Resetear Datos de Prueba
+          </button>
+
           <button 
             onClick={onLogout}
             style={{

@@ -56,6 +56,11 @@ export default function DiagnosisResultsView({
   isLoading = false
 }: DiagnosisResultsViewProps) {
   const [expandedPhase, setExpandedPhase] = useState<number | null>(1);
+  const [meetingAlertText, setMeetingAlertText] = useState<string | null>(null);
+
+  const handleScheduleMeeting = (f: DiagnosisFinding) => {
+    setMeetingAlertText(`Se ha agendado una reunión interna para abordar la brecha operativa: "${f.description}". Se enviará un recordatorio automático a su equipo de TI y Operaciones.`);
+  };
 
   // 2. ESTADOS DE CARGA (Loading Fallback)
   if (isLoading || !results || !results.findings) {
@@ -371,7 +376,7 @@ export default function DiagnosisResultsView({
                         onClick={() => onNavigateToRemediation(getSubTabForFinding(f))}
                         className="flex items-center gap-1.5 px-3 py-1.5 bg-indigo-650 hover:bg-indigo-500 text-white font-bold text-xs rounded-lg transition-all flex-shrink-0"
                       >
-                        <span>Resolver ahora</span>
+                        <span>Ir a solucionar</span>
                         <ArrowRight size={12} />
                       </button>
                     )}
@@ -438,7 +443,7 @@ export default function DiagnosisResultsView({
                         onClick={() => onNavigateToRemediation(getSubTabForFinding(f))}
                         className="flex items-center gap-1.5 px-3 py-1.5 bg-indigo-650 hover:bg-indigo-500 text-white font-bold text-xs rounded-lg transition-all flex-shrink-0"
                       >
-                        <span>Resolver ahora</span>
+                        <span>Ir a solucionar</span>
                         <ArrowRight size={12} />
                       </button>
                     )}
@@ -476,8 +481,8 @@ export default function DiagnosisResultsView({
                 <p className="text-xs text-emerald-450 font-semibold py-2">🟢 Fase Completada: Sin brechas operativas o de TI identificadas.</p>
               ) : (
                 phase3Findings.map((f, idx) => (
-                  <div key={f.id} className={`pt-4 ${idx === 0 ? 'pt-0' : ''} space-y-3`}>
-                    <div className="space-y-1">
+                  <div key={f.id} className={`pt-4 ${idx === 0 ? 'pt-0' : ''} flex flex-col md:flex-row gap-4 justify-between items-start md:items-center`}>
+                    <div className="space-y-1 flex-1">
                       <div className="flex items-center gap-2 flex-wrap">
                         <span className="text-xs font-black text-white">{f.description}</span>
                         <span className="bg-indigo-950/30 text-indigo-400 border border-indigo-900/10 text-[9px] font-black px-1.5 rounded">-{f.penalty} pts</span>
@@ -506,7 +511,7 @@ export default function DiagnosisResultsView({
                           <p className="text-xs text-slate-400">{f.recommendation}</p>
                           
                           {/* Business Impact block */}
-                          <div className="p-3 bg-amber-500/5 border border-amber-500/10 rounded-lg space-y-1">
+                          <div className="p-3 bg-amber-500/5 border border-amber-500/10 rounded-lg space-y-1 mt-2">
                             <span className="text-[10px] font-black text-amber-500 uppercase tracking-wider block">⚠️ Impacto en su forma de trabajar</span>
                             <p className="text-[11px] text-slate-350 leading-relaxed">{getBusinessImpact(f)}</p>
                           </div>
@@ -515,7 +520,7 @@ export default function DiagnosisResultsView({
                           {(f.id === 'FIND_ROPA_MISSING' || f.id === 'FIND_ROPA_DRAFTS_PENDING') && (
                             <button
                               onClick={() => onNavigateToRemediation('ropa_hub')}
-                              className="flex items-center gap-1.5 px-3 py-1 bg-indigo-650/10 hover:bg-indigo-650 text-indigo-400 hover:text-white font-bold text-[10px] rounded border border-indigo-900/30 hover:border-indigo-600 transition-all w-fit"
+                              className="mt-2 flex items-center gap-1.5 px-3 py-1 bg-indigo-650/10 hover:bg-indigo-650 text-indigo-400 hover:text-white font-bold text-[10px] rounded border border-indigo-900/30 hover:border-indigo-600 transition-all w-fit"
                             >
                               <span>Ir al Panel de Inventario RoPA</span>
                               <ArrowRight size={10} />
@@ -524,6 +529,16 @@ export default function DiagnosisResultsView({
                         </>
                       )}
                     </div>
+
+                    {!f.isGated && (
+                      <button
+                        onClick={() => handleScheduleMeeting(f)}
+                        className="flex items-center gap-1.5 px-3 py-1.5 bg-indigo-650 hover:bg-indigo-500 text-white font-bold text-xs rounded-lg transition-all flex-shrink-0"
+                      >
+                        <span>Agendar reunión interna</span>
+                        <ArrowRight size={12} />
+                      </button>
+                    )}
                   </div>
                 ))
               )}
@@ -532,64 +547,29 @@ export default function DiagnosisResultsView({
         </div>
       </div>
 
-      {/* 3. Detailed Infractions Appendix */}
-      {findings.length > 0 && (
-        <div className="p-6 bg-slate-900/40 border border-slate-800/80 rounded-xl shadow-lg space-y-4 text-left">
-          <div className="flex items-center gap-2">
-            <AlertTriangle size={16} className="text-rose-500" />
-            <h3 className="text-base font-bold text-white tracking-wide">Apéndice: Detalle de Infracciones y Multas Asociadas</h3>
-          </div>
-          
-          <div className="overflow-x-auto">
-            <table className="w-full text-left border-collapse">
-              <thead>
-                <tr className="border-b border-slate-800 text-[10px] uppercase tracking-wider font-semibold text-slate-500">
-                  <th className="py-3 px-2">Categoría</th>
-                  <th className="py-3 px-2">Infracción</th>
-                  <th className="py-3 px-2 text-center">Puntaje</th>
-                  <th className="py-3 px-2 text-right">Riesgo Máx.</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-850">
-                {findings.map((f, idx) => (
-                  <tr key={idx} className="text-xs hover:bg-slate-950/20">
-                    <td className="py-3.5 px-2">
-                      <span className="px-2 py-0.5 rounded bg-slate-900 border border-slate-800 text-[10px] text-slate-400 font-semibold uppercase">
-                        {f.category.replace('_', ' ')}
-                      </span>
-                    </td>
-                    <td className="py-3.5 px-2 space-y-1">
-                      <span className="font-semibold text-white block">{f.description}</span>
-                      
-                      {f.isGated ? (
-                        <span className="text-[11px] text-slate-500 italic">Contenido exclusivo del Plan Pro</span>
-                      ) : (
-                        <>
-                          <span className="text-[11px] text-slate-400 block"><strong>Recomendación:</strong> {f.recommendation}</span>
-                          {f.effort && (
-                            <span className={`inline-block text-[9px] uppercase font-black px-2 py-0.5 rounded mt-1 border ${
-                              f.effort === 'LOW'
-                                ? 'bg-emerald-950/60 text-emerald-450 border-emerald-900/40'
-                                : f.effort === 'MEDIUM'
-                                  ? 'bg-amber-950/60 text-amber-500 border-amber-900/40'
-                                  : 'bg-rose-950/60 text-rose-455 border-rose-900/40'
-                            }`}>
-                              Esfuerzo: {f.effort === 'LOW' ? 'Bajo' : f.effort === 'MEDIUM' ? 'Medio' : 'Alto'}
-                            </span>
-                          )}
-                        </>
-                      )}
-                    </td>
-                    <td className="py-3.5 px-2 text-center font-bold text-rose-500">-{f.penalty}</td>
-                    <td className="py-3.5 px-2 text-right font-extrabold text-rose-400">{f.riskUtm.toLocaleString()} UTM</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+      {/* Meeting modal */}
+      {meetingAlertText && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+          <div className="bg-slate-900 border border-slate-800 p-6 rounded-2xl max-w-md w-full shadow-2xl space-y-4 text-left">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-full bg-indigo-950/60 border border-indigo-900/40 flex items-center justify-center text-indigo-400">
+                <Sparkles size={20} />
+              </div>
+              <h4 className="text-base font-bold text-white">Reunión Operativa Agendada</h4>
+            </div>
+            <p className="text-xs text-slate-350 leading-relaxed">
+              {meetingAlertText}
+            </p>
+            <div className="flex justify-end pt-2">
+              <button 
+                onClick={() => setMeetingAlertText(null)}
+                className="px-4 py-2 bg-indigo-650 hover:bg-indigo-600 text-white font-bold text-xs rounded-xl transition-all"
+              >
+                Entendido
+              </button>
+            </div>
           </div>
         </div>
-      )}
-        </>
       )}
     </div>
   );
