@@ -378,16 +378,7 @@ export default function DiagnosticQuestionnaire({ onSubmit, token }: DiagnosticQ
                   </div>
                 </div>
 
-                <div>
-                  <label className="text-xs font-semibold text-slate-300 block mb-1.5">Detalle de ubicación / nombre de software</label>
-                  <input 
-                    type="text"
-                    value={formData.rrhh_storage_details}
-                    onChange={e => handleInputChange('rrhh_storage_details', e.target.value)}
-                    placeholder="ej. Bóveda oficina central / Buk Chile"
-                    className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-sm text-slate-200 placeholder:text-slate-700 focus:outline-none focus:border-indigo-500/50"
-                  />
-                </div>
+
 
                 <div className="md:col-span-2">
                   <label className="text-xs font-semibold text-slate-300 block mb-2">¿Tu empresa maneja datos de salud, huellas dactilares o datos de menores de edad?</label>
@@ -428,14 +419,27 @@ export default function DiagnosticQuestionnaire({ onSubmit, token }: DiagnosticQ
                 </div>
 
                 <div className="md:col-span-2">
-                  <label className="text-xs font-semibold text-slate-300 block mb-1.5">Procedimiento de destrucción de datos de salud una vez finalizado el fin legal</label>
-                  <input 
-                    type="text"
-                    value={formData.rrhh_destruction_proc}
-                    onChange={e => handleInputChange('rrhh_destruction_proc', e.target.value)}
-                    placeholder="Describa el protocolo de eliminación de licencias u otros antecedentes de salud..."
-                    className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-sm text-slate-200 placeholder:text-slate-700 focus:outline-none focus:border-indigo-500/50"
-                  />
+                  <label className="text-xs font-semibold text-slate-300 block mb-2">
+                    ¿Tienes un procedimiento formal para destruir los datos de salud una vez que finaliza el fin legal?
+                  </label>
+                  <div className="grid grid-cols-2 gap-3 bg-slate-950/40 p-4 rounded-lg border border-slate-800/80">
+                    {[
+                      { value: 'Sí', label: 'Sí, contamos con un proceso de eliminación seguro' },
+                      { value: 'No', label: 'No, los datos de salud se almacenan indefinidamente' }
+                    ].map(item => (
+                      <label key={item.value} className="flex items-center gap-2.5 text-xs text-slate-400 cursor-pointer select-none hover:text-slate-200">
+                        <input 
+                          type="radio"
+                          name="rrhh_destruction_proc"
+                          value={item.value}
+                          checked={formData.rrhh_destruction_proc === item.value}
+                          onChange={() => handleInputChange('rrhh_destruction_proc', item.value)}
+                          className="accent-indigo-600 focus:ring-0 bg-slate-950 w-4 h-4"
+                        />
+                        <span>{item.label}</span>
+                      </label>
+                    ))}
+                  </div>
                 </div>
 
                 {/* PREGUNTA 2 (CHECKBOXES MULTIPLE) */}
@@ -505,16 +509,7 @@ export default function DiagnosticQuestionnaire({ onSubmit, token }: DiagnosticQ
                   )}
                 </div>
 
-                <div className="md:col-span-2">
-                  <label className="text-xs font-semibold text-slate-300 block mb-1.5">Proveedor del sistema biométrico / de asistencia</label>
-                  <input 
-                    type="text"
-                    value={formData.rrhh_biometric_vendor}
-                    onChange={e => handleInputChange('rrhh_biometric_vendor', e.target.value)}
-                    placeholder="ej. GeoVictoria, ZKTeco, Relojcontrol"
-                    className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-sm text-slate-200 placeholder:text-slate-700 focus:outline-none focus:border-indigo-500/50"
-                  />
-                </div>
+
               </div>
             )}
           </div>
@@ -574,16 +569,7 @@ export default function DiagnosticQuestionnaire({ onSubmit, token }: DiagnosticQ
                   </div>
                 </div>
 
-                <div>
-                  <label className="text-xs font-semibold text-slate-300 block mb-1.5">Nombre de la herramienta y volumen estimado de contactos</label>
-                  <input 
-                    type="text"
-                    value={formData.commercial_tool_volume}
-                    onChange={e => handleInputChange('commercial_tool_volume', e.target.value)}
-                    placeholder="ej. HubSpot - 12,500 leads"
-                    className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-sm text-slate-200 placeholder:text-slate-700 focus:outline-none focus:border-indigo-500/50"
-                  />
-                </div>
+
 
                 <div>
                   <label className="text-xs font-semibold text-slate-300 block mb-1.5">¿Utilizas proveedores extranjeros (como servidores en la nube fuera de Chile) para guardar esta información?</label>
@@ -770,16 +756,7 @@ export default function DiagnosticQuestionnaire({ onSubmit, token }: DiagnosticQ
                   </div>
                 </div>
 
-                <div>
-                  <label className="text-xs font-semibold text-slate-300 block mb-1.5">Cargos con permisos de acceso a datos sensibles o masivos</label>
-                  <input 
-                    type="text"
-                    value={formData.ti_sensitive_access_roles}
-                    onChange={e => handleInputChange('ti_sensitive_access_roles', e.target.value)}
-                    placeholder="ej. Administrador TI, Jefes de Operaciones, DPO"
-                    className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-sm text-slate-200 placeholder:text-slate-700 focus:outline-none focus:border-indigo-500/50"
-                  />
-                </div>
+
 
                 <div>
                   <label className="text-xs font-semibold text-slate-300 block mb-1.5">¿La información de tus bases de datos está cifrada (protegida con clave de seguridad)?</label>
@@ -809,16 +786,7 @@ export default function DiagnosticQuestionnaire({ onSubmit, token }: DiagnosticQ
                   )}
                 </div>
 
-                <div>
-                  <label className="text-xs font-semibold text-slate-300 block mb-1.5">Frecuencia y almacenamiento físico/lógico de backups (Copias)</label>
-                  <input 
-                    type="text"
-                    value={formData.ti_backup_frequency}
-                    onChange={e => handleInputChange('ti_backup_frequency', e.target.value)}
-                    placeholder="ej. Diario automatizado en AWS S3 región Virginia con cifrado"
-                    className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-sm text-slate-200 placeholder:text-slate-700 focus:outline-none focus:border-indigo-500/50"
-                  />
-                </div>
+
               </div>
             )}
           </div>
@@ -867,16 +835,7 @@ export default function DiagnosticQuestionnaire({ onSubmit, token }: DiagnosticQ
                   )}
                 </div>
 
-                <div>
-                  <label className="text-xs font-semibold text-slate-300 block mb-1.5">Criterio de retención histórico contable / tributario (años)</label>
-                  <input 
-                    type="text"
-                    value={formData.finances_retention_rules}
-                    onChange={e => handleInputChange('finances_retention_rules', e.target.value)}
-                    placeholder="ej. Conservación por 6 años por regulaciones del SII"
-                    className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-sm text-slate-200 placeholder:text-slate-700 focus:outline-none focus:border-indigo-500/50"
-                  />
-                </div>
+
               </div>
             )}
           </div>
@@ -935,16 +894,7 @@ export default function DiagnosticQuestionnaire({ onSubmit, token }: DiagnosticQ
                   </div>
                 </div>
 
-                <div>
-                  <label className="text-xs font-semibold text-slate-300 block mb-1.5">Nombre / Razón Social de los proveedores principales</label>
-                  <input 
-                    type="text"
-                    value={formData.vendors_main_names}
-                    onChange={e => handleInputChange('vendors_main_names', e.target.value)}
-                    placeholder="ej. Amazon Web Services, Mailchimp Inc, Deloitte"
-                    className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-sm text-slate-200 placeholder:text-slate-700 focus:outline-none focus:border-indigo-500/50"
-                  />
-                </div>
+
 
                 <div>
                   <label className="text-xs font-semibold text-slate-300 block mb-1.5">¿Tus contratos con estos proveedores incluyen un acuerdo de protección de datos (DPA)?</label>

@@ -148,4 +148,93 @@ export async function analyzeQuestionnaireAnswers(userId: string, answers: any) 
       'auto_questionnaire'
     );
   }
+
+  // 4. Analizar proveedores declarados en el inventario Shadow IT
+  if (Array.isArray(answers.shadow_it_providers) && answers.shadow_it_providers.length > 0) {
+    const providers = answers.shadow_it_providers as string[];
+
+    // A. Marketing / CRM
+    if (providers.some(p => ['hubspot', 'salesforce', 'mailchimp', 'activecampaign', 'sendgrid'].includes(p))) {
+      await createRopaDraft(
+        userId,
+        'Gestión de Leads y Campañas de Marketing (SaaS)',
+        'Envío de correos, gestión de oportunidades de venta y control de embudo comercial utilizando proveedores en la nube.',
+        'Consentimiento / Interés Legítimo',
+        ['Identificatorios (Nombre, Email, Teléfono)', 'Historial de interacción comercial'],
+        '5 años tras la inactividad del lead',
+        true,
+        'auto_questionnaire'
+      );
+    }
+
+    // B. Analytics / Tracking
+    if (providers.some(p => ['google_analytics', 'meta_pixel', 'hotjar'].includes(p))) {
+      await createRopaDraft(
+        userId,
+        'Rastreo y Analítica de Comportamiento Web',
+        'Seguimiento estadístico de visitas, conversiones y comportamiento de usuarios en el portal institucional.',
+        'Consentimiento',
+        ['Identificadores de cookies', 'Direcciones IP y datos de navegación'],
+        '2 años',
+        true,
+        'auto_questionnaire'
+      );
+    }
+
+    // C. Infraestructura
+    if (providers.some(p => ['aws', 'gcp', 'azure', 'digitalocean'].includes(p))) {
+      await createRopaDraft(
+        userId,
+        'Alojamiento e Infraestructura en la Nube',
+        'Almacenamiento general de bases de datos operativas de producción y backups de la infraestructura interna de la empresa.',
+        'Ejecución del Contrato',
+        ['Identificatorios (Cuentas de usuario)', 'Toda la información transaccional'],
+        'Indefinido mientras dure el servicio comercial',
+        true,
+        'auto_questionnaire'
+      );
+    }
+
+    // D. Comunicación y colaboración
+    if (providers.some(p => ['google_workspace', 'office_365', 'zoom', 'slack'].includes(p))) {
+      await createRopaDraft(
+        userId,
+        'Comunicaciones Corporativas y Colaboración Nube',
+        'Gestión del correo electrónico corporativo, mensajería instantánea interna y videoconferencias operativas diarias.',
+        'Interés Legítimo',
+        ['Identificatorios (Email corporativo, Nombre)', 'Grabaciones y registros de chats'],
+        'Indefinido durante la vigencia de la relación contractual o empleo',
+        true,
+        'auto_questionnaire'
+      );
+    }
+
+    // E. Recursos Humanos
+    if (providers.some(p => ['bamboohr', 'workday'].includes(p))) {
+      await createRopaDraft(
+        userId,
+        'Plataforma SaaS de Gestión de Personas',
+        'Administración y control interno de CVs, fichas de personal, vacaciones y evaluaciones de desempeño.',
+        'Ejecución de Contrato',
+        ['Identificatorios (RUT, Nombre, Dirección)', 'Historial de empleo y desempeño laboral'],
+        '5 años tras la extinción del contrato de trabajo',
+        true,
+        'auto_questionnaire'
+      );
+    }
+
+    // F. Soporte
+    if (providers.some(p => ['zendesk', 'intercom'].includes(p))) {
+      await createRopaDraft(
+        userId,
+        'Soporte y Atención de Clientes',
+        'Gestión de tickets de ayuda, chat en vivo y resolución de reclamos de clientes en la plataforma.',
+        'Ejecución del Contrato',
+        ['Identificatorios (Nombre, Email)', 'Historial de tickets y transcripción de ayuda'],
+        '3 años desde la resolución del caso',
+        true,
+        'auto_questionnaire'
+      );
+    }
+  }
 }

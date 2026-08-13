@@ -78,6 +78,32 @@ export interface EvaluationResult {
 }
 
 export function evaluateQuestionnaire(answers: DiagnosisAnswers): EvaluationResult {
+  const confirmedRopa = answers.confirmed_ropa_count ?? 0;
+  if (confirmedRopa === 0) {
+    return {
+      scoreTotal: 0,
+      riesgoUTM: 20000,
+      findings: [{
+        id: 'FIND_ROPA_MISSING',
+        category: 'Gobernanza',
+        severity: 'Gravísima',
+        description: 'Ausencia de Registro de Actividades (RoPA)',
+        recommendation: 'Es imposible evaluar el cumplimiento sin confirmar primero el inventario de datos en la pestaña RoPA. Por favor, confirme o complete la información para generar su diagnóstico de riesgos.',
+        penalty: 100,
+        riskUtm: 20000,
+        effort: 'LOW'
+      }],
+      actionPlan: [{
+        step: 1,
+        title: 'Confirmar inventario RoPA',
+        description: 'Mapear e inventariar las actividades de tratamiento de datos personales de la empresa (Art. 12).',
+        priority: 'Alta',
+        estimatedEffort: '30 minutos',
+        details: 'Ingrese al módulo RoPA, revise las sugerencias automáticas generadas y confirme los borradores correspondientes para poder evaluar el cumplimiento.'
+      }]
+    };
+  }
+
   const findings: DiagnosisFinding[] = [];
   const actionPlan: ActionStep[] = [];
   let scoreTotal = 100;
@@ -297,7 +323,6 @@ export function evaluateQuestionnaire(answers: DiagnosisAnswers): EvaluationResu
   }
 
   // Rule 8: RoPA Obligation (Art. 12)
-  const confirmedRopa = answers.confirmed_ropa_count ?? 0;
   if (confirmedRopa === 0) {
     const penalty = 15;
     const riskUtm = 10000;

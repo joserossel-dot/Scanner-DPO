@@ -450,8 +450,8 @@ export default function RopaInventoryView({ token }: RopaInventoryViewProps) {
                 <Sparkles size={16} className="text-amber-500 animate-pulse animate-duration-1000" />
                 <span>Sugerencias del Escáner e IA ({drafts.length} Borradores)</span>
               </h3>
-              <p className="text-[11px] text-slate-400 leading-relaxed">
-                Detectamos tecnologías y respuestas compatibles con actividades de datos. Revise y confirme estos borradores para agregarlos formalmente a su inventario oficial.
+              <p className="text-[11px] text-amber-305/80 leading-relaxed">
+                El sistema ha detectado estas actividades. Por favor, confirme o complete la información para generar su diagnóstico de riesgos.
               </p>
 
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">

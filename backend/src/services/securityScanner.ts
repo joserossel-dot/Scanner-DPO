@@ -220,19 +220,21 @@ function scanExposedFile(hostname: string, filePath: string, keywords: string[])
 // Main scan runner
 export async function runSecurityScan(domain: string, allowDeepPentest = false): Promise<SecurityScanResult> {
   const hostname = getHostname(domain);
+  
+  if (hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '::1') {
+    throw new Error("Escaneo bloqueado: No se pueden auditar entornos locales o dominios inaccesibles. Use una URL pública válida.");
+  }
+
   console.log(`[SecurityScanner] Iniciando análisis real sobre hostname: ${hostname}`);
 
   // SSRF prevention: DNS resolution check
   try {
     const lookupRes = await dnsLookup(hostname);
     if (isPrivateIp(lookupRes.address)) {
-      throw new Error("No se permite escanear hosts o IPs privadas (Prevención de SSRF).");
+      throw new Error("Escaneo bloqueado: No se pueden auditar entornos locales o dominios inaccesibles. Use una URL pública válida.");
     }
   } catch (dnsErr: any) {
-    if (dnsErr.message.includes("SSRF")) {
-      throw dnsErr;
-    }
-    throw new Error("No pudimos resolver el dominio para el análisis automático.");
+    throw new Error("Escaneo bloqueado: No se pueden auditar entornos locales o dominios inaccesibles. Use una URL pública válida.");
   }
 
   try {
@@ -352,23 +354,7 @@ export async function runSecurityScan(domain: string, allowDeepPentest = false):
 
   } catch (err: any) {
     console.error(`[SecurityScanner] Falla crítica al escanear ${hostname}:`, err.message);
-    
-    // For non-local domains, we MUST return a single critical finding
-    return {
-      domain,
-      scanDate: new Date().toISOString(),
-      score: 0,
-      vulnerabilities: [
-        {
-          id: 'server_unreachable',
-          title: 'Bloqueo de Auditoría o Servidor Inaccesible',
-          severity: 'CRITICAL',
-          description: `No pudimos auditar los certificados ni las cabeceras de seguridad. El servidor destino rechazó la conexión, superó el tiempo de espera (Timeout) o carece de protocolo HTTPS válido. (Error interno: ${err.message || 'error desconocido'}).`,
-          recommendation: 'Verificar la conectividad del servidor, configurar puertos y firewalls para permitir el tráfico entrante HTTPS (puerto 443), y asegurarse de que el dominio está activo.',
-          type: 'SSL_EXPIRED'
-        }
-      ]
-    };
+    throw new Error("Escaneo bloqueado: No se pueden auditar entornos locales o dominios inaccesibles. Use una URL pública válida.");
   }
 }
 
