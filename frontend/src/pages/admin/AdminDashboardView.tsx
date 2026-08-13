@@ -42,7 +42,13 @@ interface AdminDashboardViewProps {
   token: string | null;
 }
 
-const API_BASE = (import.meta as any).env.VITE_API_URL || '';
+const API_BASE = (() => {
+  const url = (import.meta as any).env.VITE_API_URL || '';
+  if (url && !url.startsWith('http://') && !url.startsWith('https://')) {
+    return 'https://' + url;
+  }
+  return url;
+})();
 
 export default function AdminDashboardView({ token }: AdminDashboardViewProps) {
   const [tenants, setTenants] = useState<Tenant[]>([]);

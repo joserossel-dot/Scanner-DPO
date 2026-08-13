@@ -2,7 +2,13 @@ import React, { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Shield, Mail, RefreshCw, AlertCircle, CheckCircle } from 'lucide-react';
 
-const API_BASE = (import.meta as any).env.VITE_API_URL || '';
+const API_BASE = (() => {
+  const url = (import.meta as any).env.VITE_API_URL || '';
+  if (url && !url.startsWith('http://') && !url.startsWith('https://')) {
+    return 'https://' + url;
+  }
+  return url;
+})();
 
 export default function ForgotPasswordView() {
   const [email, setEmail] = useState('');

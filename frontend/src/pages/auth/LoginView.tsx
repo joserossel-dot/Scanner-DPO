@@ -2,7 +2,13 @@ import React, { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { Shield, Key, Mail, RefreshCw, AlertCircle } from 'lucide-react';
 
-const API_BASE = (import.meta as any).env.VITE_API_URL || '';
+const API_BASE = (() => {
+  const url = (import.meta as any).env.VITE_API_URL || '';
+  if (url && !url.startsWith('http://') && !url.startsWith('https://')) {
+    return 'https://' + url;
+  }
+  return url;
+})();
 
 interface LoginViewProps {
   onLoginSuccess: (token: string, user: any) => void;
