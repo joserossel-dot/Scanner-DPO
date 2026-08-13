@@ -46,151 +46,168 @@ interface DiagnosisResultsViewProps {
   results: DiagnosisResults;
   onNavigateToRemediation: (subTab: 'cmp' | 'arco' | 'transfers' | 'policies' | 'ropa_hub') => void;
   onReset: () => void;
+  isLoading?: boolean;
 }
 
 export default function DiagnosisResultsView({ 
   results, 
   onNavigateToRemediation, 
-  onReset 
+  onReset,
+  isLoading = false
 }: DiagnosisResultsViewProps) {
-  const { scoreTotal, riesgoUTM, findings } = results;
   const [expandedPhase, setExpandedPhase] = useState<number | null>(1);
 
-  const isRopaMissing = findings.some(f => f.id === 'FIND_ROPA_MISSING');
-  const displayScore = isRopaMissing ? 30 : scoreTotal;
+  // 2. ESTADOS DE CARGA (Loading Fallback)
+  if (isLoading || !results || !results.findings) {
+    return (
+      <div className="flex flex-col items-center justify-center p-12 text-center bg-slate-900/60 border border-slate-800 rounded-xl max-w-xl mx-auto space-y-4 my-8 shadow-xl">
+        <div className="w-12 h-12 border-4 border-indigo-500 border-t-transparent rounded-full animate-spin mx-auto" />
+        <h4 className="text-sm font-bold text-white">Calculando su diagnóstico legal...</h4>
+        <p className="text-xs text-slate-400">Procesando respuestas y cruzando datos de la auditoría web en tiempo real.</p>
+      </div>
+    );
+  }
 
-  // Determine severity border and text color for the score
-  const getScoreColor = () => {
-    if (isRopaMissing) return 'text-amber-500 stroke-amber-500 animate-pulse';
-    if (scoreTotal >= 80) return 'text-emerald-500 stroke-emerald-500';
-    if (scoreTotal >= 50) return 'text-amber-500 stroke-amber-500';
-    return 'text-rose-500 stroke-rose-500';
-  };
+  try {
+    const findings = results.findings || [];
+    const scoreTotal = results.scoreTotal !== undefined ? results.scoreTotal : (results.globalScore !== undefined ? results.globalScore : 0);
+    const riesgoUTM = results.riesgoUTM !== undefined ? results.riesgoUTM : (findings?.reduce((max, f) => Math.max(max, f.riskUtm || 0), 0) || 20000);
 
-  const getScoreBgColorClass = () => {
-    if (isRopaMissing) return 'bg-amber-950/20 border-amber-900/30';
-    if (scoreTotal >= 80) return 'bg-emerald-950/20 border-emerald-900/30';
-    if (scoreTotal >= 50) return 'bg-amber-950/20 border-amber-900/30';
-    return 'bg-rose-950/20 border-rose-900/30';
-  };
+    const isRopaMissing = findings?.some(f => f?.id === 'FIND_ROPA_MISSING') || false;
+    const displayScore = isRopaMissing ? 30 : scoreTotal;
 
-  // Phase classification helper
-  const classifyFinding = (f: DiagnosisFinding): 1 | 2 | 3 => {
-    const id = f.id;
-    const cat = f.category?.toLowerCase() || '';
-    const desc = f.description?.toLowerCase() || '';
-    
-    // Fase 1: Cambios Digitales y Web: Cookies, Trackers, Formularios web y Canal ARCO+.
-    if (
-      id?.includes('COOKIES') || 
-      id?.includes('TRACKER') || 
-      id?.includes('FORM') || 
-      id?.includes('ARCO') || 
-      cat.includes('cookie') || 
-      cat.includes('tracker') || 
-      cat.includes('form') || 
-      cat.includes('arco') ||
-      desc.includes('cookie') || 
-      desc.includes('tracker') || 
-      desc.includes('formulario') || 
-      desc.includes('arco')
-    ) {
-      return 1;
-    }
-    
-    // Fase 2: Blindaje Documental: Política de Privacidad, Textos Informativos y Contratos DPA/SCC.
-    if (
-      id?.includes('POLICY') || 
-      id?.includes('POLICIES') || 
-      id?.includes('CONTRACT') || 
-      id?.includes('TRANSFER') || 
-      id?.includes('TID') || 
-      id?.includes('DPA') || 
-      id?.includes('SCC') || 
-      id?.includes('VENDORS') || 
-      cat.includes('polic') || 
-      cat.includes('contract') || 
-      cat.includes('transfer') || 
-      cat.includes('proveedor') ||
-      desc.includes('política') || 
-      desc.includes('contrato') || 
-      desc.includes('cláusula') ||
-      desc.includes('scc') ||
-      desc.includes('dpa')
-    ) {
-      return 2;
-    }
-    
-    // Fase 3: Cambios Operativos y Procesos: Cifrado, Bases de Datos, Biometría, retención de CVs, y Shadow IT.
-    return 3;
-  };
+    // Determine severity border and text color for the score
+    const getScoreColor = () => {
+      if (isRopaMissing) return 'text-amber-500 stroke-amber-500 animate-pulse';
+      if (scoreTotal >= 80) return 'text-emerald-500 stroke-emerald-500';
+      if (scoreTotal >= 50) return 'text-amber-500 stroke-amber-500';
+      return 'text-rose-500 stroke-rose-500';
+    };
 
-  // Maps finding to corresponding remediation subtab
-  const getSubTabForFinding = (f: DiagnosisFinding): 'cmp' | 'arco' | 'transfers' | 'policies' | 'ropa_hub' => {
-    const id = f.id;
-    const cat = f.category?.toLowerCase() || '';
-    const desc = f.description?.toLowerCase() || '';
+    const getScoreBgColorClass = () => {
+      if (isRopaMissing) return 'bg-amber-950/20 border-amber-900/30';
+      if (scoreTotal >= 80) return 'bg-emerald-950/20 border-emerald-900/30';
+      if (scoreTotal >= 50) return 'bg-amber-950/20 border-amber-900/30';
+      return 'bg-rose-950/20 border-rose-900/30';
+    };
 
-    if (id === 'FIND_ROPA_MISSING' || id === 'FIND_ROPA_DRAFTS_PENDING') {
-      return 'ropa_hub';
-    }
-    if (id?.includes('ARCO') || cat.includes('arco') || desc.includes('arco')) {
-      return 'arco';
-    }
-    if (id?.includes('COOKIES') || cat.includes('cookie') || desc.includes('cookie') || desc.includes('tracker')) {
+    // Phase classification helper
+    const classifyFinding = (f: DiagnosisFinding): 1 | 2 | 3 => {
+      const id = f?.id || '';
+      const cat = f?.category?.toLowerCase() || '';
+      const desc = f?.description?.toLowerCase() || '';
+      
+      // Fase 1: Cambios Digitales y Web: Cookies, Trackers, Formularios web y Canal ARCO+.
+      if (
+        id?.includes('COOKIES') || 
+        id?.includes('TRACKER') || 
+        id?.includes('FORM') || 
+        id?.includes('ARCO') || 
+        cat.includes('cookie') || 
+        cat.includes('tracker') || 
+        cat.includes('form') || 
+        cat.includes('arco') ||
+        desc.includes('cookie') || 
+        desc.includes('tracker') || 
+        desc.includes('formulario') || 
+        desc.includes('arco')
+      ) {
+        return 1;
+      }
+      
+      // Fase 2: Blindaje Documental: Política de Privacidad, Textos Informativos y Contratos DPA/SCC.
+      if (
+        id?.includes('POLICY') || 
+        id?.includes('POLICIES') || 
+        id?.includes('CONTRACT') || 
+        id?.includes('TRANSFER') || 
+        id?.includes('TID') || 
+        id?.includes('DPA') || 
+        id?.includes('SCC') || 
+        id?.includes('VENDORS') || 
+        cat.includes('polic') || 
+        cat.includes('contract') || 
+        cat.includes('transfer') || 
+        cat.includes('proveedor') ||
+        desc.includes('política') || 
+        desc.includes('contrato') || 
+        desc.includes('cláusula') ||
+        desc.includes('scc') ||
+        desc.includes('dpa')
+      ) {
+        return 2;
+      }
+      
+      // Fase 3: Cambios Operativos y Procesos: Cifrado, Bases de Datos, Biometría, retención de CVs, y Shadow IT.
+      return 3;
+    };
+
+    // Maps finding to corresponding remediation subtab
+    const getSubTabForFinding = (f: DiagnosisFinding): 'cmp' | 'arco' | 'transfers' | 'policies' | 'ropa_hub' => {
+      const id = f?.id || '';
+      const cat = f?.category?.toLowerCase() || '';
+      const desc = f?.description?.toLowerCase() || '';
+
+      if (id === 'FIND_ROPA_MISSING' || id === 'FIND_ROPA_DRAFTS_PENDING') {
+        return 'ropa_hub';
+      }
+      if (id?.includes('ARCO') || cat.includes('arco') || desc.includes('arco')) {
+        return 'arco';
+      }
+      if (id?.includes('COOKIES') || cat.includes('cookie') || desc.includes('cookie') || desc.includes('tracker')) {
+        return 'cmp';
+      }
+      if (id?.includes('POLICY') || cat.includes('polic') || desc.includes('política')) {
+        return 'policies';
+      }
+      if (
+        id?.includes('CONTRACT') || 
+        id?.includes('TRANSFER') || 
+        id?.includes('TID') || 
+        cat.includes('transfer') || 
+        cat.includes('proveedor') || 
+        desc.includes('dpa') || 
+        desc.includes('scc')
+      ) {
+        return 'transfers';
+      }
       return 'cmp';
-    }
-    if (id?.includes('POLICY') || cat.includes('polic') || desc.includes('política')) {
-      return 'policies';
-    }
-    if (
-      id?.includes('CONTRACT') || 
-      id?.includes('TRANSFER') || 
-      id?.includes('TID') || 
-      cat.includes('transfer') || 
-      cat.includes('proveedor') || 
-      desc.includes('dpa') || 
-      desc.includes('scc')
-    ) {
-      return 'transfers';
-    }
-    return 'cmp';
-  };
+    };
 
-  // Business impact descriptions for Phase 3 findings
-  const getBusinessImpact = (f: DiagnosisFinding): string => {
-    const id = f.id;
-    if (id === 'FIND_TI_ENCRYPTION' || id === 'FIND_SENSITIVE_UNSECURE') {
-      return "Tendrá que modificar sus procesos de almacenamiento. Su equipo no puede seguir guardando bases de datos o información médica sin cifrar en reposo.";
-    }
-    if (id === 'FIND_BIOMETRICS_UNCONSENTED') {
-      return "Tendrá que modificar sus procesos de control de accesos. Su equipo no puede registrar la huella o rostro de los trabajadores sin firma y registro formal de consentimientos.";
-    }
-    if (id === 'FIND_DEBT_RETENTION') {
-      return "Tendrá que modificar sus políticas comerciales. Su organización no puede retener deudas prescriptas ni currículums de candidatos sin plazos regulados de destrucción.";
-    }
-    if (id === 'FIND_SHADOW_IT_NO_DPA') {
-      return "Tendrá que regular el uso de herramientas SaaS. Su equipo no puede habilitar plataformas en la nube de forma desregulada sin firmar contratos DPA corporativos.";
-    }
-    if (id === 'FIND_ROPA_MISSING' || id === 'FIND_ROPA_DRAFTS_PENDING') {
-      return "Tendrá que implementar un inventario formal. Es indispensable registrar y confirmar todas las actividades de tratamiento de datos personales de la empresa.";
-    }
-    return "Tendrá que modificar sus procesos internos. Su organización debe regularizar y documentar el tratamiento de datos para evitar sanciones.";
-  };
+    // Business impact descriptions for Phase 3 findings
+    const getBusinessImpact = (f: DiagnosisFinding): string => {
+      const id = f?.id || '';
+      if (id === 'FIND_TI_ENCRYPTION' || id === 'FIND_SENSITIVE_UNSECURE') {
+        return "Tendrá que modificar sus procesos de almacenamiento. Su equipo no puede seguir guardando bases de datos o información médica sin cifrar en reposo.";
+      }
+      if (id === 'FIND_BIOMETRICS_UNCONSENTED') {
+        return "Tendrá que modificar sus procesos de control de accesos. Su equipo no puede registrar la huella o rostro de los trabajadores sin firma y registro formal de consentimientos.";
+      }
+      if (id === 'FIND_DEBT_RETENTION') {
+        return "Tendrá que modificar sus políticas comerciales. Su organización no puede retener deudas prescriptas ni currículums de candidatos sin plazos regulados de destrucción.";
+      }
+      if (id === 'FIND_SHADOW_IT_NO_DPA') {
+        return "Tendrá que regular el uso de herramientas SaaS. Su equipo no puede habilitar plataformas en la nube de forma desregulada sin firmar contratos DPA corporativos.";
+      }
+      if (id === 'FIND_ROPA_MISSING' || id === 'FIND_ROPA_DRAFTS_PENDING') {
+        return "Tendrá que implementar un inventario formal. Es indispensable registrar y confirmar todas las actividades de tratamiento de datos personales de la empresa.";
+      }
+      return "Tendrá que modificar sus procesos internos. Su organización debe regularizar y documentar el tratamiento de datos para evitar sanciones.";
+    };
 
-  const phase1Findings = findings.filter(f => classifyFinding(f) === 1);
-  const phase2Findings = findings.filter(f => classifyFinding(f) === 2);
-  const phase3Findings = findings.filter(f => classifyFinding(f) === 3);
+    const phase1Findings = findings?.filter(f => classifyFinding(f) === 1) || [];
+    const phase2Findings = findings?.filter(f => classifyFinding(f) === 2) || [];
+    const phase3Findings = findings?.filter(f => classifyFinding(f) === 3) || [];
 
-  const togglePhase = (phaseNum: number) => {
-    setExpandedPhase(expandedPhase === phaseNum ? null : phaseNum);
-  };
+    const togglePhase = (phaseNum: number) => {
+      setExpandedPhase(expandedPhase === phaseNum ? null : phaseNum);
+    };
 
-  const handleTriggerPaywallAlert = () => {
-    alert("Esta funcionalidad requiere actualizar al Plan Pro de Scanner DPO. Póngase en contacto con ventas para activar su cuenta.");
-  };
+    const handleTriggerPaywallAlert = () => {
+      alert("Esta funcionalidad requiere actualizar al Plan Pro de Scanner DPO. Póngase en contacto con ventas para activar su cuenta.");
+    };
 
-  return (
+    return (
     <div className="w-full space-y-6">
       
       {/* 1. Hero Card: Global Score & Risk callout */}
@@ -574,7 +591,26 @@ export default function DiagnosisResultsView({
       )}
         </>
       )}
-
     </div>
   );
+  } catch (err) {
+    console.error("Error rendering DiagnosisResultsView:", err);
+    return (
+      <div className="p-8 text-center max-w-xl mx-auto my-8 bg-rose-950/20 border border-rose-900/40 rounded-xl space-y-4 shadow-2xl">
+        <div className="w-12 h-12 bg-rose-950 text-rose-500 rounded-full flex items-center justify-center mx-auto">
+          <AlertTriangle size={24} />
+        </div>
+        <h4 className="text-base font-bold text-white">Ocurrió un error al cargar el plan de acción</h4>
+        <p className="text-xs text-slate-400 leading-relaxed">
+          Los datos del diagnóstico no pudieron ser procesados correctamente. Por favor, intente recargar la página o volver a evaluar el cuestionario.
+        </p>
+        <button 
+          onClick={onReset}
+          className="px-4 py-2 bg-indigo-650 hover:bg-indigo-600 text-white font-bold text-xs rounded-lg transition-all"
+        >
+          Volver a Evaluar Cuestionario
+        </button>
+      </div>
+    );
+  }
 }

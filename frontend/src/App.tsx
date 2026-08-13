@@ -348,7 +348,13 @@ export function Dashboard({ token, user, onLogout, initialTab }: DashboardProps)
         
         // Refresh diagnosis stats
         setIsFetchingDiagnosis(true);
-        const diagRes = await fetch(`${API_BASE}/api/reports/diagnosis?domain=localhost:3000`);
+        const headers: Record<string, string> = {};
+        if (token) {
+          headers['Authorization'] = `Bearer ${token}`;
+        }
+        const diagRes = await fetch(`${API_BASE}/api/reports/diagnosis?domain=localhost:3000`, {
+          headers
+        });
         if (diagRes.ok) {
           const diagData = await diagRes.json();
           setDiagnosisData(diagData);
@@ -368,7 +374,13 @@ export function Dashboard({ token, user, onLogout, initialTab }: DashboardProps)
   const handleFetchDiagnosis = async () => {
     setIsFetchingDiagnosis(true);
     try {
-      const res = await fetch(`${API_BASE}/api/reports/diagnosis?domain=localhost:3000`);
+      const headers: Record<string, string> = {};
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
+      }
+      const res = await fetch(`${API_BASE}/api/reports/diagnosis?domain=localhost:3000`, {
+        headers
+      });
       if (res.ok) {
         const data = await res.json();
         setDiagnosisData(data);

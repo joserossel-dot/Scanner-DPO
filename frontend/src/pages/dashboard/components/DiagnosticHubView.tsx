@@ -199,32 +199,29 @@ export default function DiagnosticHubView({ token, onEvaluationSuccess }: Diagno
     );
   };
 
-  // Transition to results (fetching latest if not locally present)
+  // Transition to results (always fetching latest to ensure newly confirmed ROPAs are included)
   const handleTransitionToResults = async () => {
     if (!onEvaluationSuccess) return;
     
-    if (evaluationData) {
-      onEvaluationSuccess(evaluationData);
-    } else {
-      setIsTransitioning(true);
-      try {
-        const res = await fetch(`${API_BASE}/api/reports/diagnosis?domain=localhost:3000`, {
-          headers: {
-            'Authorization': `Bearer ${token}`
-          }
-        });
-        if (res.ok) {
-          const data = await res.json();
-          onEvaluationSuccess(data);
-        } else {
-          alert('Por favor complete y envíe el cuestionario primero.');
+    setIsTransitioning(true);
+    try {
+      const res = await fetch(`${API_BASE}/api/reports/diagnosis?domain=localhost:3000`, {
+        headers: {
+          'Authorization': `Bearer ${token}`
         }
-      } catch (e) {
-        console.error(e);
-        alert('Error de comunicación al obtener los resultados.');
-      } finally {
-        setIsTransitioning(false);
+      });
+      if (res.ok) {
+        const data = await res.json();
+        // Transition ONLY after successfully receiving valid results
+        onEvaluationSuccess(data);
+      } else {
+        alert('Por favor complete y envíe el cuestionario primero.');
       }
+    } catch (e) {
+      console.error(e);
+      alert('Error de comunicación al obtener los resultados.');
+    } finally {
+      setIsTransitioning(false);
     }
   };
 
