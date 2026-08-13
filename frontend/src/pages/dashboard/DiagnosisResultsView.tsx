@@ -38,7 +38,7 @@ export interface DiagnosisResults {
 
 interface DiagnosisResultsViewProps {
   results: DiagnosisResults;
-  onNavigateToRemediation: (subTab: 'cmp' | 'arco' | 'transfers' | 'policies') => void;
+  onNavigateToRemediation: (subTab: 'cmp' | 'arco' | 'transfers' | 'policies' | 'ropa_hub') => void;
   onReset: () => void;
 }
 
@@ -63,12 +63,29 @@ export default function DiagnosisResultsView({
   };
 
   // Maps action plan title to corresponding remediation subtab
-  const getRemediationSubtab = (title: string): 'cmp' | 'arco' | 'transfers' | 'policies' => {
+  const getRemediationSubtab = (title: string, findingId?: string): 'cmp' | 'arco' | 'transfers' | 'policies' | 'ropa_hub' => {
+    if (findingId === 'FIND_ROPA_MISSING' || findingId === 'FIND_ROPA_DRAFTS_PENDING') {
+      return 'ropa_hub';
+    }
+    if (findingId === 'FIND_POLICIES_MISSING') {
+      return 'policies';
+    }
+    if (findingId === 'FIND_TRANSFERS_UNAUTHORIZED') {
+      return 'transfers';
+    }
+    if (findingId === 'FIND_ARCO_MISSING') {
+      return 'arco';
+    }
+    
+    // Fallback structured matching
     const t = title.toLowerCase();
+    if (t.includes('ropa') || t.includes('inventario')) {
+      return 'ropa_hub';
+    }
     if (t.includes('dpa') || t.includes('scc') || t.includes('cláusulas') || t.includes('proveedor')) {
       return 'transfers';
     }
-    if (t.includes('asistencia') || t.includes('biomet')) {
+    if (t.includes('asistencia') || t.includes('biomet') || t.includes('arco') || t.includes('canal')) {
       return 'arco';
     }
     if (t.includes('polít') || t.includes('aviso')) {
@@ -167,7 +184,15 @@ export default function DiagnosisResultsView({
         <div className="space-y-4">
           {actionPlan.length > 0 ? (
             actionPlan.map((step) => {
-              const subTab = getRemediationSubtab(step.title);
+              const finding = findings.find(f => {
+                if (f.id === 'FIND_ROPA_MISSING' && step.title.toLowerCase().includes('ropa')) return true;
+                if (f.id === 'FIND_ROPA_DRAFTS_PENDING' && step.title.toLowerCase().includes('borradores')) return true;
+                if (f.id === 'FIND_POLICIES_MISSING' && step.title.toLowerCase().includes('política')) return true;
+                if (f.id === 'FIND_TRANSFERS_UNAUTHORIZED' && step.title.toLowerCase().includes('contratos')) return true;
+                if (f.id === 'FIND_ARCO_MISSING' && step.title.toLowerCase().includes('arco')) return true;
+                return false;
+              });
+              const subTab = getRemediationSubtab(step.title, finding?.id);
               return (
                 <div 
                   key={step.step} 

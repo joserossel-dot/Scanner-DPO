@@ -1369,8 +1369,13 @@ Firmas autorizadas:
                 <DiagnosisResultsView 
                   results={evalResults}
                   onNavigateToRemediation={(subTab) => {
-                    setActiveTab('remediation');
-                    setRemediationSubTab(subTab);
+                    if (subTab === 'ropa_hub') {
+                      setActiveTab('diagnosis');
+                      setEvalResults(null);
+                    } else {
+                      setActiveTab('remediation');
+                      setRemediationSubTab(subTab as any);
+                    }
                   }}
                   onReset={() => setEvalResults(null)}
                 />

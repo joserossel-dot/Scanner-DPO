@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Sparkles, Info, CheckCircle, XCircle, FileText, HelpCircle, ShieldAlert } from 'lucide-react';
+import { Sparkles, CheckCircle, XCircle, FileText, HelpCircle, ShieldAlert } from 'lucide-react';
 import DiagnosticQuestionnaire from './DiagnosticQuestionnaire';
 
 interface RopaRecord {
@@ -26,6 +26,7 @@ export default function DiagnosticHubView({ token, onEvaluationSuccess }: Diagno
   const [drafts, setDrafts] = useState<RopaRecord[]>([]);
   const [isLoadingDrafts, setIsLoadingDrafts] = useState(false);
   const [evaluationData, setEvaluationData] = useState<any>(null);
+  const [isTransitioning, setIsTransitioning] = useState(false);
 
   // Fetch initial drafts
   const fetchDrafts = async () => {
@@ -71,9 +72,6 @@ export default function DiagnosticHubView({ token, onEvaluationSuccess }: Diagno
           setDrafts(data.ropaDraftsGenerated);
         } else {
           fetchDrafts();
-        }
-        if (onEvaluationSuccess) {
-          onEvaluationSuccess(data);
         }
       } else {
         alert('Ocurrió un error al enviar el diagnóstico.');
@@ -134,6 +132,36 @@ export default function DiagnosticHubView({ token, onEvaluationSuccess }: Diagno
     }
   };
 
+  // Transition to results (fetching latest if not locally present)
+  const handleTransitionToResults = async () => {
+    if (!onEvaluationSuccess) return;
+    
+    if (evaluationData) {
+      onEvaluationSuccess(evaluationData);
+    } else {
+      setIsTransitioning(true);
+      try {
+        const res = await fetch(`${API_BASE}/api/reports/diagnosis?domain=localhost:3000`, {
+          headers: {
+            'Authorization': `Bearer ${token}`
+          }
+        });
+        if (res.ok) {
+          const data = await res.json();
+          onEvaluationSuccess(data);
+        } else {
+          // If no report exists yet, show general warning
+          alert('Por favor complete y envíe el cuestionario primero.');
+        }
+      } catch (e) {
+        console.error(e);
+        alert('Error de comunicación al obtener los resultados.');
+      } finally {
+        setIsTransitioning(false);
+      }
+    }
+  };
+
   return (
     <div className="space-y-6">
       {/* Header local */}
@@ -145,8 +173,8 @@ export default function DiagnosticHubView({ token, onEvaluationSuccess }: Diagno
       <div className="grid grid-cols-1 lg:grid-cols-10 gap-6">
         
         {/* Columna Izquierda (60%): Cuestionario */}
-        <div className="lg:col-span-6 space-y-6">
-          <div className="bg-slate-900/60 border border-slate-800/80 rounded-2xl p-6 shadow-md text-left">
+        <div className="lg:col-span-6 space-y-6 text-left">
+          <div className="bg-slate-900/60 border border-slate-800/80 rounded-2xl p-6 shadow-md">
             <h2 className="text-sm font-bold text-white mb-4 flex items-center gap-2">
               <FileText className="text-indigo-400 w-4 h-4" />
               <span>Cuestionario de Cumplimiento PYME</span>
@@ -156,8 +184,8 @@ export default function DiagnosticHubView({ token, onEvaluationSuccess }: Diagno
         </div>
 
         {/* Columna Derecha (40%): Panel de Borradores en Vivo */}
-        <div className="lg:col-span-4 space-y-6">
-          <div className="bg-slate-900/40 border border-slate-800/60 rounded-2xl p-5 shadow-lg flex flex-col h-full text-left relative overflow-hidden">
+        <div className="lg:col-span-4 space-y-6 text-left">
+          <div className="bg-slate-900/40 border border-slate-800/60 rounded-2xl p-5 shadow-lg flex flex-col h-full relative overflow-hidden">
             <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500" />
             
             <div className="flex justify-between items-center mb-3">
@@ -185,16 +213,16 @@ export default function DiagnosticHubView({ token, onEvaluationSuccess }: Diagno
                 <div>
                   <h4 className="text-xs font-bold text-slate-350">Sin borradores pendientes</h4>
                   <p className="text-[10px] text-slate-500 mt-1 leading-normal max-w-xs mx-auto">
-                    Complete y envíe el cuestionario de la izquierda para que el motor de inferencia genere los borradores automáticos.
+                    Todos los borradores han sido procesados. Puede confirmar su inventario en el botón inferior.
                   </p>
                 </div>
               </div>
             ) : (
-              <div className="space-y-4 max-h-[600px] overflow-y-auto pr-1">
+              <div className="space-y-4 max-h-[500px] overflow-y-auto pr-1">
                 {drafts.map((record) => (
                   <div
                     key={record.id}
-                    className="bg-slate-950/70 border border-slate-850 hover:border-slate-800 rounded-xl p-4 space-y-3 transition-all relative overflow-hidden animate-fadeIn"
+                    className="bg-slate-950/70 border border-slate-850 hover:border-slate-800 rounded-xl p-4 space-y-3 transition-all relative overflow-hidden"
                   >
                     <div className="absolute top-0 left-0 bottom-0 w-1 bg-amber-500/80" />
                     
@@ -240,6 +268,27 @@ export default function DiagnosticHubView({ token, onEvaluationSuccess }: Diagno
           </div>
         </div>
 
+      </div>
+
+      {/* Botón de Cierre */}
+      <div style={{ display: 'flex', justifyContent: 'flex-end', paddingTop: '20px', borderTop: '1px solid var(--border-color)', marginTop: '20px' }}>
+        <button
+          onClick={handleTransitionToResults}
+          disabled={drafts.length > 0 || isTransitioning}
+          className="btn-save"
+          style={{
+            padding: '12px 24px',
+            fontSize: '13px',
+            fontWeight: 'bold',
+            opacity: drafts.length > 0 ? 0.4 : 1,
+            cursor: drafts.length > 0 ? 'not-allowed' : 'pointer',
+            background: drafts.length > 0 ? '#1e293b' : 'var(--color-primary)',
+            color: drafts.length > 0 ? '#64748b' : 'white',
+            border: drafts.length > 0 ? '1px solid #334155' : 'none'
+          }}
+        >
+          {isTransitioning ? 'Cargando Resultados...' : 'Confirmar Inventario y Ver Resultados'}
+        </button>
       </div>
     </div>
   );
