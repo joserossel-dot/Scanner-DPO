@@ -2,6 +2,8 @@ import { useState, useEffect, FormEvent } from 'react';
 import { BrowserRouter, Routes, Route, Link, useLocation, useNavigate, Navigate } from 'react-router-dom';
 import LandingPage from './pages/LandingPage';
 import DiagnosticQuestionnaire from './pages/dashboard/components/DiagnosticQuestionnaire';
+import DiagnosticHubView from './pages/dashboard/components/DiagnosticHubView';
+import ProgressStepper from './pages/dashboard/components/ProgressStepper';
 import DiagnosisResultsView from './pages/dashboard/DiagnosisResultsView';
 import ContractBuilderView from './pages/dashboard/components/ContractBuilderView';
 import LoginView from './pages/auth/LoginView';
@@ -301,6 +303,15 @@ export function Dashboard({ token, user, onLogout, initialTab }: DashboardProps)
       
       // Trigger scan
       triggerAutoScan(urlToScan);
+    }
+  }, [location.state]);
+
+  // Handle skipScan redirect to step 2 (diagnosis hub)
+  useEffect(() => {
+    if (location.state && (location.state as any).skipScan) {
+      setActiveTab('diagnosis');
+      // Clear state so we don't force diagnosis tab on refresh/navigation
+      navigate(location.pathname, { replace: true, state: {} });
     }
   }, [location.state]);
 
@@ -1364,7 +1375,7 @@ Firmas autorizadas:
                   onReset={() => setEvalResults(null)}
                 />
               ) : (
-                <DiagnosticQuestionnaire onSubmit={handleEvaluateQuestionnaire} token={token} />
+                <DiagnosticHubView token={token} onEvaluationSuccess={(data) => setEvalResults(data)} />
               )}
             </div>
           </div>
@@ -1873,7 +1884,7 @@ Firmas autorizadas:
             onClick={() => { setActiveTab('scanner'); fetchLatestScan(); }}
           >
             <Search size={16} />
-            <span>🔍 1. Escáner & Auditoría</span>
+            <span>🔍 1. Escáner Automático</span>
           </div>
           
           <div 
@@ -1881,16 +1892,7 @@ Firmas autorizadas:
             onClick={() => { setActiveTab('diagnosis'); handleFetchDiagnosis(); fetchIncidents(); }}
           >
             <Activity size={16} />
-            <span>📊 2. Diagnóstico & Plan</span>
-          </div>
-
-          <div 
-            className={`nav-item ${activeTab === 'ropa' ? 'active' : ''}`}
-            style={{ paddingLeft: '28px', fontSize: '11.5px', opacity: 0.85 }}
-            onClick={() => { setActiveTab('ropa'); }}
-          >
-            <FolderLock size={14} />
-            <span>📓 Inventario de Datos (RoPA)</span>
+            <span>📊 2. Inventario y Diagnóstico</span>
           </div>
           
           <div 
@@ -1911,10 +1913,7 @@ Firmas autorizadas:
           >
             <Shield size={16} className="text-amber-400" />
             <span className="flex items-center gap-1">
-              ⚖️ 4. DPO Suite
-              <span className="bg-gradient-to-r from-amber-500 to-yellow-500 text-slate-950 font-extrabold text-[8px] uppercase px-1 rounded border border-amber-400 shadow-sm scale-90">
-                Ent
-              </span>
+              ⚖️ 4. DPO Suite (Recomendado)
             </span>
           </div>
 
@@ -1986,6 +1985,13 @@ Firmas autorizadas:
 
       {/* Main Workspace */}
       <main className="main-workspace">
+        <div style={{ marginBottom: '24px' }}>
+          <ProgressStepper 
+            activeTab={activeTab} 
+            diagnosisData={diagnosisData} 
+            draftsCount={diagnosisData?.draftRopaCount || 0} 
+          />
+        </div>
         {activeTab === 'scanner' && renderScanner()}
         {activeTab === 'diagnosis' && renderDiagnosis()}
         {activeTab === 'remediation' && renderRemediation()}

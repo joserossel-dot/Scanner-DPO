@@ -1,0 +1,1 @@
+export const DISCLAIMER_V1_TEXT = "\n\nAVISO LEGAL Y LIMITACIÓN DE RESPONSABILIDAD: Este documento ha sido generado automáticamente por Scanner DPO en base a la información declarada por el cliente. Constituye una propuesta base y no reemplaza la asesoría jurídica. Scanner DPO no se responsabiliza por modificaciones posteriores u omisiones. Versión: DISCLAIMER_V1.";

@@ -1,8 +1,4 @@
-export const DISCLAIMER_V1 = `
-<div class="legal-disclaimer" style="margin-top: 30px; padding: 15px; border-top: 1px dashed #cbd5e1; font-size: 11px; color: #64748b; text-align: justify; line-height: 1.4;">
-  <strong>AVISO LEGAL (DISCLAIMER_V1):</strong> Este documento ha sido generado mediante la plataforma automatizada Scanner-DPO basada en las declaraciones e información provistas por el usuario. El presente modelo se entrega como plantilla de referencia técnica y de cumplimiento general de la Ley N° 21.719 de Chile. No constituye, bajo ninguna circunstancia, asesoría legal, tributaria o comercial formal. Se aconseja encarecidamente la validación y adaptación final de este instrumento por parte del equipo legal o asesores jurídicos de la organización antes de su firma, publicación o presentación ante la autoridad.
-</div>
-`;
+import { DISCLAIMER_V1_TEXT } from '../constants/legalConstants.js';
 export function generatePrivacyPolicy(data) {
     const categoriesList = data.dataCategories.length > 0
         ? data.dataCategories.map((cat) => `<li><strong>${cat}</strong></li>`).join('')
@@ -88,6 +84,6 @@ export function generatePrivacyPolicy(data) {
   <p style="margin-bottom: 15px;">
     Para el ejercicio formal de sus derechos, puede ingresar una solicitud a través del **Portal Público ARCO+** dispuesto en nuestro sitio web o bien contactar de forma directa a nuestro DPO escribiendo al correo: <a href="mailto:${data.contactEmail}" style="color: #312e81; text-decoration: underline;">${data.contactEmail}</a>.
   </p>
-  ${DISCLAIMER_V1}
+  ${DISCLAIMER_V1_TEXT}
 </div>`;
 }

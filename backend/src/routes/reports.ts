@@ -255,16 +255,26 @@ router.post('/evaluate', adminCors, async (req: any, res) => {
       ]
     );
 
-    // Asynchronously generate ROPA drafts from questionnaire answers
-    analyzeQuestionnaireAnswers(req.user.id, answers).catch((err: any) => {
-      console.error('[RoPADraftService] Error in questionnaire inference:', err.message);
-    });
+    // Asynchronously generate ROPA drafts from questionnaire answers (isolated try-catch for resilience)
+    let ropaDraftsGenerated: any[] = [];
+    try {
+        await analyzeQuestionnaireAnswers(req.user.id, answers);
+        const draftsRes = await db.query(
+          "SELECT * FROM ropa_inventory WHERE user_id = $1 AND status = 'draft' ORDER BY created_at DESC",
+          [req.user.id]
+        );
+        ropaDraftsGenerated = draftsRes.rows;
+    } catch (err) {
+        console.error('[Resilience] Error in RoPA inference. Proceeding with diagnosis.', err);
+        // Fallamos de forma silenciosa para el RoPA, pero salvamos el Diagnóstico principal.
+    }
 
-    res.json({
-      id: result.rows[0]?.id || 1,
-      domain,
-      ...evaluation
-    });
+     res.json({
+       id: result.rows[0]?.id || 1,
+       domain,
+       ropaDraftsGenerated,
+       ...evaluation
+     });
   } catch (error: any) {
     console.error('Error evaluating questionnaire:', error.message);
     res.status(550).json({ error: 'Error al evaluar y guardar el cuestionario: ' + error.message });

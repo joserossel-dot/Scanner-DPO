@@ -55,7 +55,7 @@ export default function RegisterView({ onRegisterSuccess }: RegisterViewProps) {
 
       if (response.ok && data.success) {
         onRegisterSuccess(data.token, data.user);
-        navigate('/dashboard');
+        navigate('/dashboard', { state: location.state });
       } else {
         setErrorMsg(data.error || 'Error al crear la cuenta de la organización.');
       }

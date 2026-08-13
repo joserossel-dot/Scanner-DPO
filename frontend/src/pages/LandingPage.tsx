@@ -172,7 +172,16 @@ export default function LandingPage() {
           </form>
 
           {scanError && (
-            <p className="mt-3 text-xs text-rose-400 font-semibold">{scanError}</p>
+            <div className="mt-3 space-y-2">
+              <p className="text-xs text-rose-400 font-semibold">{scanError}</p>
+              <button
+                type="button"
+                onClick={() => navigate('/register', { state: { skipScan: true } })}
+                className="w-full bg-emerald-600 hover:bg-emerald-500 active:bg-emerald-700 text-white font-bold text-xs py-2 px-4 rounded-lg shadow-md transition-all flex items-center justify-center gap-1.5"
+              >
+                <span>Omitir escáner y comenzar diagnóstico guiado</span>
+              </button>
+            </div>
           )}
           <p className="mt-3 text-[11px] text-slate-500">
             * El escáner gratuito analiza cookies externas, scripts espías de terceros y formularios con opt-in ausentes.
