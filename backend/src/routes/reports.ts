@@ -119,25 +119,29 @@ router.get('/diagnosis', adminCors, async (req: any, res) => {
     });
     securityScore = Math.max(0, securityScore);
 
-    // 5.5 Query ROPA confirmed count to apply exclusion / compliance gap check
+    // 5.5 Query ROPA confirmed and draft counts to apply exclusion / compliance gap check
     const ropaRes = await db.query(
-      "SELECT COUNT(*)::int as count FROM ropa_inventory WHERE user_id = $1 AND status = 'confirmed'",
+      `SELECT 
+        COUNT(CASE WHEN status = 'confirmed' THEN 1 END)::int as confirmed_count,
+        COUNT(CASE WHEN status = 'draft' THEN 1 END)::int as draft_count
+       FROM ropa_inventory WHERE user_id = $1`,
       [req.user.id]
     );
-    const confirmedRopaCount = ropaRes.rows[0]?.count || 0;
+    const confirmedRopaCount = ropaRes.rows[0]?.confirmed_count || 0;
+    const draftRopaCount = ropaRes.rows[0]?.draft_count || 0;
 
-    let crawlScoreAdjusted = crawlScore;
     const ropaFindings: any[] = [];
     const ropaActions: any[] = [];
+    let ropaForcedToZero = false;
 
     if (confirmedRopaCount === 0) {
-      crawlScoreAdjusted = Math.max(0, crawlScore - 15);
+      ropaForcedToZero = true;
       ropaFindings.push({
         id: 'FIND_ROPA_MISSING',
         category: 'Gobernanza',
-        severity: 'Grave',
-        description: 'Infracción Grave (Art. 12) - Inexistencia de un Registro de Actividades de Tratamiento (RoPA) confirmado y formalizado.',
-        recommendation: 'Completar y confirmar el inventario de actividades en la pestaña RoPA para mapear el ciclo de vida de los datos personales.',
+        severity: 'Gravísima',
+        description: 'Ausencia de Registro de Actividades (RoPA)',
+        recommendation: 'Es imposible evaluar el cumplimiento sin confirmar primero el inventario de datos en la pestaña RoPA. Por favor, confirme o complete la información para generar su diagnóstico de riesgos.',
         details: 'El Registro de Actividades de Tratamiento es obligatorio para demostrar cumplimiento ante fiscalizaciones del regulador.'
       });
       ropaActions.push({
@@ -148,10 +152,31 @@ router.get('/diagnosis', adminCors, async (req: any, res) => {
         estimatedEffort: '3 horas',
         details: 'Ingresar al módulo RoPA, revisar las sugerencias automáticas generadas y confirmar los borradores correspondientes.'
       });
+    } else if (draftRopaCount > 0) {
+      ropaForcedToZero = true;
+      ropaFindings.push({
+        id: 'FIND_ROPA_DRAFTS_PENDING',
+        category: 'Gobernanza',
+        severity: 'Gravísima',
+        description: 'Borradores de procesos detectados pendientes de revisión en el RoPA.',
+        recommendation: 'Tiene procesos detectados pendientes de revisión en su Inventario. Confirme o rechace los borradores para generar un diagnóstico preciso.',
+        details: 'Tiene procesos detectados pendientes de revisión en su Inventario. Confirme o rechace los borradores para generar un diagnóstico preciso.'
+      });
+      ropaActions.push({
+        step: 0,
+        title: 'Revisar borradores pendientes en RoPA',
+        description: 'Revisar y confirmar o rechazar los borradores sugeridos en el Registro de Actividades de Tratamiento (RoPA).',
+        priority: 'Alta',
+        estimatedEffort: '15 minutos',
+        details: 'Ingrese al módulo RoPA, analice los borradores sugeridos por el escáner y la IA, y confírmelos o rechácelos para poder evaluar el cumplimiento.'
+      });
     }
 
     // 6. Calculate unified Global Compliance Score
-    const globalScore = Math.round((crawlScoreAdjusted * 0.5) + (transfersScore * 0.3) + (securityScore * 0.2));
+    let globalScore = Math.round((crawlScore * 0.5) + (transfersScore * 0.3) + (securityScore * 0.2));
+    if (ropaForcedToZero) {
+      globalScore = 0;
+    }
 
     // Combine findings and re-enumerate action steps
     const combinedFindings = [...findings, ...transferFindings, ...ropaFindings];
@@ -195,14 +220,18 @@ router.post('/evaluate', adminCors, async (req: any, res) => {
   try {
     const db = getDb();
 
-    // Fetch count of confirmed ROPA records
+    // Fetch count of confirmed and draft ROPA records
     const ropaRes = await db.query(
-      "SELECT COUNT(*)::int as count FROM ropa_inventory WHERE user_id = $1 AND status = 'confirmed'",
+      `SELECT 
+        COUNT(CASE WHEN status = 'confirmed' THEN 1 END)::int as confirmed_count,
+        COUNT(CASE WHEN status = 'draft' THEN 1 END)::int as draft_count
+       FROM ropa_inventory WHERE user_id = $1`,
       [req.user.id]
     );
-    const confirmed_ropa_count = ropaRes.rows[0]?.count || 0;
+    const confirmed_ropa_count = ropaRes.rows[0]?.confirmed_count || 0;
+    const draft_ropa_count = ropaRes.rows[0]?.draft_count || 0;
 
-    const answers = { ...req.body, confirmed_ropa_count };
+    const answers = { ...req.body, confirmed_ropa_count, draft_ropa_count };
     const evaluation = evaluateQuestionnaire(answers);
     const domain = answers.domain || 'localhost:3000';
     

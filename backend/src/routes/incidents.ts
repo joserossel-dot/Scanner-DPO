@@ -252,7 +252,7 @@ router.post('/scan-vulnerabilities', adminCors, async (req: any, res) => {
 
   const db = getDb();
   try {
-    const scanResult = await runSecurityScan(domain, true);
+    const scanResult = await runSecurityScan(domain, false);
     const incidentsCreated: any[] = [];
 
     // Filter Critical and High severity warnings to auto-escalate

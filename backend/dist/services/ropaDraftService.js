@@ -2,8 +2,8 @@ import { getDb } from '../database/db.js';
 export async function createRopaDraft(userId, processName, purpose, legalBasis, dataCategories, retentionPeriod, crossBorderTransfer, source) {
     const db = getDb();
     try {
-        // Check if a similar draft already exists to avoid duplicates
-        const dupCheck = await db.query(`SELECT id FROM ropa_inventory WHERE user_id = $1 AND process_name = $2 AND source = $3`, [userId, processName, source]);
+        // Check if a similar draft already exists to avoid duplicates (ignoring source)
+        const dupCheck = await db.query(`SELECT id FROM ropa_inventory WHERE user_id = $1 AND process_name = $2`, [userId, processName]);
         if (dupCheck.rowCount === 0) {
             await db.query(`INSERT INTO ropa_inventory (user_id, process_name, purpose, legal_basis, data_categories, retention_period, cross_border_transfer, source, status)
          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'draft')`, [

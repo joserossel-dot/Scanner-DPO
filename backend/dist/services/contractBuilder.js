@@ -1,3 +1,8 @@
+export const DISCLAIMER_V1 = `
+<div class="legal-disclaimer" style="margin-top: 30px; padding: 15px; border-top: 1px dashed #cbd5e1; font-size: 11px; color: #64748b; text-align: justify; line-height: 1.4;">
+  <strong>AVISO LEGAL (DISCLAIMER_V1):</strong> Este documento ha sido generado mediante la plataforma automatizada Scanner-DPO basada en las declaraciones e información provistas por el usuario. El presente modelo se entrega como plantilla de referencia técnica y de cumplimiento general de la Ley N° 21.719 de Chile. No constituye, bajo ninguna circunstancia, asesoría legal, tributaria o comercial formal. Se aconseja encarecidamente la validación y adaptación final de este instrumento por parte del equipo legal o asesores jurídicos de la organización antes de su firma, publicación o presentación ante la autoridad.
+</div>
+`;
 export function generateContractText(data) {
     const dateStr = new Date().toLocaleDateString('es-CL', {
         day: 'numeric',
@@ -66,6 +71,7 @@ export function generateContractText(data) {
       Firma y Timbre
     </div>
   </div>
+  ${DISCLAIMER_V1}
 </body>
 </html>`;
     }
@@ -127,6 +133,7 @@ export function generateContractText(data) {
       Firma y Timbre
     </div>
   </div>
+  ${DISCLAIMER_V1}
 </body>
 </html>`;
     }

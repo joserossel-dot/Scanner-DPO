@@ -134,7 +134,7 @@ router.post('/log-download', adminCors, async (req, res) => {
     }
     catch (error) {
         console.error('Error logging document download:', error.message);
-        res.status(550).json({ error: 'Error al registrar la descarga en la bitácora legal: ' + error.message });
+        res.status(500).json({ error: 'Error al registrar la descarga en la bitácora legal: ' + error.message });
     }
 });
 export default router;

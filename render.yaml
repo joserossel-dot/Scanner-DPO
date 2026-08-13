@@ -14,6 +14,8 @@ services:
         value: production
       - key: DATABASE_URL
         sync: false # Set in Render Dashboard from Neon connection string
+      - key: JWT_SECRET
+        sync: false
       - key: DASHBOARD_ORIGIN
         fromService:
           name: pt-compliance-dashboard

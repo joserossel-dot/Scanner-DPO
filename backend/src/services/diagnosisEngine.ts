@@ -45,6 +45,7 @@ export interface DiagnosisAnswers {
 
   // Confirmed ROPA count check
   confirmed_ropa_count?: number;
+  draft_ropa_count?: number;
 
   // Pre-marked cookie question
   commercial_track_behavior?: string;
@@ -79,6 +80,8 @@ export interface EvaluationResult {
 
 export function evaluateQuestionnaire(answers: DiagnosisAnswers): EvaluationResult {
   const confirmedRopa = answers.confirmed_ropa_count ?? 0;
+  const draftRopa = answers.draft_ropa_count ?? 0;
+
   if (confirmedRopa === 0) {
     return {
       scoreTotal: 0,
@@ -100,6 +103,31 @@ export function evaluateQuestionnaire(answers: DiagnosisAnswers): EvaluationResu
         priority: 'Alta',
         estimatedEffort: '30 minutos',
         details: 'Ingrese al módulo RoPA, revise las sugerencias automáticas generadas y confirme los borradores correspondientes para poder evaluar el cumplimiento.'
+      }]
+    };
+  }
+
+  if (draftRopa > 0) {
+    return {
+      scoreTotal: 0,
+      riesgoUTM: 20000,
+      findings: [{
+        id: 'FIND_ROPA_DRAFTS_PENDING',
+        category: 'Gobernanza',
+        severity: 'Gravísima',
+        description: 'Borradores de procesos detectados pendientes de revisión en el RoPA.',
+        recommendation: 'Tiene procesos detectados pendientes de revisión en su Inventario. Confirme o rechace los borradores para generar un diagnóstico preciso.',
+        penalty: 100,
+        riskUtm: 20000,
+        effort: 'LOW'
+      }],
+      actionPlan: [{
+        step: 1,
+        title: 'Revisar borradores pendientes en RoPA',
+        description: 'Revisar y confirmar o rechazar los borradores sugeridos en el Registro de Actividades de Tratamiento (RoPA).',
+        priority: 'Alta',
+        estimatedEffort: '15 minutos',
+        details: 'Ingrese al módulo RoPA, analice los borradores sugeridos por el escáner y la IA, y confírmelos o rechácelos para poder evaluar el cumplimiento.'
       }]
     };
   }
@@ -322,33 +350,6 @@ export function evaluateQuestionnaire(answers: DiagnosisAnswers): EvaluationResu
     });
   }
 
-  // Rule 8: RoPA Obligation (Art. 12)
-  if (confirmedRopa === 0) {
-    const penalty = 15;
-    const riskUtm = 10000;
-    scoreTotal -= penalty;
-    if (riskUtm > maxRiskUtm) maxRiskUtm = riskUtm;
-
-    findings.push({
-      id: 'FIND_ROPA_MISSING',
-      category: 'Gobernanza',
-      severity: 'Grave',
-      description: 'Infracción Grave (Art. 12) - Inexistencia de un Registro de Actividades de Tratamiento (RoPA) confirmado y formalizado.',
-      recommendation: 'Completar y confirmar el inventario de actividades en la pestaña RoPA para mapear el ciclo de vida de los datos personales.',
-      penalty,
-      riskUtm,
-      effort: 'LOW'
-    });
-
-    actionPlan.push({
-      step: stepCounter++,
-      title: 'Formalizar y confirmar el inventario RoPA',
-      description: 'Mapear e inventariar las actividades de tratamiento de datos personales de la empresa (Art. 12).',
-      priority: 'Alta',
-      estimatedEffort: '3 horas',
-      details: 'Ingresar al módulo RoPA, revisar las sugerencias automáticas generadas y confirmar los borradores correspondientes a analítica web, videovigilancia y nóminas.'
-    });
-  }
 
   // Cap score between 0 and 100
   scoreTotal = Math.max(0, Math.min(100, scoreTotal));
