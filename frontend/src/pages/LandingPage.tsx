@@ -42,6 +42,7 @@ export default function LandingPage() {
   const [isScanning, setIsScanning] = useState(false);
   const [scanResult, setScanResult] = useState<any>(null);
   const [scanError, setScanError] = useState('');
+  const [privacyAccepted, setPrivacyAccepted] = useState(false);
   const navigate = useNavigate();
 
   const handleFreeScanSubmit = async (e: React.FormEvent) => {
@@ -58,7 +59,7 @@ export default function LandingPage() {
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ domain: scanUrl, email: emailInput }),
+        body: JSON.stringify({ domain: scanUrl, email: emailInput, privacy_consent: true }),
       });
 
       const data = await response.json();
@@ -168,11 +169,24 @@ export default function LandingPage() {
                 />
               </div>
             </div>
+
+            <div className="mt-2 flex items-start gap-2.5">
+              <input 
+                id="privacy-consent-checkbox"
+                type="checkbox" 
+                checked={privacyAccepted}
+                onChange={e => setPrivacyAccepted(e.target.checked)}
+                className="mt-1 h-3.5 w-3.5 rounded border-slate-800 bg-slate-950 text-indigo-600 focus:ring-indigo-500 focus:ring-offset-slate-900 cursor-pointer"
+              />
+              <label htmlFor="privacy-consent-checkbox" className="text-xs text-slate-400 select-none cursor-pointer leading-relaxed">
+                He leído y acepto la <Link to="/privacidad" className="underline text-indigo-400 hover:text-indigo-300">Política de Privacidad</Link> y consiento el tratamiento de mis datos para recibir los resultados y contactación comercial.
+              </label>
+            </div>
             
             <button 
               type="submit" 
-              disabled={isScanning}
-              className="w-full mt-2 bg-indigo-600 hover:bg-indigo-500 active:bg-indigo-700 text-white font-bold text-sm py-3 rounded-lg shadow-lg shadow-indigo-600/25 transition-all flex items-center justify-center gap-2 group"
+              disabled={isScanning || !privacyAccepted || !scanUrl.trim() || !emailInput.trim()}
+              className="w-full mt-2 bg-indigo-600 hover:bg-indigo-500 active:bg-indigo-700 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-indigo-600 text-white font-bold text-sm py-3 rounded-lg shadow-lg shadow-indigo-600/25 transition-all flex items-center justify-center gap-2 group"
             >
               {isScanning ? (
                 <>
