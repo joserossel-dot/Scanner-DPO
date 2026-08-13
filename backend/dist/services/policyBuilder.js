@@ -69,7 +69,19 @@ export function generatePrivacyPolicy(data) {
   </blockquote>
 
   <h2 style="font-size: 14px; color: #0f172a; margin-top: 20px; margin-bottom: 8px; font-weight: bold; text-transform: uppercase; border-bottom: 1.5px solid #0f172a; padding-bottom: 3px;">
-    6. Derechos del Titular de Datos (Derechos ARCO+)
+    6. Medidas de Seguridad y Compromisos Operacionales de la Organización
+  </h2>
+  <p style="margin-bottom: 12px;">
+    En cumplimiento de los principios de seguridad y confidencialidad exigidos por la ley, la empresa ha estructurado los siguientes protocolos operativos internos:
+  </p>
+  <ul style="margin-bottom: 15px; padding-left: 20px; list-style-type: disc;">
+    <li><strong>Protocolos de Seguridad Técnica:</strong> Se garantiza el uso de técnicas de cifrado criptográfico fuerte para proteger la información tanto en tránsito (protocolos SSL/TLS en conexiones web) como en reposo en nuestras bases de datos corporativas.</li>
+    <li><strong>Control de Acceso (RBAC):</strong> El acceso a la información personal del cliente queda restringido exclusivamente al personal debidamente autorizado, aplicando políticas rigurosas de control de acceso basado en roles (Role-Based Access Control).</li>
+    <li><strong>Retención y Eliminación Segura:</strong> Transcurrido el periodo de conservación definido de <em>${data.retentionRules}</em>, la organización ejecutará un protocolo de destrucción segura de datos (borrado digital irreversible o triturado físico) que impida su posterior recuperación por terceros.</li>
+  </ul>
+
+  <h2 style="font-size: 14px; color: #0f172a; margin-top: 20px; margin-bottom: 8px; font-weight: bold; text-transform: uppercase; border-bottom: 1.5px solid #0f172a; padding-bottom: 3px;">
+    7. Derechos del Titular de Datos (Derechos ARCO+)
   </h2>
   <p style="margin-bottom: 12px;">
     En virtud de la Ley N° 21.719, usted tiene el derecho legal de ejercer las siguientes prerrogativas sobre sus datos personales:
