@@ -102,5 +102,9 @@ export async function analyzeQuestionnaireAnswers(userId, answers) {
         if (providers.some(p => ['zendesk', 'intercom'].includes(p))) {
             await createRopaDraft(userId, 'Soporte y Atención de Clientes', 'Gestión de tickets de ayuda, chat en vivo y resolución de reclamos de clientes en la plataforma.', 'Ejecución del Contrato', ['Identificatorios (Nombre, Email)', 'Historial de tickets y transcripción de ayuda'], '3 años desde la resolución del caso', true, 'auto_questionnaire');
         }
+        // G. Otro proveedor SaaS personalizado (Shadow IT)
+        if (providers.includes('otro_shadow') && answers.shadow_it_providers_other) {
+            await createRopaDraft(userId, `Tratamiento de Datos en ${answers.shadow_it_providers_other}`, `Actividad de tratamiento de datos personales utilizando la herramienta SaaS externa declarada: ${answers.shadow_it_providers_other}.`, 'Consentimiento / Ejecución del Contrato', ['Identificatorios', 'Datos de navegación y operación de la cuenta'], 'Indefinido mientras se mantenga activa la cuenta en el servicio', true, 'auto_questionnaire');
+        }
     }
 }

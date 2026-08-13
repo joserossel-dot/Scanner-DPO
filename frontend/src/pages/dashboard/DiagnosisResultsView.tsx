@@ -291,7 +291,8 @@ export default function DiagnosisResultsView({
 
       {/* 2. ROADMAP POR FASES (Con Acordeones) */}
       {!isRopaMissing && (
-        <div className="space-y-4 text-left">
+        <>
+          <div className="space-y-4 text-left">
         <div className="flex items-center gap-2">
           <Sparkles size={16} className="text-indigo-400 animate-pulse" />
           <h3 className="text-base font-bold text-white tracking-wide">Plan de Acción Estratégico (Fases de Implementación)</h3>
@@ -571,6 +572,7 @@ export default function DiagnosisResultsView({
           </div>
         </div>
       )}
+        </>
       )}
 
     </div>
