@@ -281,8 +281,8 @@ router.get('/dossier', adminCors, async (req, res) => {
         }
         const company = userRes.rows[0];
         // 2. Get latest score
-        const reportRes = await db.query('SELECT score, severity_counts, created_at FROM audit_reports WHERE user_id = $1 ORDER BY created_at DESC LIMIT 1', [req.user.id]);
-        const latestReport = reportRes.rows[0] || { score: 100, severity_counts: { leve: 0, grave: 0, gravisima: 0 } };
+        const reportRes = await db.query('SELECT score, severity_counts, findings, action_plan, created_at FROM audit_reports WHERE user_id = $1 ORDER BY created_at DESC LIMIT 1', [req.user.id]);
+        const latestReport = reportRes.rows[0] || { score: 100, severity_counts: { leve: 0, grave: 0, gravisima: 0 }, findings: [], action_plan: [] };
         // 3. Get latest privacy policy timestamp
         const policyRes = await db.query('SELECT updated_at FROM privacy_policies WHERE user_id = $1 ORDER BY updated_at DESC LIMIT 1', [req.user.id]);
         const latestPolicy = policyRes.rows[0] || null;
@@ -290,13 +290,17 @@ router.get('/dossier', adminCors, async (req, res) => {
         const transfersRes = await db.query('SELECT * FROM international_transfers WHERE user_id = $1', [req.user.id]);
         const totalTransfers = transfersRes.rowCount;
         const transfersWithScc = transfersRes.rows.filter((t) => t.has_scc).length;
-        // 4.5 Get confirmed RoPA count
-        const ropaRes = await db.query("SELECT COUNT(*)::int as count FROM ropa_inventory WHERE user_id = $1 AND status = 'confirmed'", [req.user.id]);
-        const confirmedRopaCount = ropaRes.rows[0]?.count || 0;
+        // 4.5 Get confirmed RoPA processes
+        const ropaRes = await db.query("SELECT * FROM ropa_inventory WHERE user_id = $1 AND status = 'confirmed'", [req.user.id]);
+        const confirmedRopaCount = ropaRes.rowCount;
+        const ropaProcesses = ropaRes.rows;
         // 5. Count risk matrix entries
         const risksRes = await db.query('SELECT * FROM risk_matrix WHERE user_id = $1', [req.user.id]);
         const totalRisks = risksRes.rowCount;
         const mitigatedRisks = risksRes.rows.filter((r) => r.status === 'IMPLEMENTED').length;
+        // Filter action plan items by priority (High and Medium, corresponding to Grave and Gravísima)
+        const rawActionPlan = latestReport.action_plan || [];
+        const prioritizedActions = rawActionPlan.filter((a) => a.priority === 'Alta' || a.priority === 'Media');
         res.json({
             company_name: company.company_name,
             company_email: company.email,
@@ -314,7 +318,9 @@ router.get('/dossier', adminCors, async (req, res) => {
             },
             ropa: {
                 confirmed_count: confirmedRopaCount
-            }
+            },
+            ropa_processes: ropaProcesses,
+            action_plan: prioritizedActions
         });
     }
     catch (error) {
