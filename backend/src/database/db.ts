@@ -54,6 +54,12 @@ export async function initDb() {
   await pool.query(`
     ALTER TABLE users ADD COLUMN IF NOT EXISTS reset_token_expiry TIMESTAMP;
   `);
+  await pool.query(`
+    ALTER TABLE users ADD COLUMN IF NOT EXISTS sales_notes TEXT;
+  `);
+  await pool.query(`
+    ALTER TABLE users ADD COLUMN IF NOT EXISTS sales_status VARCHAR(50) DEFAULT 'NEW';
+  `);
 
   await pool.query(`
     CREATE TABLE IF NOT EXISTS site_configs (
@@ -237,8 +243,17 @@ export async function initDb() {
       domain VARCHAR(255) NOT NULL,
       email VARCHAR(255) NOT NULL,
       score_detected INTEGER NOT NULL,
+      status VARCHAR(50) DEFAULT 'NEW',
+      sales_notes TEXT,
       created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
     )
+  `);
+
+  await pool.query(`
+    ALTER TABLE leads ADD COLUMN IF NOT EXISTS status VARCHAR(50) DEFAULT 'NEW';
+  `);
+  await pool.query(`
+    ALTER TABLE leads ADD COLUMN IF NOT EXISTS sales_notes TEXT;
   `);
 
   await pool.query(`
