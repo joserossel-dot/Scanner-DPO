@@ -33,6 +33,7 @@ interface RopaRecord {
 
 interface RopaInventoryViewProps {
   token: string | null;
+  onRopaUpdated?: () => void;
 }
 
 const API_BASE = (() => {
@@ -54,7 +55,7 @@ const API_BASE = (() => {
   return url;
 })();
 
-export default function RopaInventoryView({ token }: RopaInventoryViewProps) {
+export default function RopaInventoryView({ token, onRopaUpdated }: RopaInventoryViewProps) {
   const [ropaList, setRopaList] = useState<RopaRecord[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
@@ -177,6 +178,7 @@ export default function RopaInventoryView({ token }: RopaInventoryViewProps) {
         setIsModalOpen(false);
         resetForm();
         fetchRopa();
+        onRopaUpdated?.();
       } else {
         const data = await response.json();
         alert(data.error || 'Error al guardar la actividad de tratamiento.');
@@ -199,6 +201,7 @@ export default function RopaInventoryView({ token }: RopaInventoryViewProps) {
       });
       if (response.ok) {
         fetchRopa();
+        onRopaUpdated?.();
       } else {
         alert('Error al intentar eliminar la actividad de tratamiento.');
       }
@@ -233,6 +236,7 @@ export default function RopaInventoryView({ token }: RopaInventoryViewProps) {
 
       if (response.ok) {
         fetchRopa();
+        onRopaUpdated?.();
       } else {
         alert('Error al rechazar el borrador sugerido.');
       }

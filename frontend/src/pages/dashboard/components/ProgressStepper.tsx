@@ -8,8 +8,11 @@ interface ProgressStepperProps {
 }
 
 export default function ProgressStepper({ activeTab, diagnosisData, draftsCount }: ProgressStepperProps) {
-  // Determine if compliance is active: score calculated and > 0, and no pending drafts
-  const hasCompletedDiagnosis = diagnosisData && diagnosisData.globalScore > 0 && draftsCount === 0;
+  const findings = diagnosisData?.findings || [];
+  const isRopaMissing = findings.some((f: any) => f?.id === 'FIND_ROPA_MISSING');
+  const hasDraftsPending = findings.some((f: any) => f?.id === 'FIND_ROPA_DRAFTS_PENDING');
+
+  const hasCompletedDiagnosis = diagnosisData && !isRopaMissing && !hasDraftsPending && diagnosisData.globalScore > 0;
 
   if (hasCompletedDiagnosis) {
     return (

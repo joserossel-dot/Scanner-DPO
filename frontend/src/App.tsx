@@ -1738,7 +1738,7 @@ Firmas autorizadas:
         {activeTab === 'remediation' && renderRemediation()}
         {activeTab === 'dpo' && <DpoSuiteView token={token} />}
         {activeTab === 'dossier' && <AuditDossierView token={token} />}
-        {activeTab === 'ropa' && <RopaInventoryView token={token} />}
+        {activeTab === 'ropa' && <RopaInventoryView token={token} onRopaUpdated={handleFetchDiagnosis} />}
         {activeTab === 'admin' && <AdminDashboardView token={token} />}
 
         {/* Modal: SCC Agreement Generator Viewer */}
