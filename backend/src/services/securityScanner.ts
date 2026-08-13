@@ -27,6 +27,8 @@ export interface VulnerabilityAlert {
   description: string;
   recommendation: string;
   type: 'SSL_EXPIRED' | 'HSTS_MISSING' | 'CSP_MISSING' | 'PORT_EXPOSED' | 'LEAKED_CREDENTIALS';
+  category?: string;
+  effort?: string;
 }
 
 export interface SecurityScanResult {
@@ -53,168 +55,200 @@ function getHostname(domain: string): string {
 // 1. Check SSL Certificate expiration and details
 function checkSslCertificate(hostname: string): Promise<{ valid: boolean; daysRemaining?: number; issuer?: string; error?: string }> {
   return new Promise((resolve) => {
-    let completed = false;
+    try {
+      let completed = false;
 
-    const socket = tls.connect({
-      host: hostname,
-      port: 443,
-      servername: hostname,
-      rejectUnauthorized: false, // Obtain certificate data even if invalid/expired to inspect it
-      timeout: 5000
-    }, () => {
-      if (completed) return;
-      completed = true;
+      const socket = tls.connect({
+        host: hostname,
+        port: 443,
+        servername: hostname,
+        rejectUnauthorized: false, // Obtain certificate data even if invalid/expired to inspect it
+        timeout: 5000
+      }, () => {
+        if (completed) return;
+        completed = true;
 
-      try {
-        const cert = socket.getPeerCertificate(true);
-        socket.end();
+        try {
+          const cert = socket.getPeerCertificate(true);
+          socket.end();
 
-        if (!cert || !Object.keys(cert).length) {
-          resolve({ valid: false, error: 'No se pudo leer el certificado SSL del servidor.' });
-          return;
+          if (!cert || !Object.keys(cert).length) {
+            resolve({ valid: false, error: 'No se pudo leer el certificado SSL del servidor.' });
+            return;
+          }
+
+          const validTo = new Date(cert.valid_to);
+          const now = new Date();
+          const msRemaining = validTo.getTime() - now.getTime();
+          const daysRemaining = Math.max(0, Math.floor(msRemaining / (1000 * 60 * 60 * 24)));
+          
+          const getIssuerString = (field: string | string[] | undefined): string => {
+            if (Array.isArray(field)) return field[0] || '';
+            return field || '';
+          };
+          const issuerO = cert.issuer ? getIssuerString(cert.issuer.O) : '';
+          const issuerCN = cert.issuer ? getIssuerString(cert.issuer.CN) : '';
+          const issuer = issuerO || issuerCN || 'Desconocido';
+          const valid = socket.authorized && msRemaining > 0;
+
+          resolve({
+            valid,
+            daysRemaining,
+            issuer
+          });
+        } catch (err: any) {
+          resolve({ valid: false, error: err.message });
         }
+      });
 
-        const validTo = new Date(cert.valid_to);
-        const now = new Date();
-        const msRemaining = validTo.getTime() - now.getTime();
-        const daysRemaining = Math.max(0, Math.floor(msRemaining / (1000 * 60 * 60 * 24)));
-        
-        const getIssuerString = (field: string | string[] | undefined): string => {
-          if (Array.isArray(field)) return field[0] || '';
-          return field || '';
-        };
-        const issuerO = cert.issuer ? getIssuerString(cert.issuer.O) : '';
-        const issuerCN = cert.issuer ? getIssuerString(cert.issuer.CN) : '';
-        const issuer = issuerO || issuerCN || 'Desconocido';
-        const valid = socket.authorized && msRemaining > 0;
-
-        resolve({
-          valid,
-          daysRemaining,
-          issuer
-        });
-      } catch (err: any) {
+      socket.on('error', (err) => {
+        if (completed) return;
+        completed = true;
         resolve({ valid: false, error: err.message });
-      }
-    });
+      });
 
-    socket.on('error', (err) => {
-      if (completed) return;
-      completed = true;
+      socket.on('timeout', () => {
+        if (completed) return;
+        completed = true;
+        socket.destroy();
+        resolve({ valid: false, error: 'Excedió el tiempo límite de conexión SSL (Timeout).' });
+      });
+    } catch (err: any) {
       resolve({ valid: false, error: err.message });
-    });
-
-    socket.on('timeout', () => {
-      if (completed) return;
-      completed = true;
-      socket.destroy();
-      resolve({ valid: false, error: 'Excedió el tiempo límite de conexión SSL (Timeout).' });
-    });
+    }
   });
 }
 
 // 2. Query HTTP Headers
 function checkHttpHeaders(hostname: string): Promise<{ headers: Record<string, string>; error?: string }> {
   return new Promise((resolve) => {
-    let completed = false;
+    try {
+      let completed = false;
 
-    const req = https.request({
-      hostname,
-      port: 443,
-      path: '/',
-      method: 'GET',
-      headers: {
-        'User-Agent': 'PrivacyTech-SecurityScanner/1.0'
-      },
-      timeout: 5000,
-      rejectUnauthorized: false
-    }, (res) => {
-      if (completed) return;
-      completed = true;
+      const req = https.request({
+        hostname,
+        port: 443,
+        path: '/',
+        method: 'GET',
+        headers: {
+          'User-Agent': 'PrivacyTech-SecurityScanner/1.0'
+        },
+        timeout: 5000,
+        rejectUnauthorized: false
+      }, (res) => {
+        if (completed) return;
+        completed = true;
 
-      const headers: Record<string, string> = {};
-      for (const key of Object.keys(res.headers)) {
-        const val = res.headers[key];
-        headers[key.toLowerCase()] = Array.isArray(val) ? val.join(', ') : (val || '');
-      }
-      res.resume(); // free socket memory
-      resolve({ headers });
-    });
+        const headers: Record<string, string> = {};
+        for (const key of Object.keys(res.headers)) {
+          const val = res.headers[key];
+          headers[key.toLowerCase()] = Array.isArray(val) ? val.join(', ') : (val || '');
+        }
+        res.resume(); // free socket memory
+        resolve({ headers });
+      });
 
-    req.on('error', (err) => {
-      if (completed) return;
-      completed = true;
+      req.on('error', (err) => {
+        if (completed) return;
+        completed = true;
+        resolve({ headers: {}, error: err.message });
+      });
+
+      req.on('timeout', () => {
+        if (completed) return;
+        completed = true;
+        req.destroy();
+        resolve({ headers: {}, error: 'Timeout de consulta HTTP.' });
+      });
+
+      req.end();
+    } catch (err: any) {
       resolve({ headers: {}, error: err.message });
-    });
-
-    req.on('timeout', () => {
-      if (completed) return;
-      completed = true;
-      req.destroy();
-      resolve({ headers: {}, error: 'Timeout de consulta HTTP.' });
-    });
-
-    req.end();
+    }
   });
 }
 
 // 3. Scan for exposed configuration files (.env, .git/config)
 function scanExposedFile(hostname: string, filePath: string, keywords: string[]): Promise<boolean> {
   return new Promise((resolve) => {
-    let completed = false;
+    try {
+      let completed = false;
 
-    const req = https.request({
-      hostname,
-      port: 443,
-      path: filePath,
-      method: 'GET',
-      headers: {
-        'User-Agent': 'PrivacyTech-SecurityScanner/1.0'
-      },
-      timeout: 3000,
-      rejectUnauthorized: false
-    }, (res) => {
-      if (completed) return;
-      
-      if (res.statusCode !== 200) {
-        completed = true;
-        res.resume();
-        resolve(false);
-        return;
-      }
-
-      let body = '';
-      res.setEncoding('utf8');
-      res.on('data', (chunk) => {
-        body += chunk;
-        if (body.length > 3072) {
-          req.destroy();
+      const req = https.request({
+        hostname,
+        port: 443,
+        path: filePath,
+        method: 'GET',
+        headers: {
+          'User-Agent': 'PrivacyTech-SecurityScanner/1.0'
+        },
+        timeout: 3000,
+        rejectUnauthorized: false
+      }, (res) => {
+        if (completed) return;
+        
+        if (res.statusCode !== 200) {
+          completed = true;
+          res.resume();
+          resolve(false);
+          return;
         }
+
+        let body = '';
+        res.setEncoding('utf8');
+        res.on('data', (chunk) => {
+          body += chunk;
+          if (body.length > 3072) {
+            req.destroy();
+          }
+        });
+
+        res.on('end', () => {
+          if (completed) return;
+          completed = true;
+          const matches = keywords.some(kw => body.toLowerCase().includes(kw.toLowerCase()));
+          resolve(matches);
+        });
       });
 
-      res.on('end', () => {
+      req.on('error', () => {
         if (completed) return;
         completed = true;
-        const matches = keywords.some(kw => body.toLowerCase().includes(kw.toLowerCase()));
-        resolve(matches);
+        resolve(false);
       });
-    });
 
-    req.on('error', () => {
-      if (completed) return;
-      completed = true;
+      req.on('timeout', () => {
+        if (completed) return;
+        completed = true;
+        req.destroy();
+        resolve(false);
+      });
+
+      req.end();
+    } catch (err) {
       resolve(false);
-    });
-
-    req.on('timeout', () => {
-      if (completed) return;
-      completed = true;
-      req.destroy();
-      resolve(false);
-    });
-
-    req.end();
+    }
   });
+}
+
+function getBlockedNetworkResult(domain: string): SecurityScanResult {
+  return {
+    domain,
+    scanDate: new Date().toISOString(),
+    score: 0,
+    vulnerabilities: [
+      {
+        id: "FIND_NETWORK_BLOCKED",
+        category: "Ciberseguridad",
+        severity: "CRITICAL",
+        title: "Auditoría de Red Bloqueada o Inaccesible",
+        description: "El servidor destino (WAF o Firewall) rechazó o agotó el tiempo de espera de la conexión automatizada. No se pudo verificar el estado del certificado SSL ni las cabeceras HTTP de seguridad.",
+        recommendation: "Verifique que el servidor web esté en línea y considere incluir nuestras IPs en la lista blanca si desea una auditoría técnica profunda.",
+        effort: "LOW",
+        type: "PORT_EXPOSED"
+      }
+    ]
+  };
 }
 
 // Main scan runner
@@ -234,7 +268,11 @@ export async function runSecurityScan(domain: string, allowDeepPentest = false):
       throw new Error("Escaneo bloqueado: No se pueden auditar entornos locales o dominios inaccesibles. Use una URL pública válida.");
     }
   } catch (dnsErr: any) {
-    throw new Error("Escaneo bloqueado: No se pueden auditar entornos locales o dominios inaccesibles. Use una URL pública válida.");
+    if (dnsErr.message && dnsErr.message.includes("Escaneo bloqueado")) {
+      throw dnsErr;
+    }
+    console.warn(`[SecurityScanner] Error de resolución DNS para ${hostname}:`, dnsErr.message);
+    return getBlockedNetworkResult(domain);
   }
 
   try {
@@ -353,8 +391,11 @@ export async function runSecurityScan(domain: string, allowDeepPentest = false):
     };
 
   } catch (err: any) {
+    if (err.message && err.message.includes("Escaneo bloqueado")) {
+      throw err;
+    }
     console.error(`[SecurityScanner] Falla crítica al escanear ${hostname}:`, err.message);
-    throw new Error("Escaneo bloqueado: No se pueden auditar entornos locales o dominios inaccesibles. Use una URL pública válida.");
+    return getBlockedNetworkResult(domain);
   }
 }
 
