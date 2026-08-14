@@ -1496,8 +1496,10 @@ Firmas autorizadas:
           const getCountryAndMechanism = (providerString: string): {
             country: string; mechanism: string; hasScc: boolean; hasDpa: boolean;
           } => {
-            const raw = String(providerString || '').toLowerCase();
-            if (!raw) return { country: '', mechanism: '', hasScc: false, hasDpa: false };
+            if (!providerString || typeof providerString !== 'string') {
+              return { country: "", mechanism: "", hasScc: false, hasDpa: false };
+            }
+            const raw = String(providerString).toLowerCase();
 
             // 🇺🇸 ESTADOS UNIDOS — SCC obligatorio
             if (/(google|aws|amazon|azure|microsoft|meta|facebook|instagram|whatsapp|hubspot|mailchimp|salesforce|stripe|slack|zoom|notion|asana|openai|mixpanel|segment|twilio|sendgrid|intercom|zendesk|figma|dropbox|docusign|workday|bamboohr|rippling|adyen|braintree)/.test(raw)) {
