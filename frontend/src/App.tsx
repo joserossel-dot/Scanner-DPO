@@ -1175,6 +1175,7 @@ Firmas autorizadas:
               }}
               onReset={() => setEvalResults(null)}
               isLoading={isFetchingDiagnosis}
+              hasError={fetchError}
             />
           ) : (
             <DiagnosticHubView token={token} onEvaluationSuccess={(data) => setEvalResults(data)} />

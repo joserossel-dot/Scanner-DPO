@@ -47,14 +47,17 @@ interface DiagnosisResultsViewProps {
   onNavigateToRemediation: (subTab: 'cmp' | 'arco' | 'transfers' | 'policies' | 'ropa_hub') => void;
   onReset: () => void;
   isLoading?: boolean;
+  hasError?: boolean;
 }
 
 export default function DiagnosisResultsView({ 
   results, 
   onNavigateToRemediation, 
   onReset,
-  isLoading = false
+  isLoading = false,
+  hasError = false
 }: DiagnosisResultsViewProps) {
+  const isFetchingDiagnosis = isLoading; // Ensure variable exists for legacy references
   const [expandedPhase, setExpandedPhase] = useState<number | null>(1);
   const [meetingAlertText, setMeetingAlertText] = useState<string | null>(null);
 
@@ -344,7 +347,14 @@ export default function DiagnosisResultsView({
           {expandedPhase === 1 && (
             <div className="p-5 space-y-4 bg-slate-950/20 divide-y divide-slate-850/40">
               {phase1Findings.length === 0 ? (
-                <p className="text-xs text-emerald-450 font-semibold py-2">🟢 Fase Completada: Sin hallazgos web o digitales pendientes.</p>
+                hasError ? (
+                  <div className="flex items-center space-x-2 bg-rose-950/20 border border-rose-900/30 p-2 rounded">
+                    <AlertTriangle size={14} className="text-rose-500" />
+                    <span className="text-xs text-rose-400 font-semibold">⚠️ Error al cargar los hallazgos de la fase 1.</span>
+                  </div>
+                ) : (
+                  <p className="text-xs text-emerald-450 font-semibold py-2">🟢 Fase Completada: Sin hallazgos web o digitales pendientes.</p>
+                )
               ) : (
                 phase1Findings.map((f, idx) => (
                   <div key={f.id} className={`pt-4 ${idx === 0 ? 'pt-0' : ''} flex flex-col md:flex-row gap-4 justify-between items-start md:items-center`}>
@@ -411,7 +421,14 @@ export default function DiagnosisResultsView({
           {expandedPhase === 2 && (
             <div className="p-5 space-y-4 bg-slate-950/20 divide-y divide-slate-850/40">
               {phase2Findings.length === 0 ? (
-                <p className="text-xs text-emerald-450 font-semibold py-2">🟢 Fase Completada: Su blindaje documental y contratos están en regla.</p>
+                hasError ? (
+                  <div className="flex items-center space-x-2 bg-rose-950/20 border border-rose-900/30 p-2 rounded">
+                    <AlertTriangle size={14} className="text-rose-500" />
+                    <span className="text-xs text-rose-400 font-semibold">⚠️ Error al cargar los hallazgos de la fase 2.</span>
+                  </div>
+                ) : (
+                  <p className="text-xs text-emerald-450 font-semibold py-2">🟢 Fase Completada: Su blindaje documental y contratos están en regla.</p>
+                )
               ) : (
                 phase2Findings.map((f, idx) => (
                   <div key={f.id} className={`pt-4 ${idx === 0 ? 'pt-0' : ''} flex flex-col md:flex-row gap-4 justify-between items-start md:items-center`}>
@@ -478,7 +495,14 @@ export default function DiagnosisResultsView({
           {expandedPhase === 3 && (
             <div className="p-5 space-y-5 bg-slate-950/20 divide-y divide-slate-850/40">
               {phase3Findings.length === 0 ? (
-                <p className="text-xs text-emerald-450 font-semibold py-2">🟢 Fase Completada: Sin brechas operativas o de TI identificadas.</p>
+                hasError ? (
+                  <div className="flex items-center space-x-2 bg-rose-950/20 border border-rose-900/30 p-2 rounded">
+                    <AlertTriangle size={14} className="text-rose-500" />
+                    <span className="text-xs text-rose-400 font-semibold">⚠️ Error al cargar los hallazgos de la fase 3.</span>
+                  </div>
+                ) : (
+                  <p className="text-xs text-emerald-450 font-semibold py-2">🟢 Fase Completada: Sin brechas operativas o de TI identificadas.</p>
+                )
               ) : (
                 phase3Findings.map((f, idx) => (
                   <div key={f.id} className={`pt-4 ${idx === 0 ? 'pt-0' : ''} flex flex-col md:flex-row gap-4 justify-between items-start md:items-center`}>
