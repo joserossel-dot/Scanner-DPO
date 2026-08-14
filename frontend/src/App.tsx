@@ -258,6 +258,7 @@ export function Dashboard({ token, user, onLogout, initialTab }: DashboardProps)
   // Inline Editing state
   const [editingRowId, setEditingRowId] = useState<string | null>(null);
   const [editFields, setEditFields] = useState<any>({});
+  const [tempRowSettings, setTempRowSettings] = useState<Record<string, any>>({});
 
   // Toast notifications state
   const [toasts, setToasts] = useState<Array<{ id: string; message: string; type: 'success' | 'warning' | 'info' }>>([]);
@@ -1391,6 +1392,75 @@ Firmas autorizadas:
             )
           );
 
+          const getProviderName = (processName: string) => {
+            const name = processName || '';
+            if (name.startsWith('Tratamiento de Datos en ')) {
+              return name.replace('Tratamiento de Datos en ', '').trim();
+            }
+            if (name.includes('Gestión de Leads y Campañas de Marketing')) {
+              return 'HubSpot / Mailchimp / Salesforce';
+            }
+            if (name.includes('Rastreo y Analítica de Comportamiento Web')) {
+              return 'Google Analytics / Meta Pixel';
+            }
+            if (name.includes('Alojamiento e Infraestructura')) {
+              return 'AWS / Google Cloud / Azure';
+            }
+            if (name.includes('Comunicaciones Corporativas y Colaboración')) {
+              return 'Google Workspace / Slack';
+            }
+            if (name.includes('Plataforma SaaS de Gestión de Personas')) {
+              return 'BambooHR / Workday';
+            }
+            if (name.includes('Soporte y Atención de Clientes')) {
+              return 'Zendesk / Intercom';
+            }
+            if (name.includes('Base de Datos de Clientes y CRM')) {
+              return 'Salesforce / Stripe';
+            }
+            if (name.includes('Liquidación de Sueldos y Contratos')) {
+              return 'Buk / Talana';
+            }
+            return name;
+          };
+
+          const getSaaSDefaults = (processName: string) => {
+            const lower = (processName || '').toLowerCase();
+            
+            if (
+              ['google', 'aws', 'amazon', 'microsoft', 'meta', 'facebook', 'hubspot', 'mailchimp'].some(k => lower.includes(k)) ||
+              lower.includes('gestión de leads') ||
+              lower.includes('rastreo y analítica') ||
+              lower.includes('alojamiento') ||
+              lower.includes('comunicaciones corporativas') ||
+              lower.includes('plataforma saas') ||
+              lower.includes('soporte y atención') ||
+              lower.includes('base de datos de clientes')
+            ) {
+              return { country: 'US', transfer_mechanism: 'STANDARD_CLAUSES', has_scc: true, has_dpa: true };
+            }
+            
+            if (['buk', 'talana', 'defontana'].some(k => lower.includes(k)) || lower.includes('liquidación de sueldos')) {
+              return { country: 'CL', transfer_mechanism: 'ADEQUATE_COUNTRY', has_scc: false, has_dpa: true };
+            }
+            
+            return { country: 'US', transfer_mechanism: 'STANDARD_CLAUSES', has_scc: false, has_dpa: false };
+          };
+
+          // Re-order countries: Chile, US and EU (Spain, Germany, France, Italy) at the top
+          const topCodes = ['CL', 'US', 'ES', 'DE', 'FR', 'IT'];
+          const topList = countries.filter(c => topCodes.includes(c.code))
+            .sort((a, b) => topCodes.indexOf(a.code) - topCodes.indexOf(b.code));
+          const otherList = countries.filter(c => !topCodes.includes(c.code))
+            .sort((a, b) => a.name.localeCompare(b.name));
+          
+          const orderedCountries: any[] = [];
+          if (topList.length > 0) {
+            orderedCountries.push(...topList.map(c => ({ ...c, isTop: true })));
+            orderedCountries.push({ code: 'SEPARATOR', name: '────────────────────────' });
+          }
+          orderedCountries.push(...otherList);
+
           return (
             <div className="dashboard-grid text-left">
               <div className="card col-12 text-left">
@@ -1419,8 +1489,26 @@ Firmas autorizadas:
                           <th>País Destinatario</th>
                           <th>Categorías de Datos</th>
                           <th>Mecanismo / Adecuación</th>
-                          <th>Garantía (SCC)</th>
-                          <th>Acuerdo (DPA)</th>
+                          <th>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '4px', whiteSpace: 'nowrap' }}>
+                              <span>Garantía (SCC)</span>
+                              <Info 
+                                size={12} 
+                                className="text-slate-400 cursor-help mt-0.5" 
+                                title="Standard Contractual Clauses: Cláusulas internacionales obligatorias si el servidor del proveedor está fuera de Chile." 
+                              />
+                            </div>
+                          </th>
+                          <th>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '4px', whiteSpace: 'nowrap' }}>
+                              <span>Acuerdo (DPA)</span>
+                              <Info 
+                                size={12} 
+                                className="text-slate-400 cursor-help mt-0.5" 
+                                title="Data Processing Agreement: Contrato nacional que obliga a su proveedor a cuidar los datos." 
+                              />
+                            </div>
+                          </th>
                           <th>Acción</th>
                         </tr>
                       </thead>
@@ -1433,24 +1521,75 @@ Firmas autorizadas:
                             ? p.data_categories 
                             : (typeof p.data_categories === 'string' ? JSON.parse(p.data_categories) : []);
 
+                          const defaults = getSaaSDefaults(p.process_name);
+
+                          const activeCountry = isEditing 
+                            ? (editFields.country || (t ? t.country : defaults.country)) 
+                            : (t ? t.country : (tempRowSettings[p.id]?.country || defaults.country));
+
+                          const activeMechanism = isEditing 
+                            ? (editFields.transfer_mechanism || (t ? t.transfer_mechanism : defaults.transfer_mechanism))
+                            : (t ? t.transfer_mechanism : (tempRowSettings[p.id]?.transfer_mechanism || defaults.transfer_mechanism));
+
+                          const activeScc = isEditing 
+                            ? (editFields.has_scc !== undefined ? editFields.has_scc : (t ? t.has_scc : defaults.has_scc))
+                            : (t ? t.has_scc : (tempRowSettings[p.id]?.has_scc !== undefined ? tempRowSettings[p.id]?.has_scc : defaults.has_scc));
+
+                          const activeDpa = isEditing 
+                            ? (editFields.has_dpa !== undefined ? editFields.has_dpa : (t ? t.has_dpa : defaults.has_dpa))
+                            : (t ? t.has_dpa : (tempRowSettings[p.id]?.has_dpa !== undefined ? tempRowSettings[p.id]?.has_dpa : defaults.has_dpa));
+
+                          const selectStyle = {
+                            padding: '6px 10px',
+                            fontSize: '12px',
+                            background: '#1e293b',
+                            color: '#f8fafc',
+                            border: '1px solid #475569',
+                            borderRadius: '6px',
+                            width: '150px',
+                            outline: 'none'
+                          };
+
                           return (
                             <tr key={p.id}>
                               <td>
                                 <div style={{ display: 'flex', flexDirection: 'column' }}>
-                                  <span style={{ fontWeight: 600, fontSize: '13px' }}>{p.process_name}</span>
-                                  <span style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>{p.purpose}</span>
+                                  <strong style={{ fontSize: '13.5px', color: '#f1f5f9' }}>{getProviderName(p.process_name)}</strong>
+                                  <span style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>{p.process_name}</span>
                                 </div>
                               </td>
                               <td>
                                 {isEditing || !t ? (
                                   <select 
-                                    className="input-text" 
-                                    style={{ padding: '4px 8px', fontSize: '12px', background: '#0a0a14', width: '130px' }}
-                                    value={editFields.country || (t ? t.country : 'US')} 
-                                    onChange={e => setEditFields({ ...editFields, country: e.target.value })}
+                                    className="input-text text-left" 
+                                    style={selectStyle}
+                                    value={activeCountry} 
+                                    onChange={e => {
+                                      if (e.target.value === 'SEPARATOR') return;
+                                      if (isEditing) {
+                                        setEditFields({ ...editFields, country: e.target.value });
+                                      } else {
+                                        setTempRowSettings({
+                                          ...tempRowSettings,
+                                          [p.id]: {
+                                            country: e.target.value,
+                                            transfer_mechanism: activeMechanism,
+                                            has_scc: activeScc,
+                                            has_dpa: activeDpa
+                                          }
+                                        });
+                                      }
+                                    }}
                                   >
-                                    {countries.map(c => (
-                                      <option key={c.code} value={c.code}>{c.name}</option>
+                                    {orderedCountries.map(c => (
+                                      <option 
+                                        key={c.code} 
+                                        value={c.code} 
+                                        disabled={c.code === 'SEPARATOR'} 
+                                        style={{ background: '#1e293b', color: '#f8fafc', fontWeight: c.isTop ? 'bold' : 'normal' }}
+                                      >
+                                        {c.name} {c.isTop ? ' ⭐' : ''}
+                                      </option>
                                     ))}
                                   </select>
                                 ) : (
@@ -1465,15 +1604,29 @@ Firmas autorizadas:
                               <td>
                                 {isEditing || !t ? (
                                   <select
-                                    className="input-text"
-                                    style={{ padding: '4px 8px', fontSize: '12px', background: '#0a0a14', width: '130px' }}
-                                    value={editFields.transfer_mechanism || (t ? t.transfer_mechanism : 'STANDARD_CLAUSES')}
-                                    onChange={e => setEditFields({ ...editFields, transfer_mechanism: e.target.value })}
+                                    className="input-text text-left"
+                                    style={selectStyle}
+                                    value={activeMechanism}
+                                    onChange={e => {
+                                      if (isEditing) {
+                                        setEditFields({ ...editFields, transfer_mechanism: e.target.value });
+                                      } else {
+                                        setTempRowSettings({
+                                          ...tempRowSettings,
+                                          [p.id]: {
+                                            country: activeCountry,
+                                            transfer_mechanism: e.target.value,
+                                            has_scc: activeScc,
+                                            has_dpa: activeDpa
+                                          }
+                                        });
+                                      }
+                                    }}
                                   >
-                                    <option value="STANDARD_CLAUSES">Cláusulas Tipo (SCC)</option>
-                                    <option value="ADEQUATE_COUNTRY">País Adecuado</option>
-                                    <option value="BCR">Normas Vinculantes</option>
-                                    <option value="CONSENT_EXCEPTIONAL">Consentimiento Titular</option>
+                                    <option value="STANDARD_CLAUSES" style={{ background: '#1e293b', color: '#f8fafc' }}>Cláusulas Tipo (SCC)</option>
+                                    <option value="ADEQUATE_COUNTRY" style={{ background: '#1e293b', color: '#f8fafc' }}>País Adecuado</option>
+                                    <option value="BCR" style={{ background: '#1e293b', color: '#f8fafc' }}>Normas Vinculantes</option>
+                                    <option value="CONSENT_EXCEPTIONAL" style={{ background: '#1e293b', color: '#f8fafc' }}>Consentimiento Titular</option>
                                   </select>
                                 ) : (
                                   <span className={`badge ${t.adequacy_status === 'Adecuado' || t.transfer_mechanism === 'ADEQUATE_COUNTRY' ? 'badge-success' : 'badge-grave'}`}>
@@ -1485,8 +1638,22 @@ Firmas autorizadas:
                                 {isEditing || !t ? (
                                   <input 
                                     type="checkbox" 
-                                    checked={editFields.has_scc || false}
-                                    onChange={e => setEditFields({ ...editFields, has_scc: e.target.checked })}
+                                    checked={activeScc}
+                                    onChange={e => {
+                                      if (isEditing) {
+                                        setEditFields({ ...editFields, has_scc: e.target.checked });
+                                      } else {
+                                        setTempRowSettings({
+                                          ...tempRowSettings,
+                                          [p.id]: {
+                                            country: activeCountry,
+                                            transfer_mechanism: activeMechanism,
+                                            has_scc: e.target.checked,
+                                            has_dpa: activeDpa
+                                          }
+                                        });
+                                      }
+                                    }}
                                   />
                                 ) : (
                                   <span style={{ color: t.has_scc ? 'var(--color-success)' : 'var(--color-danger)', fontWeight: 600 }}>
@@ -1498,8 +1665,22 @@ Firmas autorizadas:
                                 {isEditing || !t ? (
                                   <input 
                                     type="checkbox" 
-                                    checked={editFields.has_dpa || false}
-                                    onChange={e => setEditFields({ ...editFields, has_dpa: e.target.checked })}
+                                    checked={activeDpa}
+                                    onChange={e => {
+                                      if (isEditing) {
+                                        setEditFields({ ...editFields, has_dpa: e.target.checked });
+                                      } else {
+                                        setTempRowSettings({
+                                          ...tempRowSettings,
+                                          [p.id]: {
+                                            country: activeCountry,
+                                            transfer_mechanism: activeMechanism,
+                                            has_scc: activeScc,
+                                            has_dpa: e.target.checked
+                                          }
+                                        });
+                                      }
+                                    }}
                                   />
                                 ) : (
                                   <span style={{ color: t.has_dpa ? 'var(--color-success)' : 'var(--color-danger)', fontWeight: 600 }}>
@@ -1516,7 +1697,12 @@ Firmas autorizadas:
                                           className="btn-save" 
                                           style={{ padding: '4px 8px', fontSize: '11px' }}
                                           onClick={() => {
-                                            handleUpdateTransfer(t.id, editFields);
+                                            handleUpdateTransfer(t.id, {
+                                              country: activeCountry,
+                                              transfer_mechanism: activeMechanism,
+                                              has_scc: activeScc,
+                                              has_dpa: activeDpa
+                                            });
                                             setEditingRowId(null);
                                           }}
                                         >
@@ -1562,11 +1748,11 @@ Firmas autorizadas:
                                           const payload = {
                                             domain: 'localhost:3000',
                                             provider_name: p.process_name,
-                                            country: editFields.country || 'US',
+                                            country: activeCountry,
                                             data_categories: cats,
-                                            transfer_mechanism: editFields.transfer_mechanism || 'STANDARD_CLAUSES',
-                                            has_scc: editFields.has_scc || false,
-                                            has_dpa: editFields.has_dpa || false
+                                            transfer_mechanism: activeMechanism,
+                                            has_scc: activeScc,
+                                            has_dpa: activeDpa
                                           };
                                           const res = await fetch(`${API_BASE}/api/transfers`, {
                                             method: 'POST',
@@ -1575,7 +1761,9 @@ Firmas autorizadas:
                                           });
                                           if (res.ok) {
                                             showToast('Garantía registrada para el proveedor.', 'success');
-                                            setEditFields({ country: 'US', transfer_mechanism: 'STANDARD_CLAUSES', has_scc: false, has_dpa: false });
+                                            const updated = { ...tempRowSettings };
+                                            delete updated[p.id];
+                                            setTempRowSettings(updated);
                                             fetchTransfers();
                                             handleFetchDiagnosis();
                                           }
@@ -1584,7 +1772,7 @@ Firmas autorizadas:
                                         }
                                       }}
                                     >
-                                      Confirmar Garantía
+                                      Guardar y Generar Anexo
                                     </button>
                                   )}
                                 </div>
