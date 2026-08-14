@@ -132,9 +132,19 @@ interface ClientConfig {
 }
 
 const API_BASE = (() => {
-  const url = (import.meta as any).env.VITE_API_URL || '';
+  const envUrl = (import.meta as any).env.VITE_API_URL || '';
+  // If explicitly provided, ensure it has protocol
+  if (envUrl && !envUrl.startsWith('http://') && !envUrl.startsWith('https://')) {
+    return 'https://' + envUrl;
+  }
+  // Use provided URL if valid
+  if (envUrl) {
+    return envUrl;
+  }
+  // Development fallback: point to local backend server
   if (typeof window !== 'undefined') {
     const hostname = window.location.hostname;
+    // If running on Render, map dashboard subdomain to API subdomain
     if (hostname.includes('onrender.com')) {
       const parts = hostname.split('.');
       const sub = parts[0];
@@ -144,10 +154,8 @@ const API_BASE = (() => {
       }
     }
   }
-  if (url && !url.startsWith('http://') && !url.startsWith('https://')) {
-    return 'https://' + url;
-  }
-  return url;
+  // Default to localhost backend during dev
+  return 'http://localhost:3000';
 })();
 
 interface DashboardProps {
@@ -504,7 +512,11 @@ export function Dashboard({ token, user, onLogout, initialTab }: DashboardProps)
 
   const fetchArcoTickets = async () => {
     try {
-      const res = await fetch(`${API_BASE}/api/arco/tickets`);
+      const headers: Record<string, string> = {};
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
+      }
+      const res = await fetch(`${API_BASE}/api/arco/tickets`, { headers });
       if (res.ok) {
         const data = await res.json();
         setArcoTickets(data);
@@ -516,7 +528,11 @@ export function Dashboard({ token, user, onLogout, initialTab }: DashboardProps)
 
   const fetchConfig = async () => {
     try {
-      const res = await fetch(`${API_BASE}/api/config/localhost:3000`);
+      const headers: Record<string, string> = {};
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
+      }
+      const res = await fetch(`${API_BASE}/api/config/localhost:3000`, { headers });
       if (res.ok) {
         const data = await res.json();
         setConfig(data);
@@ -537,7 +553,11 @@ export function Dashboard({ token, user, onLogout, initialTab }: DashboardProps)
 
   const fetchRopaList = async () => {
     try {
-      const response = await fetch(`${API_BASE}/api/ropa`);
+      const headers: Record<string, string> = {};
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
+      }
+      const response = await fetch(`${API_BASE}/api/ropa`, { headers });
       if (response.ok) {
         const data = await response.json();
         setRopaList(data);
@@ -549,7 +569,11 @@ export function Dashboard({ token, user, onLogout, initialTab }: DashboardProps)
 
   const fetchTransfers = async () => {
     try {
-      const res = await fetch(`${API_BASE}/api/transfers?domain=localhost:3000`);
+      const headers: Record<string, string> = {};
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
+      }
+      const res = await fetch(`${API_BASE}/api/transfers?domain=localhost:3000`, { headers });
       if (res.ok) {
         const data = await res.json();
         setTransfers(data);
@@ -561,7 +585,11 @@ export function Dashboard({ token, user, onLogout, initialTab }: DashboardProps)
 
   const fetchCountries = async () => {
     try {
-      const res = await fetch(`${API_BASE}/api/transfers/countries`);
+      const headers: Record<string, string> = {};
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
+      }
+      const res = await fetch(`${API_BASE}/api/transfers/countries`, { headers });
       if (res.ok) {
         const data = await res.json();
         setCountries(data);
@@ -573,7 +601,11 @@ export function Dashboard({ token, user, onLogout, initialTab }: DashboardProps)
 
   const fetchIncidents = async () => {
     try {
-      const res = await fetch(`${API_BASE}/api/incidents?domain=localhost:3000`);
+      const headers: Record<string, string> = {};
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
+      }
+      const res = await fetch(`${API_BASE}/api/incidents?domain=localhost:3000`, { headers });
       if (res.ok) {
         const data = await res.json();
         setIncidents(data);
