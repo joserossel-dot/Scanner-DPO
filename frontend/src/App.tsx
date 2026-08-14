@@ -1488,6 +1488,28 @@ Firmas autorizadas:
             return '';
           };
 
+          // ── getCountry: Null-safe per-row country resolver ──────────────────────────
+          const getCountry = (row: any): string => {
+            const name = row?.providerName || row?.process_name || '';
+            if (!name) return 'ERROR: SIN DATOS';
+            const lower = name.toLowerCase();
+            if (/(google|aws|amazon|microsoft|hubspot|mailchimp|salesforce|meta|stripe|slack|zoom|sendgrid|intercom|zendesk|facebook)/.test(lower)) {
+              return 'Estados Unidos';
+            }
+            if (/(buk|talana|defontana)/.test(lower)) {
+              return 'Chile';
+            }
+            if (/(sap|teamviewer|booking)/.test(lower)) {
+              return 'Alemania';
+            }
+            // Fallback: check purpose field too
+            const purpose = (row?.purpose || '').toLowerCase();
+            if (/(google|aws|amazon|microsoft|hubspot|mailchimp|salesforce|meta|stripe)/.test(purpose)) {
+              return 'Estados Unidos';
+            }
+            return 'País por definir';
+          };
+
           // Re-order countries: Chile, US and EU (Spain, Germany, France, Italy) at the top
           const topCodes = ['CL', 'US', 'ES', 'DE', 'FR', 'IT'];
           const topList = countries.filter(c => topCodes.includes(c.code))
@@ -1604,6 +1626,20 @@ Firmas autorizadas:
                           const suggestedCountry = getSuggestedCountry(getProviderName(p.process_name));
                           const resolvedCountry = activeCountry || suggestedCountry || 'US';
 
+                          // ══ DIAGNOSTIC LOG ══════════════════════════════════════════
+                          console.log('=== DEBUG TID ROW ===', {
+                            id: p.id,
+                            process_name: p.process_name,
+                            status: p.status,
+                            cross_border_transfer: p.cross_border_transfer,
+                            purpose: p.purpose,
+                            data_categories: p.data_categories,
+                            tempRowSettings_entry: tempRowSettings[p.id],
+                            resolvedCountry,
+                            computedCountry: getCountry(p),
+                            savedTransfer: t || null,
+                          });
+
                           return (
                             <tr key={p.id}>
                               <td>
@@ -1613,44 +1649,28 @@ Firmas autorizadas:
                                 </div>
                               </td>
                               <td>
-                                {isEditing || !t ? (
-                                  <select
-                                    data-tid-select="country"
-                                    style={selectStyle}
-                                    value={resolvedCountry}
-                                    onChange={e => {
-                                      if (e.target.value === 'SEPARATOR') return;
-                                      if (isEditing) {
-                                        setEditFields({ ...editFields, country: e.target.value });
-                                      } else {
-                                        setTempRowSettings({
-                                          ...tempRowSettings,
-                                          [p.id]: {
-                                            country: e.target.value,
-                                            transfer_mechanism: activeMechanism,
-                                            has_scc: activeScc,
-                                            has_dpa: activeDpa
-                                          }
-                                        });
-                                      }
-                                    }}
-                                  >
-                                    <option value="" disabled style={optStyle}>— Seleccione país —</option>
-                                    {orderedCountries.map(c => (
-                                      <option
-                                        key={c.code}
-                                        value={c.code}
-                                        disabled={c.code === 'SEPARATOR'}
-                                        style={{ ...optStyle, fontWeight: c.isTop ? '700' : 'normal' }}
-                                      >
-                                        {c.name}{c.isTop ? ' ⭐' : ''}
-                                      </option>
-                                    ))}
-                                  </select>
-                                ) : (
-                                  <span style={{ fontSize: '13px' }}>
-                                    {countries.find(c => c.code === t.country)?.name || t.country}
+                                {/* DEBUG: readonly input — border rojo para confirmar que el bundle se actualizó */}
+                                {t ? (
+                                  <span style={{ fontSize: '13px', fontWeight: 600, color: '#f1f5f9' }}>
+                                    {countries.find(c => c.code === t.country)?.name || t.country || getCountry(p)}
                                   </span>
+                                ) : (
+                                  <input
+                                    type="text"
+                                    readOnly
+                                    value={getCountry(p)}
+                                    style={{
+                                      backgroundColor: '#0f172a',
+                                      color: '#ffffff',
+                                      border: '2px solid #ef4444',
+                                      borderRadius: '6px',
+                                      padding: '6px 8px',
+                                      width: '100%',
+                                      fontSize: '12px',
+                                      fontWeight: 700,
+                                      cursor: 'default'
+                                    }}
+                                  />
                                 )}
                               </td>
                               <td style={{ fontSize: '12px', maxWidth: '185px', whiteSpace: 'normal', wordBreak: 'break-word' }}>
