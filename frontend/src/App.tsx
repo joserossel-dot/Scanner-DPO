@@ -260,6 +260,31 @@ export function Dashboard({ token, user, onLogout, initialTab }: DashboardProps)
   const [editFields, setEditFields] = useState<any>({});
   const [tempRowSettings, setTempRowSettings] = useState<Record<string, any>>({});
 
+  // ── Auto-populate TID tempRowSettings when ropaList loads ───────────────────
+  // This fires ONCE per ropaList change so the user never sees an empty selector.
+  useEffect(() => {
+    if (!ropaList || ropaList.length === 0) return;
+    const SAAS_REGEX = /google|aws|amazon|microsoft|meta|hubspot|mailchimp|salesforce|stripe|slack|facebook|zoom|sendgrid|intercom|zendesk/i;
+    const LOCAL_REGEX = /buk|talana|defontana/i;
+    const updates: Record<string, any> = {};
+    ropaList
+      .filter((item: any) => item.status === 'confirmed')
+      .forEach((item: any) => {
+        // Only pre-populate rows that don't already have a saved transfer
+        if (tempRowSettings[item.id] !== undefined) return;
+        const name = (item.process_name || '').toLowerCase();
+        if (SAAS_REGEX.test(name)) {
+          updates[item.id] = { country: 'US', transfer_mechanism: 'STANDARD_CLAUSES', has_scc: true, has_dpa: true };
+        } else if (LOCAL_REGEX.test(name)) {
+          updates[item.id] = { country: 'CL', transfer_mechanism: 'ADEQUATE_COUNTRY', has_scc: false, has_dpa: true };
+        }
+      });
+    if (Object.keys(updates).length > 0) {
+      setTempRowSettings(prev => ({ ...prev, ...updates }));
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ropaList]);
+
   // Toast notifications state
   const [toasts, setToasts] = useState<Array<{ id: string; message: string; type: 'success' | 'warning' | 'info' }>>([]);
   const [isDiscoveryOpen, setIsDiscoveryOpen] = useState(false);
@@ -1555,23 +1580,24 @@ Firmas autorizadas:
                             ? (editFields.has_dpa !== undefined ? editFields.has_dpa : (t ? t.has_dpa : defaults.has_dpa))
                             : (t ? t.has_dpa : (tempRowSettings[p.id]?.has_dpa !== undefined ? tempRowSettings[p.id]?.has_dpa : defaults.has_dpa));
 
-                          // ── DEFINITIVE SELECT STYLE: inline wins over any class ──────────────
+                          // ── DEFINITIVE SELECT STYLE ───────────────────────────────────────────
+                          // backgroundColor (not 'background') is required for React CSSProperties
+                          // to reliably override browser defaults in all engines.
                           const selectStyle: React.CSSProperties = {
-                            padding: '6px 10px',
-                            fontSize: '12px',
-                            background: '#1e293b',
-                            color: '#f8fafc',       // force visible white text
-                            border: '1px solid #475569',
+                            backgroundColor: '#1e293b',
+                            color: '#ffffff',
+                            borderColor: '#475569',
+                            borderStyle: 'solid',
+                            borderWidth: '1px',
                             borderRadius: '6px',
-                            width: '155px',
-                            outline: 'none',
-                            appearance: 'auto',
-                            WebkitAppearance: 'auto',
+                            padding: '8px',
+                            width: '100%',
+                            fontSize: '12px',
                             cursor: 'pointer'
                           };
                           const optStyle: React.CSSProperties = {
-                            background: '#1e293b',
-                            color: '#f8fafc'
+                            backgroundColor: '#1e293b',
+                            color: '#ffffff'
                           };
 
                           // Enrich activeCountry with per-row suggestion when no saved transfer exists
@@ -1589,6 +1615,7 @@ Firmas autorizadas:
                               <td>
                                 {isEditing || !t ? (
                                   <select
+                                    data-tid-select="country"
                                     style={selectStyle}
                                     value={resolvedCountry}
                                     onChange={e => {
@@ -1632,6 +1659,7 @@ Firmas autorizadas:
                               <td>
                                 {isEditing || !t ? (
                                   <select
+                                    data-tid-select="mechanism"
                                     style={selectStyle}
                                     value={activeMechanism}
                                     onChange={e => {

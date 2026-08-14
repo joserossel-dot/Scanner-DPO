@@ -80,23 +80,64 @@ router.post('/policies', adminCors, async (req: any, res) => {
     );
 
     // 3. Build deduplicated provider/encargado list
+    //    Sources: (a) auto-generated "Tratamiento de Datos en <vendor>" names,
+    //             (b) well-known SaaS names appearing in process_name or purpose,
+    //             (c) vendor_name from international_transfers table.
     const providersSet = new Set<string>();
 
+    // Map of well-known SaaS substrings → canonical display name
+    const KNOWN_SAAS: Record<string, string> = {
+      google:     'Google (Workspace / Analytics)',
+      aws:        'Amazon Web Services (AWS)',
+      amazon:     'Amazon Web Services (AWS)',
+      microsoft:  'Microsoft (Azure / Office 365)',
+      meta:       'Meta Platforms (Facebook / Instagram)',
+      facebook:   'Meta Platforms (Facebook / Instagram)',
+      hubspot:    'HubSpot',
+      mailchimp:  'Mailchimp (Intuit)',
+      salesforce: 'Salesforce',
+      stripe:     'Stripe',
+      slack:      'Slack (Salesforce)',
+      zoom:       'Zoom Video Communications',
+      sendgrid:   'SendGrid (Twilio)',
+      intercom:   'Intercom',
+      zendesk:    'Zendesk',
+      buk:        'Buk (Chile)',
+      talana:     'Talana (Chile)',
+      defontana:  'Defontana (Chile)',
+    };
+
     ropaRes.rows.forEach((r: any) => {
-      // Only include if the process name looks like an external vendor
-      const name = r.process_name || '';
-      if (name.startsWith('Tratamiento de Datos en ')) {
-        const clean = name.replace('Tratamiento de Datos en ', '').trim();
-        if (clean) providersSet.add(clean);
+      const procName = (r.process_name || '').trim();
+      const purpose  = (r.purpose     || '').toLowerCase();
+      const lowerProc = procName.toLowerCase();
+
+      // (a) Auto-generated prefix pattern
+      if (procName.startsWith('Tratamiento de Datos en ')) {
+        const vendorName = procName.replace('Tratamiento de Datos en ', '').trim();
+        if (vendorName) providersSet.add(vendorName);
+        return; // already handled, skip keyword scan for this row
       }
+
+      // (b) Keyword scan across process_name + purpose
+      let matchedVendor: string | null = null;
+      for (const [keyword, display] of Object.entries(KNOWN_SAAS)) {
+        if (lowerProc.includes(keyword) || purpose.includes(keyword)) {
+          matchedVendor = display;
+          break;
+        }
+      }
+      if (matchedVendor) providersSet.add(matchedVendor);
     });
 
+    // (c) Registered transfers
     transfersRes.rows.forEach((t: any) => {
       const clean = (t.vendor_name || '').trim();
       if (clean) providersSet.add(clean);
     });
 
     const providersList = Array.from(providersSet);
+
 
     // 4. Shape RoPA objects for the policy builder
     const ropaProcesses = ropaRes.rows.map((r: any) => ({
