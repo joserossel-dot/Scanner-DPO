@@ -1659,6 +1659,10 @@ Firmas autorizadas:
 
                           const displayScc = t ? t.has_scc : dict.hasScc;
                           const displayDpa = t ? t.has_dpa : dict.hasDpa;
+const activeCountry = displayCountry;
+const activeMechanism = displayMechanism;
+const activeScc = displayScc;
+const activeDpa = displayDpa;
 
                           const mechColor = displayMechanism.includes('SCC') ? '#818cf8'
                             : displayMechanism.includes('Adecuación') ? '#22c55e'
