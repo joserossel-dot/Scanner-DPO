@@ -62,17 +62,49 @@ router.post('/policies', adminCors, async (req: any, res) => {
     return res.status(400).json({ error: 'Campos del formulario incompletos o inválidos.' });
   }
 
+  const db = getDb();
   try {
+    // Query confirmed ROPA processes for providers/vendors
+    const ropaRes = await db.query(
+      `SELECT DISTINCT process_name FROM ropa_inventory 
+       WHERE user_id = $1 AND status = 'confirmed'`,
+      [req.user.id]
+    );
+
+    // Query registered international transfers (TID)
+    const transfersRes = await db.query(
+      `SELECT DISTINCT vendor_name FROM international_transfers WHERE user_id = $1`,
+      [req.user.id]
+    );
+
+    const providersSet = new Set<string>();
+
+    ropaRes.rows.forEach((r: any) => {
+      const clean = r.process_name
+        .replace(/^Tratamiento de Datos en\s+/i, '')
+        .replace(/\(SaaS\)/i, '')
+        .replace(/\(CCTV\)/i, '')
+        .trim();
+      if (clean) providersSet.add(clean);
+    });
+
+    transfersRes.rows.forEach((t: any) => {
+      const clean = t.vendor_name.trim();
+      if (clean) providersSet.add(clean);
+    });
+
+    const providersList = Array.from(providersSet);
+
     const policyHtml = generatePrivacyPolicy({
       companyRut,
       address,
       contactEmail,
       dataCategories,
       purposes,
-      retentionRules
+      retentionRules,
+      providers: providersList
     });
 
-    const db = getDb();
     const result = await db.query(
       `INSERT INTO privacy_policies (user_id, company_rut, address, contact_email, data_categories, purposes, retention_rules, policy_html)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)

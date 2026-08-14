@@ -34,6 +34,23 @@ interface ContractBuilderViewProps {
 }
 
 export default function ContractBuilderView({ token, ropaList }: ContractBuilderViewProps) {
+  const externalProviders = (ropaList || [])
+    .filter(p => 
+      p.status === 'confirmed' && 
+      (p.cross_border_transfer === true || 
+       ['aws', 'gcp', 'azure', 'digitalocean', 'google', 'hubspot', 'salesforce', 'mailchimp', 'activecampaign', 'sendgrid', 'google_analytics', 'meta_pixel', 'hotjar', 'zoom', 'slack', 'bamboohr', 'workday', 'zendesk', 'intercom'].some(name => 
+         p.process_name?.toLowerCase().includes(name) || p.purpose?.toLowerCase().includes(name)
+       )
+      )
+    ).map(p => {
+      const cleanName = p.process_name
+        .replace(/^Tratamiento de Datos en\s+/i, '')
+        .replace(/\(SaaS\)/i, '')
+        .replace(/\(CCTV\)/i, '')
+        .trim();
+      return cleanName;
+    }).filter((val, idx, self) => self.indexOf(val) === idx);
+
   // Form fields
   const [clientName, setClientName] = useState('Mi Empresa Chile SpA');
   const [clientRut, setClientRut] = useState('76.123.456-7');
@@ -183,51 +200,30 @@ export default function ContractBuilderView({ token, ropaList }: ContractBuilder
       <div className="lg:col-span-5 bg-slate-900/40 border border-slate-800/80 rounded-xl p-5 md:p-6 shadow-md flex flex-col justify-between">
         <div className="space-y-5">
           {/* Dynamic tasks from RoPA */}
-          {ropaList && ropaList.length > 0 && (
+          {externalProviders.length > 0 ? (
             <div className="p-4 bg-indigo-950/20 border border-indigo-900/30 rounded-lg text-left space-y-2 mb-4">
               <span className="text-[9px] font-black uppercase text-indigo-400 tracking-wider">Tubería RoPA ➔ Contratos Requeridos</span>
-              <h4 className="text-xs font-bold text-white leading-relaxed">Documentos Requeridos Detectados:</h4>
-              <div className="space-y-2 pt-1">
-                {ropaList.some(p => {
-                  const name = p.process_name?.toLowerCase() || '';
-                  const purp = p.purpose?.toLowerCase() || '';
-                  return name.includes('rrhh') || name.includes('recursos humanos') || name.includes('empleado') || name.includes('nómina') || name.includes('personal') ||
-                         purp.includes('rrhh') || purp.includes('recursos humanos') || purp.includes('empleado') || purp.includes('nómina') || purp.includes('personal');
-                }) ? (
-                  <label className="flex items-start gap-2.5 text-xs text-slate-350 cursor-pointer">
-                    <input type="checkbox" className="mt-0.5 rounded border-slate-800 text-indigo-600 focus:ring-0" />
+              <h4 className="text-xs font-bold text-white leading-relaxed">
+                Atención: Según su inventario, debe firmar Anexos de Encargado (DPA) con:
+              </h4>
+              <div className="space-y-2 pt-1.5">
+                {externalProviders.map((prov, index) => (
+                  <label key={index} className="flex items-start gap-2.5 text-xs text-slate-350 cursor-pointer select-none">
+                    <input type="checkbox" className="mt-0.5 rounded border-slate-800 text-indigo-600 focus:ring-0 bg-slate-950" />
                     <span>
-                      <strong className="text-white">Cláusulas Laborales</strong> <span className="text-[10px] text-indigo-400 block">(detectado por RRHH en su RoPA)</span>
+                      <strong className="text-white">{prov}</strong>
                     </span>
                   </label>
-                ) : null}
-
-                {ropaList.some(p => {
-                  const name = p.process_name?.toLowerCase() || '';
-                  const purp = p.purpose?.toLowerCase() || '';
-                  const isAuto = p.source === 'auto_scanner';
-                  return isAuto || name.includes('aws') || name.includes('google') || name.includes('hubspot') || name.includes('salesforce') || name.includes('crm') || name.includes('shopify') || name.includes('mailchimp');
-                }) ? (
-                  <label className="flex items-start gap-2.5 text-xs text-slate-350 cursor-pointer">
-                    <input type="checkbox" className="mt-0.5 rounded border-slate-800 text-indigo-600 focus:ring-0" />
-                    <span>
-                      <strong className="text-white">Contratos de Proveedores (DPA/SCC)</strong> <span className="text-[10px] text-indigo-400 block">(detectado por Shadow IT / SaaS en su RoPA)</span>
-                    </span>
-                  </label>
-                ) : null}
-
-                {!ropaList.some(p => {
-                  const name = p.process_name?.toLowerCase() || '';
-                  const purp = p.purpose?.toLowerCase() || '';
-                  const isAuto = p.source === 'auto_scanner';
-                  return isAuto || name.includes('rrhh') || name.includes('recursos humanos') || name.includes('empleado') || name.includes('nómina') || name.includes('personal') ||
-                         purp.includes('rrhh') || purp.includes('recursos humanos') || purp.includes('empleado') || purp.includes('nómina') || purp.includes('personal') ||
-                         name.includes('aws') || name.includes('google') || name.includes('hubspot') || name.includes('salesforce') || name.includes('crm') || name.includes('shopify') || name.includes('mailchimp');
-                }) && (
-                  <p className="text-[11px] text-slate-500 italic">No se detectaron requerimientos de contratos específicos en su RoPA actual.</p>
-                )}
+                ))}
               </div>
             </div>
+          ) : (
+            ropaList && ropaList.length > 0 && (
+              <div className="p-4 bg-slate-900/20 border border-slate-800/40 rounded-lg text-left mb-4">
+                <span className="text-[9px] font-black uppercase text-slate-500 tracking-wider">Tubería RoPA ➔ Contratos</span>
+                <p className="text-xs text-slate-450 italic mt-1">No se detectaron requerimientos de contratos con proveedores extranjeros en su RoPA actual.</p>
+              </div>
+            )
           )}
 
           <div className="flex items-center gap-2 pb-3 border-b border-slate-850">

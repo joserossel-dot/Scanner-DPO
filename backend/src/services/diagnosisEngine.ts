@@ -22,7 +22,7 @@ export interface DiagnosisAnswers {
   finances_retention_rules?: string;
 
   vendors_transfer_types?: string[];
-  vendors_main_names?: string;
+  vendors_main_names?: string[];
   vendors_dpa_contracts?: string;
   
   // Custom 'Other' fields

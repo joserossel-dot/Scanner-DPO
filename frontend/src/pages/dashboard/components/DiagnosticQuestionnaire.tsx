@@ -54,7 +54,7 @@ interface QuestionnaireState {
   // Area 5: Proveedores & Terceros
   vendors_transfer_types: string[];
   vendors_transfer_types_other: string;
-  vendors_main_names: string;
+  vendors_main_names: string[];
   vendors_dpa_contracts: string;
   vendors_dpa_contracts_other: string;
 
@@ -102,7 +102,7 @@ const initialFormState: QuestionnaireState = {
 
   vendors_transfer_types: [],
   vendors_transfer_types_other: '',
-  vendors_main_names: '',
+  vendors_main_names: [],
   vendors_dpa_contracts: '',
   vendors_dpa_contracts_other: '',
 
@@ -139,6 +139,7 @@ export default function DiagnosticQuestionnaire({ onSubmit, token }: DiagnosticQ
   const [formData, setFormData] = useState<QuestionnaireState>(initialFormState);
   const [activeAccordion, setActiveAccordion] = useState<number | null>(0);
   const [formSubmitted, setFormSubmitted] = useState(false);
+  const [vendorTagInput, setVendorTagInput] = useState('');
   const [validationError, setValidationError] = useState('');
   const [detectedByScanner, setDetectedByScanner] = useState(false);
 
@@ -201,6 +202,26 @@ export default function DiagnosticQuestionnaire({ onSubmit, token }: DiagnosticQ
       : [...currentList, value];
     
     handleInputChange(field, updatedList);
+  };
+
+  const handleAddVendorTag = () => {
+    if (vendorTagInput.trim()) {
+      const trimmed = vendorTagInput.trim();
+      if (!formData.vendors_main_names.includes(trimmed)) {
+        setFormData(prev => ({
+          ...prev,
+          vendors_main_names: [...prev.vendors_main_names, trimmed]
+        }));
+      }
+      setVendorTagInput('');
+    }
+  };
+
+  const handleRemoveVendorTag = (tag: string) => {
+    setFormData(prev => ({
+      ...prev,
+      vendors_main_names: prev.vendors_main_names.filter(t => t !== tag)
+    }));
   };
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -892,7 +913,53 @@ export default function DiagnosticQuestionnaire({ onSubmit, token }: DiagnosticQ
                   </div>
                 </div>
 
+                <div className="md:col-span-2 bg-slate-900/10 p-3 rounded-lg border border-slate-800/40 mb-2">
+                  <label className="text-xs font-semibold text-slate-350 block mb-1">Especifique los nombres de los proveedores externos principales con los que comparte datos (ej. AWS, Meta, HubSpot):</label>
+                  <p className="text-[10px] text-slate-500 mb-2">Escriba el nombre y haga clic en Añadir o presione la tecla Enter.</p>
+                  
+                  <div className="flex gap-2 mb-2">
+                    <input 
+                      type="text"
+                      value={vendorTagInput}
+                      onChange={e => setVendorTagInput(e.target.value)}
+                      onKeyDown={e => {
+                        if (e.key === 'Enter') {
+                          e.preventDefault();
+                          handleAddVendorTag();
+                        }
+                      }}
+                      placeholder="ej. AWS, HubSpot, Meta..."
+                      className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-indigo-500/50"
+                    />
+                    <button 
+                      type="button"
+                      onClick={handleAddVendorTag}
+                      className="px-4 py-1.5 bg-indigo-600 hover:bg-indigo-550 text-white text-xs font-bold rounded-lg transition-colors"
+                    >
+                      Añadir
+                    </button>
+                  </div>
 
+                  <div className="flex flex-wrap gap-1.5 min-h-[30px] p-2 bg-slate-950/40 border border-slate-850 rounded-lg">
+                    {formData.vendors_main_names && formData.vendors_main_names.length > 0 ? (
+                      formData.vendors_main_names.map((tag) => (
+                        <span key={tag} className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-indigo-950/60 border border-indigo-900/40 text-[10px] text-indigo-300 font-semibold">
+                          <span>{tag}</span>
+                          <button 
+                            type="button" 
+                            onClick={() => handleRemoveVendorTag(tag)} 
+                            className="text-indigo-400 hover:text-white font-bold focus:outline-none"
+                            style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', fontSize: '12px' }}
+                          >
+                            &times;
+                          </button>
+                        </span>
+                      ))
+                    ) : (
+                      <span className="text-[10px] text-slate-500 italic pl-1">Ningún proveedor agregado.</span>
+                    )}
+                  </div>
+                </div>
 
                 <div>
                   <label className="text-xs font-semibold text-slate-300 block mb-1.5">¿Tus contratos con estos proveedores incluyen un acuerdo de protección de datos (DPA)?</label>

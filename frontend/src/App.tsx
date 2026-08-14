@@ -1380,215 +1380,230 @@ Firmas autorizadas:
         )}
 
         {/* Sub-tab: TID & Foreign Providers */}
-        {remediationSubTab === 'transfers' && (
-          <div className="dashboard-grid text-left">
-            <div className="card col-12 text-left">
-              <div className="bg-amber-950/20 border border-amber-900/40 rounded-xl p-3.5 mb-4 flex items-start gap-2.5">
-                <AlertTriangle size={16} className="text-amber-500 flex-shrink-0 mt-0.5" />
-                <span className="text-[11.5px] text-amber-500 leading-relaxed">
-                  <strong>⚠️ Conexión Legal:</strong> Los proveedores extranjeros que registre en esta matriz DEBEN ser declarados en su 'Política de Privacidad' y obligan a generar un anexo en la pestaña 'Contratos DPA/SCC'.
-                </span>
-              </div>
+        {/* Sub-tab: TID & Foreign Providers */}
+        {remediationSubTab === 'transfers' && (() => {
+          const ropaTransfers = ropaList.filter(item => 
+            item.status === 'confirmed' && 
+            (item.cross_border_transfer === true || 
+             ['aws', 'gcp', 'azure', 'digitalocean', 'google', 'hubspot', 'salesforce', 'mailchimp', 'activecampaign', 'sendgrid', 'google_analytics', 'meta_pixel', 'hotjar', 'zoom', 'slack', 'bamboohr', 'workday', 'zendesk', 'intercom'].some(name => 
+               item.process_name?.toLowerCase().includes(name) || item.purpose?.toLowerCase().includes(name)
+             )
+            )
+          );
 
-              {/* Dynamic Providers Detected from RoPA */}
-              {ropaList && ropaList.filter(item => item.cross_border_transfer && (item.status === 'confirmed' || !item.status)).length > 0 && (
-                <div className="bg-indigo-950/20 border border-indigo-900/35 p-4 rounded-xl mb-4 text-left space-y-2">
-                  <h4 className="text-xs font-bold text-indigo-400 uppercase tracking-wide">🔍 Proveedores de Transferencia Internacional Detectados en su RoPA:</h4>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
-                    {ropaList.filter(item => item.cross_border_transfer && (item.status === 'confirmed' || !item.status)).map((p, idx) => (
-                      <div key={idx} className="bg-slate-900/60 border border-slate-800 p-2.5 rounded-lg flex justify-between items-center text-xs">
-                        <div>
-                          <p className="font-extrabold text-white">{p.process_name}</p>
-                          <p className="text-[10px] text-slate-400 mt-0.5">{p.purpose}</p>
-                        </div>
-                        <span className="text-[9px] font-black bg-indigo-950 text-indigo-400 px-2 py-0.5 rounded border border-indigo-900/30">
-                          RoPA Sync
-                        </span>
-                      </div>
-                    ))}
+          return (
+            <div className="dashboard-grid text-left">
+              <div className="card col-12 text-left">
+                <div className="bg-amber-950/20 border border-amber-900/40 rounded-xl p-3.5 mb-4 flex items-start gap-2.5">
+                  <AlertTriangle size={16} className="text-amber-500 flex-shrink-0 mt-0.5" />
+                  <span className="text-[11.5px] text-amber-500 leading-relaxed">
+                    <strong>⚠️ Conexión Legal:</strong> Los proveedores extranjeros detectados en su RoPA deben contar con garantías de transferencia (SCC) y acuerdos de tratamiento (DPA) regulados bajo el Art. 28 de la Ley N° 21.719.
+                  </span>
+                </div>
+
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px' }}>
+                  <div>
+                    <h3 style={{ margin: 0, fontSize: '15px', fontWeight: 600 }}>Matriz de Transferencias Internacionales (TID)</h3>
+                    <p style={{ margin: '2px 0 0 0', fontSize: '13px', color: 'var(--text-secondary)' }}>
+                      Mapeo automático de transferencias y proveedores externos declarados en el inventario RoPA.
+                    </p>
                   </div>
                 </div>
-              )}
 
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px', flexWrap: 'wrap', gap: '10px' }}>
-                <div>
-                  <h3 style={{ margin: 0, fontSize: '15px', fontWeight: 600 }}>Matriz de Transferencias Internacionales (TID)</h3>
-                  <p style={{ margin: '2px 0 0 0', fontSize: '13px', color: 'var(--text-secondary)' }}>Auditoría y regularización de proveedores extranjeros bajo el Art. 28 de la Ley N° 21.719.</p>
-                </div>
-                <button className="btn-save" onClick={() => { setIsAddingTransfer(true); setWizardStep(1); }}>
-                  <Plus size={14} />
-                  <span style={{ marginLeft: '6px' }}>Agregar Proveedor</span>
-                </button>
-              </div>
+                {ropaTransfers.length > 0 ? (
+                  <div style={{ overflowX: 'auto' }}>
+                    <table className="transfers-table">
+                      <thead>
+                        <tr>
+                          <th>Proveedor / Proceso (desde RoPA)</th>
+                          <th>País Destinatario</th>
+                          <th>Categorías de Datos</th>
+                          <th>Mecanismo / Adecuación</th>
+                          <th>Garantía (SCC)</th>
+                          <th>Acuerdo (DPA)</th>
+                          <th>Acción</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {ropaTransfers.map(p => {
+                          const t = transfers.find(x => x.provider_name === p.process_name || x.vendor_name === p.process_name);
+                          const isEditing = editingRowId === p.id || (t && editingRowId === t.id);
+                          
+                          const cats = Array.isArray(p.data_categories) 
+                            ? p.data_categories 
+                            : (typeof p.data_categories === 'string' ? JSON.parse(p.data_categories) : []);
 
-              {isAddingTransfer ? (
-                <div style={{ background: 'rgba(255,255,255,0.01)', border: '1px dashed var(--border-color)', padding: '16px', borderRadius: '8px', marginBottom: '20px' }}>
-                  <h4 style={{ margin: '0 0 15px 0', fontSize: '14px', fontWeight: 600 }}>Formulario de Registro (Paso {wizardStep} de 2)</h4>
-                  <form onSubmit={handleCreateTransfer}>
-                    {wizardStep === 1 ? (
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                        <div>
-                          <label className="form-label">Nombre del Proveedor (ej: Salesforce, Stripe)</label>
-                          <input type="text" className="input-text" style={{ width: '100%' }} value={vendorName} onChange={e => setVendorName(e.target.value)} required />
-                        </div>
-                        <div>
-                          <label className="form-label">País de Destino (Destinatario)</label>
-                          <select className="input-text" style={{ width: '100%', background: '#0a0a14' }} value={destCountry} onChange={e => setDestCountry(e.target.value)}>
-                            {countries.map(c => (
-                              <option key={c.code} value={c.code}>{c.name} ({c.adequacy})</option>
-                            ))}
-                          </select>
-                        </div>
-                        <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '10px' }}>
-                          <button type="button" className="btn-save" onClick={() => setWizardStep(2)}>Siguiente</button>
-                        </div>
-                      </div>
-                    ) : (
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                        <div>
-                          <label className="form-label">Categorías de Datos Transferidas</label>
-                          <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', background: 'black', padding: '10px', borderRadius: '4px' }}>
-                            {['Datos de navegación (cookies/IP)', 'Nombres / Identidad', 'Correo electrónico', 'Datos financieros/tarjetas'].map(cat => {
-                              const hasCat = selectedCategories.includes(cat);
-                              return (
-                                <label key={cat} style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', cursor: 'pointer' }}>
+                          return (
+                            <tr key={p.id}>
+                              <td>
+                                <div style={{ display: 'flex', flexDirection: 'column' }}>
+                                  <span style={{ fontWeight: 600, fontSize: '13px' }}>{p.process_name}</span>
+                                  <span style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>{p.purpose}</span>
+                                </div>
+                              </td>
+                              <td>
+                                {isEditing || !t ? (
+                                  <select 
+                                    className="input-text" 
+                                    style={{ padding: '4px 8px', fontSize: '12px', background: '#0a0a14', width: '130px' }}
+                                    value={editFields.country || (t ? t.country : 'US')} 
+                                    onChange={e => setEditFields({ ...editFields, country: e.target.value })}
+                                  >
+                                    {countries.map(c => (
+                                      <option key={c.code} value={c.code}>{c.name}</option>
+                                    ))}
+                                  </select>
+                                ) : (
+                                  <span style={{ fontSize: '13px' }}>
+                                    {countries.find(c => c.code === t.country)?.name || t.country}
+                                  </span>
+                                )}
+                              </td>
+                              <td style={{ fontSize: '12px', maxWidth: '185px', whiteSpace: 'normal', wordBreak: 'break-word' }}>
+                                {cats.join(', ')}
+                              </td>
+                              <td>
+                                {isEditing || !t ? (
+                                  <select
+                                    className="input-text"
+                                    style={{ padding: '4px 8px', fontSize: '12px', background: '#0a0a14', width: '130px' }}
+                                    value={editFields.transfer_mechanism || (t ? t.transfer_mechanism : 'STANDARD_CLAUSES')}
+                                    onChange={e => setEditFields({ ...editFields, transfer_mechanism: e.target.value })}
+                                  >
+                                    <option value="STANDARD_CLAUSES">Cláusulas Tipo (SCC)</option>
+                                    <option value="ADEQUATE_COUNTRY">País Adecuado</option>
+                                    <option value="BCR">Normas Vinculantes</option>
+                                    <option value="CONSENT_EXCEPTIONAL">Consentimiento Titular</option>
+                                  </select>
+                                ) : (
+                                  <span className={`badge ${t.adequacy_status === 'Adecuado' || t.transfer_mechanism === 'ADEQUATE_COUNTRY' ? 'badge-success' : 'badge-grave'}`}>
+                                    {t.transfer_mechanism === 'ADEQUATE_COUNTRY' ? 'País Adecuado' : 'Cláusulas SCC'}
+                                  </span>
+                                )}
+                              </td>
+                              <td>
+                                {isEditing || !t ? (
                                   <input 
                                     type="checkbox" 
-                                    checked={hasCat} 
-                                    onChange={() => {
-                                      if (hasCat) setSelectedCategories(prev => prev.filter(c => c !== cat));
-                                      else setSelectedCategories(prev => [...prev, cat]);
-                                    }}
+                                    checked={editFields.has_scc || false}
+                                    onChange={e => setEditFields({ ...editFields, has_scc: e.target.checked })}
                                   />
-                                  <span>{cat}</span>
-                                </label>
-                              );
-                            })}
-                          </div>
-                        </div>
-                        <div style={{ display: 'flex', gap: '15px' }}>
-                          <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', fontSize: '13px' }}>
-                            <input type="checkbox" checked={signedScc} onChange={e => setSignedScc(e.target.checked)} />
-                            <span>¿Firmó Cláusulas Contractuales Tipo (SCC)?</span>
-                          </label>
-                        </div>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '15px' }}>
-                          <button type="button" className="btn-action" onClick={() => setWizardStep(1)}>Atrás</button>
-                          <button type="submit" className="btn-save">Registrar Proveedor</button>
-                        </div>
-                      </div>
-                    )}
-                  </form>
-                </div>
-              ) : null}
-
-              {transfers.length > 0 ? (
-                <div style={{ overflowX: 'auto' }}>
-                  <table className="transfers-table">
-                    <thead>
-                      <tr>
-                        <th>Proveedor</th>
-                        <th>País Destinatario</th>
-                        <th>Categoría de Datos</th>
-                        <th>Adecuación</th>
-                        <th>Garantía Firmada (SCC)</th>
-                        <th>Acuerdo (DPA)</th>
-                        <th>Acción</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {transfers.map(t => {
-                        const isEditing = editingRowId === t.id;
-                        return (
-                          <tr key={t.id}>
-                            <td style={{ fontWeight: 600, fontSize: '13px' }}>{t.provider_name}</td>
-                            <td style={{ fontSize: '13px' }}>{t.country}</td>
-                            <td style={{ fontSize: '12px' }}>{t.data_categories?.join(', ')}</td>
-                            <td>
-                              <span className={`badge ${t.adequacy_status === 'Adecuado' ? 'badge-success' : 'badge-grave'}`}>
-                                {t.adequacy_status}
-                              </span>
-                            </td>
-                            <td>
-                              {isEditing ? (
-                                <input 
-                                  type="checkbox" 
-                                  checked={editFields.has_scc || false}
-                                  onChange={e => setEditFields({ ...editFields, has_scc: e.target.checked })}
-                                />
-                              ) : (
-                                <span style={{ color: t.has_scc ? 'var(--color-success)' : 'var(--color-danger)', fontWeight: 600 }}>
-                                  {t.has_scc ? '✓ Firmado' : '✗ Faltante'}
-                                </span>
-                              )}
-                            </td>
-                            <td>
-                              {isEditing ? (
-                                <input 
-                                  type="checkbox" 
-                                  checked={editFields.has_dpa || false}
-                                  onChange={e => setEditFields({ ...editFields, has_dpa: e.target.checked })}
-                                />
-                              ) : (
-                                <span style={{ color: t.has_dpa ? 'var(--color-success)' : 'var(--color-danger)', fontWeight: 600 }}>
-                                  {t.has_dpa ? '✓ Firmado' : '✗ Faltante'}
-                                </span>
-                              )}
-                            </td>
-                            <td>
-                              <div style={{ display: 'flex', gap: '8px' }}>
-                                {isEditing ? (
-                                  <>
+                                ) : (
+                                  <span style={{ color: t.has_scc ? 'var(--color-success)' : 'var(--color-danger)', fontWeight: 600 }}>
+                                    {t.has_scc ? '✓ Firmado' : '✗ Faltante'}
+                                  </span>
+                                )}
+                              </td>
+                              <td>
+                                {isEditing || !t ? (
+                                  <input 
+                                    type="checkbox" 
+                                    checked={editFields.has_dpa || false}
+                                    onChange={e => setEditFields({ ...editFields, has_dpa: e.target.checked })}
+                                  />
+                                ) : (
+                                  <span style={{ color: t.has_dpa ? 'var(--color-success)' : 'var(--color-danger)', fontWeight: 600 }}>
+                                    {t.has_dpa ? '✓ Firmado' : '✗ Faltante'}
+                                  </span>
+                                )}
+                              </td>
+                              <td>
+                                <div style={{ display: 'flex', gap: '8px' }}>
+                                  {t ? (
+                                    isEditing ? (
+                                      <>
+                                        <button 
+                                          className="btn-save" 
+                                          style={{ padding: '4px 8px', fontSize: '11px' }}
+                                          onClick={() => {
+                                            handleUpdateTransfer(t.id, editFields);
+                                            setEditingRowId(null);
+                                          }}
+                                        >
+                                          Guardar
+                                        </button>
+                                        <button className="btn-action" style={{ padding: '4px 8px', fontSize: '11px' }} onClick={() => setEditingRowId(null)}>
+                                          Cancelar
+                                        </button>
+                                      </>
+                                    ) : (
+                                      <>
+                                        <button 
+                                          className="btn-action" 
+                                          style={{ padding: '4px 8px', fontSize: '11px' }}
+                                          onClick={() => {
+                                            setEditingRowId(t.id);
+                                            setEditFields({ 
+                                              country: t.country, 
+                                              transfer_mechanism: t.transfer_mechanism, 
+                                              has_scc: t.has_scc, 
+                                              has_dpa: t.has_dpa 
+                                            });
+                                          }}
+                                        >
+                                          Editar
+                                        </button>
+                                        <button className="btn-action" style={{ padding: '4px 8px', fontSize: '11px', color: 'var(--color-danger)' }} onClick={() => handleDeleteTransfer(t.id)}>
+                                          Eliminar
+                                        </button>
+                                        {!t.has_scc && (
+                                          <button className="btn-save" style={{ padding: '4px 8px', fontSize: '10.5px' }} onClick={() => handleGenerateScc(t)}>
+                                            Generar SCC
+                                          </button>
+                                        )}
+                                      </>
+                                    )
+                                  ) : (
                                     <button 
                                       className="btn-save" 
-                                      style={{ padding: '2px 8px', fontSize: '11px' }}
-                                      onClick={() => {
-                                        handleUpdateTransfer(t.id, editFields);
-                                        setEditingRowId(null);
+                                      style={{ padding: '4px 8px', fontSize: '11px' }}
+                                      onClick={async () => {
+                                        try {
+                                          const payload = {
+                                            domain: 'localhost:3000',
+                                            provider_name: p.process_name,
+                                            country: editFields.country || 'US',
+                                            data_categories: cats,
+                                            transfer_mechanism: editFields.transfer_mechanism || 'STANDARD_CLAUSES',
+                                            has_scc: editFields.has_scc || false,
+                                            has_dpa: editFields.has_dpa || false
+                                          };
+                                          const res = await fetch(`${API_BASE}/api/transfers`, {
+                                            method: 'POST',
+                                            headers: { 'Content-Type': 'application/json' },
+                                            body: JSON.stringify(payload)
+                                          });
+                                          if (res.ok) {
+                                            showToast('Garantía registrada para el proveedor.', 'success');
+                                            setEditFields({ country: 'US', transfer_mechanism: 'STANDARD_CLAUSES', has_scc: false, has_dpa: false });
+                                            fetchTransfers();
+                                            handleFetchDiagnosis();
+                                          }
+                                        } catch (err) {
+                                          console.error(err);
+                                        }
                                       }}
                                     >
-                                      Guardar
+                                      Confirmar Garantía
                                     </button>
-                                    <button className="btn-action" style={{ padding: '2px 8px', fontSize: '11px' }} onClick={() => setEditingRowId(null)}>
-                                      Cancelar
-                                    </button>
-                                  </>
-                                ) : (
-                                  <>
-                                    <button 
-                                      className="btn-action" 
-                                      style={{ padding: '2px 8px', fontSize: '11.0px' }}
-                                      onClick={() => {
-                                        setEditingRowId(t.id);
-                                        setEditFields({ has_scc: t.has_scc, has_dpa: t.has_dpa });
-                                      }}
-                                    >
-                                      Editar
-                                    </button>
-                                    <button className="btn-action" style={{ padding: '2px 8px', fontSize: '11.0px', color: 'var(--color-danger)' }} onClick={() => handleDeleteTransfer(t.id)}>
-                                      Eliminar
-                                    </button>
-                                    {!t.has_scc && (
-                                      <button className="btn-save" style={{ padding: '2px 8px', fontSize: '10.5px' }} onClick={() => handleGenerateScc(t)}>
-                                        Generar SCC
-                                      </button>
-                                    )}
-                                  </>
-                                )}
-                              </div>
-                            </td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                </div>
-              ) : (
-                <p style={{ margin: 0, fontSize: '13px', color: 'var(--text-secondary)' }}>No hay transferencias registradas.</p>
-              )}
+                                  )}
+                                </div>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                ) : (
+                  <p style={{ margin: 0, fontSize: '13px', color: 'var(--text-secondary)' }}>
+                    No se han detectado transferencias internacionales en su RoPA confirmado actual.
+                  </p>
+                )}
+              </div>
             </div>
-          </div>
-        )}
+          );
+        })()}
 
         {/* Sub-tab: Policy & Documents Generator */}
         {remediationSubTab === 'policies' && (
