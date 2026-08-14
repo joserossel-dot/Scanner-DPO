@@ -57,6 +57,11 @@ export function generatePrivacyPolicy(data) {
   <p style="margin-bottom: 15px;">
     Los datos personales podrán ser comunicados a proveedores de servicios tecnológicos necesarios para la operación de la plataforma (servidores en la nube, pasarelas de pago y herramientas de soporte) en el extranjero. Dicha transferencia internacional se regulariza mediante la firma de Cláusulas Contractuales Tipo (SCC) y convenios DPA conformes al Artículo 28 de la Ley N° 21.719, garantizando un estándar adecuado de privacidad.
   </p>
+  ${data.providers && data.providers.length > 0 ? `
+  <p style="margin-bottom: 15px; font-style: italic; color: #475569; background-color: #f8fafc; padding: 10px; border-left: 3px solid #312e81;">
+    <strong>Nota de Encargados Detectados:</strong> La empresa comparte datos para fines operativos con los siguientes proveedores: ${data.providers.join(', ')}.
+  </p>
+  ` : ''}
 
   <h2 style="font-size: 14px; color: #0f172a; margin-top: 20px; margin-bottom: 8px; font-weight: bold; text-transform: uppercase; border-bottom: 1.5px solid #0f172a; padding-bottom: 3px;">
     5. Plazo de Conservación de la Información

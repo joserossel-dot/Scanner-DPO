@@ -32,7 +32,14 @@ router.get('/', adminCors, async (req, res) => {
     const db = getDb();
     try {
         const result = await db.query('SELECT * FROM international_transfers WHERE user_id = $1 ORDER BY created_at DESC', [req.user.id]);
-        res.json(result.rows);
+        const mapped = result.rows.map((row) => ({
+            ...row,
+            provider_name: row.vendor_name,
+            country: row.destination_country,
+            has_scc: row.has_signed_scc === true,
+            has_dpa: row.signature_status === 'SIGNED' || row.has_signed_scc === true
+        }));
+        res.json(mapped);
     }
     catch (error) {
         console.error('Error fetching international transfers:', error.message);
@@ -41,8 +48,12 @@ router.get('/', adminCors, async (req, res) => {
 });
 // POST /api/transfers - Register a new transfer flow for user
 router.post('/', adminCors, async (req, res) => {
-    const { domain, vendor_name, destination_country, data_categories, transfer_mechanism, has_signed_scc, scc_document_url, signature_status } = req.body;
-    if (!domain || !vendor_name || !destination_country || !transfer_mechanism || !Array.isArray(data_categories)) {
+    const { domain, vendor_name, provider_name, destination_country, country, data_categories, transfer_mechanism, has_signed_scc, has_scc, scc_document_url, signature_status, has_dpa } = req.body;
+    const vName = vendor_name || provider_name;
+    const destCountry = destination_country || country;
+    const hasScc = has_signed_scc !== undefined ? has_signed_scc === true : (has_scc !== undefined ? has_scc === true : false);
+    const sigStatus = signature_status || (has_dpa === true ? 'SIGNED' : 'PENDING');
+    if (!domain || !vName || !destCountry || !transfer_mechanism || !Array.isArray(data_categories)) {
         return res.status(400).json({ error: 'Campos requeridos faltantes o con formato inválido.' });
     }
     const db = getDb();
@@ -52,16 +63,24 @@ router.post('/', adminCors, async (req, res) => {
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
        RETURNING *`, [
             domain,
-            vendor_name,
-            destination_country,
+            vName,
+            destCountry,
             JSON.stringify(data_categories),
             transfer_mechanism,
-            has_signed_scc === true,
+            hasScc,
             scc_document_url || null,
-            signature_status || 'PENDING',
+            sigStatus,
             req.user.id
         ]);
-        res.status(201).json(result.rows[0]);
+        const row = result.rows[0];
+        const mapped = {
+            ...row,
+            provider_name: row.vendor_name,
+            country: row.destination_country,
+            has_scc: row.has_signed_scc === true,
+            has_dpa: row.signature_status === 'SIGNED' || row.has_signed_scc === true
+        };
+        res.status(201).json(mapped);
     }
     catch (error) {
         console.error('Error creating international transfer:', error.message);
@@ -71,7 +90,11 @@ router.post('/', adminCors, async (req, res) => {
 // PUT /api/transfers/:id - Update transfer mechanism or documents
 router.put('/:id', adminCors, async (req, res) => {
     const { id } = req.params;
-    const { vendor_name, destination_country, data_categories, transfer_mechanism, has_signed_scc, scc_document_url, signature_status } = req.body;
+    const { vendor_name, provider_name, destination_country, country, data_categories, transfer_mechanism, has_signed_scc, has_scc, scc_document_url, signature_status, has_dpa } = req.body;
+    const vName = vendor_name || provider_name;
+    const destCountry = destination_country || country;
+    const hasScc = has_signed_scc !== undefined ? has_signed_scc === true : (has_scc !== undefined ? has_scc === true : undefined);
+    const sigStatus = signature_status || (has_dpa === true ? 'SIGNED' : (has_dpa === false ? 'PENDING' : undefined));
     const db = getDb();
     try {
         // Check if transfer exists and belongs to the user
@@ -91,16 +114,24 @@ router.put('/:id', adminCors, async (req, res) => {
        WHERE id = $1 AND user_id = $9
        RETURNING *`, [
             id,
-            vendor_name,
-            destination_country,
+            vName,
+            destCountry,
             data_categories ? JSON.stringify(data_categories) : null,
             transfer_mechanism,
-            has_signed_scc !== undefined ? has_signed_scc === true : null,
+            hasScc,
             scc_document_url,
-            signature_status,
+            sigStatus,
             req.user.id
         ]);
-        res.json(result.rows[0]);
+        const row = result.rows[0];
+        const mapped = {
+            ...row,
+            provider_name: row.vendor_name,
+            country: row.destination_country,
+            has_scc: row.has_signed_scc === true,
+            has_dpa: row.signature_status === 'SIGNED' || row.has_signed_scc === true
+        };
+        res.json(mapped);
     }
     catch (error) {
         console.error('Error updating international transfer:', error.message);

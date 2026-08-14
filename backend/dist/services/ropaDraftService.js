@@ -107,4 +107,13 @@ export async function analyzeQuestionnaireAnswers(userId, answers) {
             await createRopaDraft(userId, `Tratamiento de Datos en ${answers.shadow_it_providers_other}`, `Actividad de tratamiento de datos personales utilizando la herramienta SaaS externa declarada: ${answers.shadow_it_providers_other}.`, 'Consentimiento / Ejecución del Contrato', ['Identificatorios', 'Datos de navegación y operación de la cuenta'], 'Indefinido mientras se mantenga activa la cuenta en el servicio', true, 'auto_questionnaire');
         }
     }
+    // 5. Analizar proveedores declarados manualmente en el cuestionario (vendors_main_names)
+    if (Array.isArray(answers.vendors_main_names) && answers.vendors_main_names.length > 0) {
+        for (const vendor of answers.vendors_main_names) {
+            if (vendor && vendor.trim()) {
+                await createRopaDraft(userId, `Tratamiento de Datos en ${vendor.trim()}`, `Servicios provistos por el encargado externo de tratamiento de datos ${vendor.trim()}, según lo declarado en el cuestionario de diagnóstico.`, 'Ejecución del Contrato / Interés Legítimo', ['Datos identificatorios', 'Datos comerciales y operativos'], 'Indefinido durante la vigencia de la relación comercial', true, // Asumimos transferencia o proveedor externo
+                'auto_questionnaire');
+            }
+        }
+    }
 }
