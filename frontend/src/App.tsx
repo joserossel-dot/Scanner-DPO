@@ -1488,26 +1488,44 @@ Firmas autorizadas:
             return '';
           };
 
-          // ── getCountry: Null-safe per-row country resolver ──────────────────────────
-          const getCountry = (row: any): string => {
-            const name = row?.providerName || row?.process_name || '';
-            if (!name) return 'ERROR: SIN DATOS';
-            const lower = name.toLowerCase();
-            if (/(google|aws|amazon|microsoft|hubspot|mailchimp|salesforce|meta|stripe|slack|zoom|sendgrid|intercom|zendesk|facebook)/.test(lower)) {
-              return 'Estados Unidos';
+          // ══════════════════════════════════════════════════════════════════════
+          // DICCIONARIO SAAS JURISDICCIONAL — Motor de evaluación exhaustivo
+          // Evalúa el string completo (vendor_name, title, process_name) para
+          // mayor cobertura. Retorna { country, mechanism, hasScc, hasDpa }.
+          // ══════════════════════════════════════════════════════════════════════
+          const getCountryAndMechanism = (providerString: string): {
+            country: string; mechanism: string; hasScc: boolean; hasDpa: boolean;
+          } => {
+            const raw = String(providerString || '').toLowerCase();
+            if (!raw) return { country: '', mechanism: '', hasScc: false, hasDpa: false };
+
+            // 🇺🇸 ESTADOS UNIDOS — SCC obligatorio
+            if (/(google|aws|amazon|azure|microsoft|meta|facebook|instagram|whatsapp|hubspot|mailchimp|salesforce|stripe|slack|zoom|notion|asana|openai|mixpanel|segment|twilio|sendgrid|intercom|zendesk|figma|dropbox|docusign|workday|bamboohr|rippling|adyen|braintree)/.test(raw)) {
+              return { country: 'Estados Unidos', mechanism: 'Cláusulas Tipo (SCC)', hasScc: true, hasDpa: true };
             }
-            if (/(buk|talana|defontana)/.test(lower)) {
-              return 'Chile';
+            // 🇨🇦 CANADÁ — Decisión de adecuación parcial + SCC recomendado
+            if (/(shopify)/.test(raw)) {
+              return { country: 'Canadá', mechanism: 'Cláusulas Tipo (SCC)', hasScc: true, hasDpa: true };
             }
-            if (/(sap|teamviewer|booking)/.test(lower)) {
-              return 'Alemania';
+            // 🇦🇺 AUSTRALIA — Sin adecuación, SCC obligatorio
+            if (/(atlassian|jira|trello|confluence|canva)/.test(raw)) {
+              return { country: 'Australia', mechanism: 'Cláusulas Tipo (SCC)', hasScc: true, hasDpa: true };
             }
-            // Fallback: check purpose field too
-            const purpose = (row?.purpose || '').toLowerCase();
-            if (/(google|aws|amazon|microsoft|hubspot|mailchimp|salesforce|meta|stripe)/.test(purpose)) {
-              return 'Estados Unidos';
+            // 🇪🇺 UNIÓN EUROPEA — RGPD aplicable, sin SCC adicional
+            if (/(sendinblue|brevo|holded|typeform|pipedrive|teamleader|pandadoc)/.test(raw)) {
+              return { country: 'Unión Europea', mechanism: 'Decisión de Adecuación', hasScc: false, hasDpa: true };
             }
-            return 'País por definir';
+            // 🇩🇪 ALEMANIA (dentro de UE)
+            if (/(sap|teamviewer)/.test(raw)) {
+              return { country: 'Alemania (UE)', mechanism: 'Decisión de Adecuación', hasScc: false, hasDpa: true };
+            }
+            // 🇨🇱 CHILE — DPA local, sin SCC
+            if (/(buk|talana|defontana|rex\+|fintual|transbank|flow\.cl|bsale|nubox|tuu\.cl|centry)/.test(raw)) {
+              return { country: 'Chile', mechanism: 'Acuerdo (DPA) Local', hasScc: false, hasDpa: true };
+            }
+
+            // Fallback: evaluar también el campo purpose si viene en el objeto
+            return { country: '', mechanism: '', hasScc: false, hasDpa: false };
           };
 
           // Re-order countries: Chile, US and EU (Spain, Germany, France, Italy) at the top
@@ -1584,59 +1602,42 @@ Firmas autorizadas:
                             ? p.data_categories 
                             : (typeof p.data_categories === 'string' ? JSON.parse(p.data_categories) : []);
 
-                          const defaults = getSaaSDefaults(p.process_name);
+                          // Build the full lookup string: combine ALL name fields for max coverage
+                          const lookupString = [
+                            p.process_name,
+                            p.purpose,
+                            getProviderName(p.process_name)
+                          ].filter(Boolean).join(' ');
 
-                          const activeCountry = isEditing 
-                            ? (editFields.country || (t ? t.country : defaults.country)) 
-                            : (t ? t.country : (tempRowSettings[p.id]?.country || defaults.country));
+                          const dict = getCountryAndMechanism(lookupString);
 
-                          const activeMechanism = isEditing 
-                            ? (editFields.transfer_mechanism || (t ? t.transfer_mechanism : defaults.transfer_mechanism))
-                            : (t ? t.transfer_mechanism : (tempRowSettings[p.id]?.transfer_mechanism || defaults.transfer_mechanism));
+                          // Resolve saved or auto-computed values
+                          const displayCountry = t?.country
+                            ? (countries.find(c => c.code === t.country)?.name || t.country)
+                            : (dict.country || 'País por definir');
 
-                          const activeScc = isEditing 
-                            ? (editFields.has_scc !== undefined ? editFields.has_scc : (t ? t.has_scc : defaults.has_scc))
-                            : (t ? t.has_scc : (tempRowSettings[p.id]?.has_scc !== undefined ? tempRowSettings[p.id]?.has_scc : defaults.has_scc));
+                          const displayMechanism = t?.transfer_mechanism
+                            ? (t.transfer_mechanism === 'ADEQUATE_COUNTRY' ? 'Decisión de Adecuación'
+                              : t.transfer_mechanism === 'BCR' ? 'Normas Vinculantes (BCR)'
+                              : t.transfer_mechanism === 'CONSENT_EXCEPTIONAL' ? 'Consentimiento Titular'
+                              : 'Cláusulas Tipo (SCC)')
+                            : (dict.mechanism || 'Pendiente definir');
 
-                          const activeDpa = isEditing 
-                            ? (editFields.has_dpa !== undefined ? editFields.has_dpa : (t ? t.has_dpa : defaults.has_dpa))
-                            : (t ? t.has_dpa : (tempRowSettings[p.id]?.has_dpa !== undefined ? tempRowSettings[p.id]?.has_dpa : defaults.has_dpa));
+                          const displayScc = t ? t.has_scc : dict.hasScc;
+                          const displayDpa = t ? t.has_dpa : dict.hasDpa;
 
-                          // ── DEFINITIVE SELECT STYLE ───────────────────────────────────────────
-                          // backgroundColor (not 'background') is required for React CSSProperties
-                          // to reliably override browser defaults in all engines.
-                          const selectStyle: React.CSSProperties = {
-                            backgroundColor: '#1e293b',
-                            color: '#ffffff',
-                            borderColor: '#475569',
-                            borderStyle: 'solid',
-                            borderWidth: '1px',
-                            borderRadius: '6px',
-                            padding: '8px',
-                            width: '100%',
-                            fontSize: '12px',
-                            cursor: 'pointer'
-                          };
-                          const optStyle: React.CSSProperties = {
-                            backgroundColor: '#1e293b',
-                            color: '#ffffff'
-                          };
+                          const mechColor = displayMechanism.includes('SCC') ? '#818cf8'
+                            : displayMechanism.includes('Adecuación') ? '#22c55e'
+                            : displayMechanism.includes('DPA') ? '#34d399'
+                            : '#f59e0b';
 
-                          // Enrich activeCountry with per-row suggestion when no saved transfer exists
-                          const suggestedCountry = getSuggestedCountry(getProviderName(p.process_name));
-                          const resolvedCountry = activeCountry || suggestedCountry || 'US';
-
-                          // ══ DIAGNOSTIC LOG ══════════════════════════════════════════
+                          // Diagnostic log (remove after confirming data flow in production)
                           console.log('=== DEBUG TID ROW ===', {
-                            id: p.id,
                             process_name: p.process_name,
-                            status: p.status,
-                            cross_border_transfer: p.cross_border_transfer,
-                            purpose: p.purpose,
-                            data_categories: p.data_categories,
-                            tempRowSettings_entry: tempRowSettings[p.id],
-                            resolvedCountry,
-                            computedCountry: getCountry(p),
+                            lookupString,
+                            dict,
+                            displayCountry,
+                            displayMechanism,
                             savedTransfer: t || null,
                           });
 
@@ -1648,67 +1649,63 @@ Firmas autorizadas:
                                   <span style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>{p.process_name}</span>
                                 </div>
                               </td>
+
+                              {/* ── PAÍS DESTINATARIO ─────────────────────────────────── */}
                               <td>
-                                {/* DEBUG: readonly input — border rojo para confirmar que el bundle se actualizó */}
-                                {t ? (
-                                  <span style={{ fontSize: '13px', fontWeight: 600, color: '#f1f5f9' }}>
-                                    {countries.find(c => c.code === t.country)?.name || t.country || getCountry(p)}
-                                  </span>
-                                ) : (
-                                  <input
-                                    type="text"
-                                    readOnly
-                                    value={getCountry(p)}
-                                    style={{
-                                      backgroundColor: '#0f172a',
-                                      color: '#ffffff',
-                                      border: '2px solid #ef4444',
-                                      borderRadius: '6px',
-                                      padding: '6px 8px',
-                                      width: '100%',
-                                      fontSize: '12px',
-                                      fontWeight: 700,
-                                      cursor: 'default'
-                                    }}
-                                  />
-                                )}
+                                <input
+                                  type="text"
+                                  readOnly
+                                  value={displayCountry}
+                                  title={displayCountry}
+                                  style={{
+                                    backgroundColor: '#0f172a',
+                                    color: '#ffffff',
+                                    border: displayCountry === 'País por definir' ? '2px solid #ef4444' : '1px solid #334155',
+                                    borderRadius: '6px',
+                                    padding: '6px 10px',
+                                    width: '100%',
+                                    fontSize: '12px',
+                                    fontWeight: 600,
+                                    cursor: 'default'
+                                  }}
+                                />
                               </td>
+
                               <td style={{ fontSize: '12px', maxWidth: '185px', whiteSpace: 'normal', wordBreak: 'break-word' }}>
                                 {cats.join(', ')}
                               </td>
+
+                              {/* ── MECANISMO ──────────────────────────────────────────── */}
                               <td>
-                                {isEditing || !t ? (
-                                  <select
-                                    data-tid-select="mechanism"
-                                    style={selectStyle}
-                                    value={activeMechanism}
-                                    onChange={e => {
-                                      if (isEditing) {
-                                        setEditFields({ ...editFields, transfer_mechanism: e.target.value });
-                                      } else {
-                                        setTempRowSettings({
-                                          ...tempRowSettings,
-                                          [p.id]: {
-                                            country: resolvedCountry,
-                                            transfer_mechanism: e.target.value,
-                                            has_scc: activeScc,
-                                            has_dpa: activeDpa
-                                          }
-                                        });
-                                      }
-                                    }}
-                                  >
-                                    <option value="STANDARD_CLAUSES" style={optStyle}>Cláusulas Tipo (SCC)</option>
-                                    <option value="ADEQUATE_COUNTRY"  style={optStyle}>País Adecuado (DPA Local)</option>
-                                    <option value="BCR"               style={optStyle}>Normas Vinculantes (BCR)</option>
-                                    <option value="CONSENT_EXCEPTIONAL" style={optStyle}>Consentimiento Titular</option>
-                                  </select>
-                                ) : (
-                                  <span className={`badge ${t.adequacy_status === 'Adecuado' || t.transfer_mechanism === 'ADEQUATE_COUNTRY' ? 'badge-success' : 'badge-grave'}`}>
-                                    {t.transfer_mechanism === 'ADEQUATE_COUNTRY' ? 'País Adecuado' : 'Cláusulas SCC'}
-                                  </span>
-                                )}
+                                <span style={{
+                                  display: 'inline-block',
+                                  backgroundColor: mechColor + '22',
+                                  color: mechColor,
+                                  border: `1px solid ${mechColor}`,
+                                  borderRadius: '4px',
+                                  padding: '3px 8px',
+                                  fontSize: '11px',
+                                  fontWeight: 600,
+                                  whiteSpace: 'nowrap'
+                                }}>
+                                  {displayMechanism}
+                                </span>
                               </td>
+
+                              {/* ── SCC ──────────────────────────────────────────────── */}
+                              <td style={{ textAlign: 'center' }}>
+                                <span style={{ color: displayScc ? '#22c55e' : '#ef4444', fontWeight: 700, fontSize: '16px' }}>
+                                  {displayScc ? '✓' : '✗'}
+                                </span>
+                              </td>
+
+                              {/* ── DPA ──────────────────────────────────────────────── */}
+                              <td style={{ textAlign: 'center' }}>
+                                <span style={{ color: displayDpa ? '#22c55e' : '#ef4444', fontWeight: 700, fontSize: '16px' }}>
+                                  {displayDpa ? '✓' : '✗'}
+                                </span>
+                              </td>
+
                               <td>
                                 {isEditing || !t ? (
                                   <input 
