@@ -158,6 +158,12 @@ const API_BASE = (() => {
   return 'http://localhost:3000';
 })();
 
+// Development domain param for diagnosis/report fetches (only include when running locally)
+const DEV_DOMAIN_PARAM = (typeof window !== 'undefined' && (window.location.hostname.includes('localhost') || window.location.hostname.includes('127.0.0.1')))
+  ? '?domain=localhost:3000'
+  : '';
+
+
 interface DashboardProps {
   token: string | null;
   user: any;
@@ -387,7 +393,7 @@ export function Dashboard({ token, user, onLogout, initialTab }: DashboardProps)
         if (token) {
           headers['Authorization'] = `Bearer ${token}`;
         }
-        const diagRes = await fetch(`${API_BASE}/api/reports/diagnosis?domain=localhost:3000`, {
+        const diagRes = await fetch(`${API_BASE}/api/reports/diagnosis${DEV_DOMAIN_PARAM}`, {
           headers
         });
         if (diagRes.ok) {
