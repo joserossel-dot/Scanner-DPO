@@ -190,7 +190,7 @@ export function Dashboard({ token, user, onLogout, initialTab }: DashboardProps)
   
   // Diagnosis State (Capa 2)
   const [diagnosisData, setDiagnosisData] = useState<any>(null);
-  const [isFetchingDiagnosis, setIsFetchingDiagnosis] = useState(false);
+  const [fetchError, setFetchError] = useState(false);
 
   // State variables
   const [latestScan, setLatestScan] = useState<AuditResult | null>(null);
@@ -414,23 +414,26 @@ export function Dashboard({ token, user, onLogout, initialTab }: DashboardProps)
 
   const handleFetchDiagnosis = async () => {
     setIsFetchingDiagnosis(true);
+    const headers: Record<string, string> = {};
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
     try {
-      const headers: Record<string, string> = {};
-      if (token) {
-        headers['Authorization'] = `Bearer ${token}`;
-      }
-      const res = await fetch(`${API_BASE}/api/reports/diagnosis?domain=localhost:3000`, {
-        headers
-      });
+      const res = await fetch(`${API_BASE}/api/reports/diagnosis${DEV_DOMAIN_PARAM}`, { headers });
       if (res.ok) {
         const data = await res.json();
         setDiagnosisData(data);
+        setFetchError(false);
       } else {
         showToast('Error al cargar el diagnóstico consolidado.', 'warning');
+        setFetchError(true);
+        setDiagnosisData(null);
       }
     } catch (e) {
       console.error(e);
       showToast('Error de comunicación con la API de diagnóstico.', 'warning');
+      setFetchError(true);
+      setDiagnosisData(null);
     } finally {
       setIsFetchingDiagnosis(false);
     }
