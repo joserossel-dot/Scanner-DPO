@@ -52,27 +52,38 @@ router.post('/policies', adminCors, async (req, res) => {
     }
     const db = getDb();
     try {
-        // Query confirmed ROPA processes for providers/vendors
-        const ropaRes = await db.query(`SELECT DISTINCT process_name FROM ropa_inventory 
-       WHERE user_id = $1 AND status = 'confirmed'`, [req.user.id]);
-        // Query registered international transfers (TID)
+        // 1. Full confirmed RoPA processes (for granular purpose/retention table)
+        const ropaRes = await db.query(`SELECT process_name, purpose, legal_basis, retention_period, cross_border_transfer
+       FROM ropa_inventory 
+       WHERE user_id = $1 AND status = 'confirmed'
+       ORDER BY created_at ASC`, [req.user.id]);
+        // 2. Registered international transfers (vendor names for encargados section)
         const transfersRes = await db.query(`SELECT DISTINCT vendor_name FROM international_transfers WHERE user_id = $1`, [req.user.id]);
+        // 3. Build deduplicated provider/encargado list
         const providersSet = new Set();
         ropaRes.rows.forEach((r) => {
-            const clean = r.process_name
-                .replace(/^Tratamiento de Datos en\s+/i, '')
-                .replace(/\(SaaS\)/i, '')
-                .replace(/\(CCTV\)/i, '')
-                .trim();
-            if (clean)
-                providersSet.add(clean);
+            // Only include if the process name looks like an external vendor
+            const name = r.process_name || '';
+            if (name.startsWith('Tratamiento de Datos en ')) {
+                const clean = name.replace('Tratamiento de Datos en ', '').trim();
+                if (clean)
+                    providersSet.add(clean);
+            }
         });
         transfersRes.rows.forEach((t) => {
-            const clean = t.vendor_name.trim();
+            const clean = (t.vendor_name || '').trim();
             if (clean)
                 providersSet.add(clean);
         });
         const providersList = Array.from(providersSet);
+        // 4. Shape RoPA objects for the policy builder
+        const ropaProcesses = ropaRes.rows.map((r) => ({
+            process_name: r.process_name,
+            purpose: r.purpose,
+            legal_basis: r.legal_basis,
+            retention_period: r.retention_period,
+            cross_border_transfer: r.cross_border_transfer === true
+        }));
         const policyHtml = generatePrivacyPolicy({
             companyRut,
             address,
@@ -80,7 +91,9 @@ router.post('/policies', adminCors, async (req, res) => {
             dataCategories,
             purposes,
             retentionRules,
-            providers: providersList
+            providers: providersList,
+            ropaProcesses,
+            tenantId: String(req.user.id)
         });
         const result = await db.query(`INSERT INTO privacy_policies (user_id, company_rut, address, contact_email, data_categories, purposes, retention_rules, policy_html)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
