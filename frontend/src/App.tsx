@@ -1447,6 +1447,22 @@ Firmas autorizadas:
             return { country: 'US', transfer_mechanism: 'STANDARD_CLAUSES', has_scc: false, has_dpa: false };
           };
 
+          // Per-row autocomplete helper — isolated, no global useEffect
+          const getSuggestedCountry = (providerName: string): string => {
+            if (!providerName) return '';
+            const name = providerName.toLowerCase();
+            if (name.match(/(google|aws|amazon|microsoft|hubspot|mailchimp|salesforce|meta|stripe|slack|facebook|zoom|sendgrid|intercom|zendesk)/)) {
+              return 'US';
+            }
+            if (name.match(/(buk|talana|defontana)/)) {
+              return 'CL';
+            }
+            if (name.match(/(teamviewer|sap|booking)/)) {
+              return 'DE';
+            }
+            return '';
+          };
+
           // Re-order countries: Chile, US and EU (Spain, Germany, France, Italy) at the top
           const topCodes = ['CL', 'US', 'ES', 'DE', 'FR', 'IT'];
           const topList = countries.filter(c => topCodes.includes(c.code))
@@ -1539,16 +1555,28 @@ Firmas autorizadas:
                             ? (editFields.has_dpa !== undefined ? editFields.has_dpa : (t ? t.has_dpa : defaults.has_dpa))
                             : (t ? t.has_dpa : (tempRowSettings[p.id]?.has_dpa !== undefined ? tempRowSettings[p.id]?.has_dpa : defaults.has_dpa));
 
-                          const selectStyle = {
+                          // ── DEFINITIVE SELECT STYLE: inline wins over any class ──────────────
+                          const selectStyle: React.CSSProperties = {
                             padding: '6px 10px',
                             fontSize: '12px',
                             background: '#1e293b',
-                            color: '#f8fafc',
+                            color: '#f8fafc',       // force visible white text
                             border: '1px solid #475569',
                             borderRadius: '6px',
-                            width: '150px',
-                            outline: 'none'
+                            width: '155px',
+                            outline: 'none',
+                            appearance: 'auto',
+                            WebkitAppearance: 'auto',
+                            cursor: 'pointer'
                           };
+                          const optStyle: React.CSSProperties = {
+                            background: '#1e293b',
+                            color: '#f8fafc'
+                          };
+
+                          // Enrich activeCountry with per-row suggestion when no saved transfer exists
+                          const suggestedCountry = getSuggestedCountry(getProviderName(p.process_name));
+                          const resolvedCountry = activeCountry || suggestedCountry || 'US';
 
                           return (
                             <tr key={p.id}>
@@ -1560,10 +1588,9 @@ Firmas autorizadas:
                               </td>
                               <td>
                                 {isEditing || !t ? (
-                                  <select 
-                                    className="input-text text-left" 
+                                  <select
                                     style={selectStyle}
-                                    value={activeCountry} 
+                                    value={resolvedCountry}
                                     onChange={e => {
                                       if (e.target.value === 'SEPARATOR') return;
                                       if (isEditing) {
@@ -1581,14 +1608,15 @@ Firmas autorizadas:
                                       }
                                     }}
                                   >
+                                    <option value="" disabled style={optStyle}>— Seleccione país —</option>
                                     {orderedCountries.map(c => (
-                                      <option 
-                                        key={c.code} 
-                                        value={c.code} 
-                                        disabled={c.code === 'SEPARATOR'} 
-                                        style={{ background: '#1e293b', color: '#f8fafc', fontWeight: c.isTop ? 'bold' : 'normal' }}
+                                      <option
+                                        key={c.code}
+                                        value={c.code}
+                                        disabled={c.code === 'SEPARATOR'}
+                                        style={{ ...optStyle, fontWeight: c.isTop ? '700' : 'normal' }}
                                       >
-                                        {c.name} {c.isTop ? ' ⭐' : ''}
+                                        {c.name}{c.isTop ? ' ⭐' : ''}
                                       </option>
                                     ))}
                                   </select>
@@ -1604,7 +1632,6 @@ Firmas autorizadas:
                               <td>
                                 {isEditing || !t ? (
                                   <select
-                                    className="input-text text-left"
                                     style={selectStyle}
                                     value={activeMechanism}
                                     onChange={e => {
@@ -1614,7 +1641,7 @@ Firmas autorizadas:
                                         setTempRowSettings({
                                           ...tempRowSettings,
                                           [p.id]: {
-                                            country: activeCountry,
+                                            country: resolvedCountry,
                                             transfer_mechanism: e.target.value,
                                             has_scc: activeScc,
                                             has_dpa: activeDpa
@@ -1623,10 +1650,10 @@ Firmas autorizadas:
                                       }
                                     }}
                                   >
-                                    <option value="STANDARD_CLAUSES" style={{ background: '#1e293b', color: '#f8fafc' }}>Cláusulas Tipo (SCC)</option>
-                                    <option value="ADEQUATE_COUNTRY" style={{ background: '#1e293b', color: '#f8fafc' }}>País Adecuado</option>
-                                    <option value="BCR" style={{ background: '#1e293b', color: '#f8fafc' }}>Normas Vinculantes</option>
-                                    <option value="CONSENT_EXCEPTIONAL" style={{ background: '#1e293b', color: '#f8fafc' }}>Consentimiento Titular</option>
+                                    <option value="STANDARD_CLAUSES" style={optStyle}>Cláusulas Tipo (SCC)</option>
+                                    <option value="ADEQUATE_COUNTRY"  style={optStyle}>País Adecuado (DPA Local)</option>
+                                    <option value="BCR"               style={optStyle}>Normas Vinculantes (BCR)</option>
+                                    <option value="CONSENT_EXCEPTIONAL" style={optStyle}>Consentimiento Titular</option>
                                   </select>
                                 ) : (
                                   <span className={`badge ${t.adequacy_status === 'Adecuado' || t.transfer_mechanism === 'ADEQUATE_COUNTRY' ? 'badge-success' : 'badge-grave'}`}>
