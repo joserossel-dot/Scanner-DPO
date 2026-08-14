@@ -334,7 +334,7 @@ export function Dashboard({ token, user, onLogout, initialTab }: DashboardProps)
       const res = await fetch(`${API_BASE}/api/reports/evaluate`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ...answers, domain: 'localhost:3000' })
+        body: JSON.stringify({ ...answers, domain: window.location.hostname })
       });
       if (res.ok) {
         const data = await res.json();
@@ -701,7 +701,7 @@ export function Dashboard({ token, user, onLogout, initialTab }: DashboardProps)
     e.preventDefault();
     try {
       const payload = {
-        domain: 'localhost:3000',
+        domain: window.location.hostname,
         provider_name: vendorName,
         country: destCountry,
         data_categories: selectedCategories,
@@ -813,7 +813,7 @@ Firmas autorizadas:
     e.preventDefault();
     try {
       const payload = {
-        domain: 'localhost:3000',
+        domain: window.location.hostname,
         incident_title: incidentTitle,
         incident_date: incidentDate,
         incident_type: incidentType,
@@ -899,7 +899,7 @@ Firmas autorizadas:
       const res = await fetch(`${API_BASE}/api/incidents/scan-vulnerabilities`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ domain: 'localhost:3000' })
+        body: JSON.stringify({ domain: window.location.hostname })
       });
       if (res.ok) {
         const data = await res.json();
@@ -956,7 +956,7 @@ Firmas autorizadas:
     if (updated) {
       try {
         const payload = {
-          domain: 'localhost:3000',
+          domain: window.location.hostname,
           provider_name: prev.vendorName,
           country: prev.country,
           data_categories: prev.categories,
@@ -1669,10 +1669,7 @@ Firmas autorizadas:
 
                           const displayScc = t ? t.has_scc : dict.hasScc;
                           const displayDpa = t ? t.has_dpa : dict.hasDpa;
-const activeCountry = displayCountry;
-const activeMechanism = displayMechanism;
-const activeScc = displayScc;
-const activeDpa = displayDpa;
+
 
                           const mechColor = displayMechanism.includes('SCC') ? '#818cf8'
                             : displayMechanism.includes('Adecuación') ? '#22c55e'
@@ -1758,7 +1755,7 @@ const activeDpa = displayDpa;
                                 {isEditing || !t ? (
                                   <input 
                                     type="checkbox" 
-                                    checked={activeScc}
+                                    checked={displayScc}
                                     onChange={e => {
                                       if (isEditing) {
                                         setEditFields({ ...editFields, has_scc: e.target.checked });
@@ -1766,10 +1763,10 @@ const activeDpa = displayDpa;
                                         setTempRowSettings({
                                           ...tempRowSettings,
                                           [p.id]: {
-                                            country: activeCountry,
-                                            transfer_mechanism: activeMechanism,
+                                            country: displayCountry,
+                                            transfer_mechanism: displayMechanism,
                                             has_scc: e.target.checked,
-                                            has_dpa: activeDpa
+                                            has_dpa: displayDpa
                                           }
                                         });
                                       }
@@ -1785,7 +1782,7 @@ const activeDpa = displayDpa;
                                 {isEditing || !t ? (
                                   <input 
                                     type="checkbox" 
-                                    checked={activeDpa}
+                                    checked={displayDpa}
                                     onChange={e => {
                                       if (isEditing) {
                                         setEditFields({ ...editFields, has_dpa: e.target.checked });
@@ -1793,9 +1790,9 @@ const activeDpa = displayDpa;
                                         setTempRowSettings({
                                           ...tempRowSettings,
                                           [p.id]: {
-                                            country: activeCountry,
-                                            transfer_mechanism: activeMechanism,
-                                            has_scc: activeScc,
+                                            country: displayCountry,
+                                            transfer_mechanism: displayMechanism,
+                                            has_scc: displayScc,
                                             has_dpa: e.target.checked
                                           }
                                         });
@@ -1818,10 +1815,10 @@ const activeDpa = displayDpa;
                                           style={{ padding: '4px 8px', fontSize: '11px' }}
                                           onClick={() => {
                                             handleUpdateTransfer(t.id, {
-                                              country: activeCountry,
-                                              transfer_mechanism: activeMechanism,
-                                              has_scc: activeScc,
-                                              has_dpa: activeDpa
+                                              country: displayCountry,
+                                              transfer_mechanism: displayMechanism,
+                                              has_scc: displayScc,
+                                              has_dpa: displayDpa
                                             });
                                             setEditingRowId(null);
                                           }}
@@ -1866,13 +1863,13 @@ const activeDpa = displayDpa;
                                       onClick={async () => {
                                         try {
                                           const payload = {
-                                            domain: 'localhost:3000',
+                                            domain: window.location.hostname,
                                             provider_name: p.process_name,
-                                            country: activeCountry,
+                                            country: displayCountry,
                                             data_categories: cats,
-                                            transfer_mechanism: activeMechanism,
-                                            has_scc: activeScc,
-                                            has_dpa: activeDpa
+                                            transfer_mechanism: displayMechanism,
+                                            has_scc: displayScc,
+                                            has_dpa: displayDpa
                                           };
                                           const res = await fetch(`${API_BASE}/api/transfers`, {
                                             method: 'POST',

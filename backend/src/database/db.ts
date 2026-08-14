@@ -8,7 +8,7 @@ const { Pool } = pg;
 
 const connectionString = process.env.DATABASE_URL;
 if (!connectionString) {
-  throw new Error('DATABASE_URL environment variable is missing.');
+  throw new Error('La variable de entorno DATABASE_URL es obligatoria para conectar a Neon/PostgreSQL.');
 }
 
 const pool = new Pool({
