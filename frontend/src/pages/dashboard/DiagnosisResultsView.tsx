@@ -57,7 +57,7 @@ export default function DiagnosisResultsView({
   isLoading = false,
   hasError = false
 }: DiagnosisResultsViewProps) {
-  const isFetchingDiagnosis = isLoading; // Ensure variable exists for legacy references
+  const isFetchingDiagnosis = false;
   const [expandedPhase, setExpandedPhase] = useState<number | null>(1);
   const [meetingAlertText, setMeetingAlertText] = useState<string | null>(null);
 
