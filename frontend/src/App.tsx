@@ -186,7 +186,7 @@ export function Dashboard({ token, user, onLogout, initialTab }: DashboardProps)
   // Diagnosis State (Capa 2)
   const [diagnosisData, setDiagnosisData] = useState<any>(null);
   const [fetchError, setFetchError] = useState(false);
-  const [isFetchingDiagnosis, setIsFetchingDiagnosis] = React.useState(false);
+  const [isFetchingDiagnosis, setIsFetchingDiagnosis] = useState(false);
 
   // State variables
   const [latestScan, setLatestScan] = useState<AuditResult | null>(null);
