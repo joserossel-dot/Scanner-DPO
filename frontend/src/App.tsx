@@ -141,17 +141,12 @@ const API_BASE = (() => {
   if (envUrl) {
     return envUrl;
   }
-  // Development fallback: point to local backend server
+  // Production fallback: use explicit Render backend URL
   if (typeof window !== 'undefined') {
     const hostname = window.location.hostname;
-    // If running on Render, map dashboard subdomain to API subdomain
     if (hostname.includes('onrender.com')) {
-      const parts = hostname.split('.');
-      const sub = parts[0];
-      if (sub.endsWith('-dashboard')) {
-        const baseSub = sub.replace('-dashboard', '-api');
-        return `https://${baseSub}.onrender.com`;
-      }
+      // Always point to the known backend service on Render
+      return 'https://pt-compliance-api.onrender.com';
     }
   }
   // Default to localhost backend during dev
@@ -541,7 +536,7 @@ export function Dashboard({ token, user, onLogout, initialTab }: DashboardProps)
       if (token) {
         headers['Authorization'] = `Bearer ${token}`;
       }
-      const res = await fetch(`${API_BASE}/api/config/localhost:3000`, { headers });
+      const res = await fetch(`${API_BASE}/api/config/${window.location.hostname}`, { headers });
       if (res.ok) {
         const data = await res.json();
         setConfig(data);
@@ -582,7 +577,7 @@ export function Dashboard({ token, user, onLogout, initialTab }: DashboardProps)
       if (token) {
         headers['Authorization'] = `Bearer ${token}`;
       }
-      const res = await fetch(`${API_BASE}/api/transfers?domain=localhost:3000`, { headers });
+      const res = await fetch(`${API_BASE}/api/transfers?domain=${window.location.hostname}`, { headers });
       if (res.ok) {
         const data = await res.json();
         setTransfers(data);
@@ -614,7 +609,7 @@ export function Dashboard({ token, user, onLogout, initialTab }: DashboardProps)
       if (token) {
         headers['Authorization'] = `Bearer ${token}`;
       }
-      const res = await fetch(`${API_BASE}/api/incidents?domain=localhost:3000`, { headers });
+      const res = await fetch(`${API_BASE}/api/incidents?domain=${window.location.hostname}`, { headers });
       if (res.ok) {
         const data = await res.json();
         setIncidents(data);
@@ -676,7 +671,7 @@ export function Dashboard({ token, user, onLogout, initialTab }: DashboardProps)
           channels: configChannels
         }
       };
-      const res = await fetch(`${API_BASE}/api/config/localhost:3000`, {
+      const res = await fetch(`${API_BASE}/api/config/${window.location.hostname}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)
