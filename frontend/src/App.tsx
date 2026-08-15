@@ -327,9 +327,15 @@ export function Dashboard({ token, user, onLogout, initialTab }: DashboardProps)
 
   const handleEvaluateQuestionnaire = async (answers: any) => {
     try {
+      const headers: Record<string, string> = {
+        'Content-Type': 'application/json'
+      };
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
+      }
       const res = await fetch(`${API_BASE}/api/reports/evaluate`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers,
         body: JSON.stringify({ ...answers, domain: window.location.hostname })
       });
       if (res.ok) {
@@ -373,9 +379,15 @@ export function Dashboard({ token, user, onLogout, initialTab }: DashboardProps)
     setIsScanning(true);
     showToast('Iniciando escaneo automático de cortesía...', 'info');
     try {
+      const scanHeaders: Record<string, string> = {
+        'Content-Type': 'application/json'
+      };
+      if (token) {
+        scanHeaders['Authorization'] = `Bearer ${token}`;
+      }
       const res = await fetch(`${API_BASE}/api/scan`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: scanHeaders,
         body: JSON.stringify({ url })
       });
       if (res.ok) {
@@ -481,7 +493,11 @@ export function Dashboard({ token, user, onLogout, initialTab }: DashboardProps)
 
   const fetchLatestScan = async () => {
     try {
-      const res = await fetch(`${API_BASE}/api/scan/latest`);
+      const headers: Record<string, string> = {};
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
+      }
+      const res = await fetch(`${API_BASE}/api/scan/latest`, { headers });
       if (res.ok) {
         const data = await res.json();
         setLatestScan(data);

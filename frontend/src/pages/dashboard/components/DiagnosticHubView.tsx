@@ -205,7 +205,7 @@ export default function DiagnosticHubView({ token, onEvaluationSuccess }: Diagno
     
     setIsTransitioning(true);
     try {
-      const res = await fetch(`${API_BASE}/api/reports/diagnosis?domain=localhost:3000`, {
+      const res = await fetch(`${API_BASE}/api/reports/diagnosis?domain=${window.location.hostname}`, {
         headers: {
           'Authorization': `Bearer ${token}`
         }
