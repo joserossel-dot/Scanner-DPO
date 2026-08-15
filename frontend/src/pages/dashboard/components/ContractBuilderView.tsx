@@ -1,3 +1,4 @@
+import { authFetch } from '../../../../lib/authFetch';
 import React, { useState } from 'react';
 import { 
   FileSignature, 
@@ -90,7 +91,7 @@ export default function ContractBuilderView({ token, ropaList }: ContractBuilder
 
     setIsGenerating(true);
     try {
-      const response = await fetch(`${API_BASE}/api/remediation/generate-contract`, {
+      const response = await authFetch(`${API_BASE}/api/remediation/generate-contract`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -134,7 +135,7 @@ export default function ContractBuilderView({ token, ropaList }: ContractBuilder
     try {
       const hash = await sha256(content);
       const docType = contractType === 'DPA_LOCAL' ? 'dpa' : 'scc';
-      await fetch(`${API_BASE}/api/remediation/log-download`, {
+      await authFetch(`${API_BASE}/api/remediation/log-download`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

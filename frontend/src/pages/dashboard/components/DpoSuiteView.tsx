@@ -1,3 +1,4 @@
+import { authFetch } from '../../../../lib/authFetch';
 import React, { useState, useEffect } from 'react';
 import { 
   Shield, 
@@ -87,7 +88,7 @@ export default function DpoSuiteView({ token }: DpoSuiteViewProps) {
     setIsLoading(true);
     setErrorMsg('');
     try {
-      const response = await fetch(`${API_BASE}/api/dpo/risks`, {
+      const response = await authFetch(`${API_BASE}/api/dpo/risks`, {
         headers: { 'Authorization': `Bearer ${token}` }
       });
       if (response.ok) {
@@ -104,7 +105,7 @@ export default function DpoSuiteView({ token }: DpoSuiteViewProps) {
 
   const fetchReports = async () => {
     try {
-      const response = await fetch(`${API_BASE}/api/dpo/whistleblower`, {
+      const response = await authFetch(`${API_BASE}/api/dpo/whistleblower`, {
         headers: { 'Authorization': `Bearer ${token}` }
       });
       if (response.ok) {
@@ -123,7 +124,7 @@ export default function DpoSuiteView({ token }: DpoSuiteViewProps) {
     setIsSaving(true);
     setErrorMsg('');
     try {
-      const response = await fetch(`${API_BASE}/api/dpo/risks`, {
+      const response = await authFetch(`${API_BASE}/api/dpo/risks`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -165,7 +166,7 @@ export default function DpoSuiteView({ token }: DpoSuiteViewProps) {
     if (!window.confirm('¿Está seguro de eliminar este riesgo de la matriz de cumplimiento?')) return;
 
     try {
-      const response = await fetch(`${API_BASE}/api/dpo/risks/${id}`, {
+      const response = await authFetch(`${API_BASE}/api/dpo/risks/${id}`, {
         method: 'DELETE',
         headers: { 'Authorization': `Bearer ${token}` }
       });
@@ -182,7 +183,7 @@ export default function DpoSuiteView({ token }: DpoSuiteViewProps) {
 
   const handleUpdateReportStatus = async (id: string, newStatus: string) => {
     try {
-      const response = await fetch(`${API_BASE}/api/dpo/whistleblower/${id}/status`, {
+      const response = await authFetch(`${API_BASE}/api/dpo/whistleblower/${id}/status`, {
         method: 'PATCH',
         headers: {
           'Content-Type': 'application/json',
@@ -207,7 +208,7 @@ export default function DpoSuiteView({ token }: DpoSuiteViewProps) {
     if (!whistleblowerInput.trim()) return;
 
     try {
-      const response = await fetch(`${API_BASE}/api/dpo/whistleblower`, {
+      const response = await authFetch(`${API_BASE}/api/dpo/whistleblower`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

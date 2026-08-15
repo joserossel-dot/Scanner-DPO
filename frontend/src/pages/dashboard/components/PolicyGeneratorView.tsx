@@ -1,3 +1,4 @@
+import { authFetch } from '../../../../lib/authFetch';
 import React, { useState, useEffect } from 'react';
 import { FileText, Copy, Shield, Check, RefreshCw, AlertCircle, Sparkles } from 'lucide-react';
 
@@ -67,7 +68,7 @@ export default function PolicyGeneratorView({ token }: PolicyGeneratorViewProps)
     setIsLoading(true);
     setErrorMsg('');
     try {
-      const response = await fetch(`${API_BASE}/api/remediation/policies`, {
+      const response = await authFetch(`${API_BASE}/api/remediation/policies`, {
         headers: {
           'Authorization': `Bearer ${token}`
         }
@@ -115,7 +116,7 @@ export default function PolicyGeneratorView({ token }: PolicyGeneratorViewProps)
     setToastMsg('');
 
     try {
-      const response = await fetch(`${API_BASE}/api/remediation/policies`, {
+      const response = await authFetch(`${API_BASE}/api/remediation/policies`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -171,7 +172,7 @@ export default function PolicyGeneratorView({ token }: PolicyGeneratorViewProps)
 
     try {
       const hash = await sha256(policyHtml);
-      await fetch(`${API_BASE}/api/remediation/log-download`, {
+      await authFetch(`${API_BASE}/api/remediation/log-download`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

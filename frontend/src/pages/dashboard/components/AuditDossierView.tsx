@@ -1,3 +1,4 @@
+import { authFetch } from '../../../../lib/authFetch';
 import React, { useState, useEffect } from 'react';
 import { 
   FileText, 
@@ -96,7 +97,7 @@ export default function AuditDossierView({ token }: AuditDossierViewProps) {
     setIsLoading(true);
     setErrorMsg('');
     try {
-      const response = await fetch(`${API_BASE}/api/reports/dossier`, {
+      const response = await authFetch(`${API_BASE}/api/reports/dossier`, {
         headers: { 'Authorization': `Bearer ${token}` }
       });
       if (response.ok) {

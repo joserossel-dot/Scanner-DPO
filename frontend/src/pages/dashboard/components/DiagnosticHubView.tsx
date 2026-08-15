@@ -1,3 +1,4 @@
+import { authFetch } from '../../../../lib/authFetch';
 import React, { useState, useEffect } from 'react';
 import { 
   Sparkles, 
@@ -71,7 +72,7 @@ export default function DiagnosticHubView({ token, onEvaluationSuccess }: Diagno
     if (!token) return;
     setIsLoadingDrafts(true);
     try {
-      const response = await fetch(`${API_BASE}/api/ropa`, {
+      const response = await authFetch(`${API_BASE}/api/ropa`, {
         headers: {
           'Authorization': `Bearer ${token}`
         }
@@ -95,7 +96,7 @@ export default function DiagnosticHubView({ token, onEvaluationSuccess }: Diagno
   const handleQuestionnaireSubmit = async (answers: any) => {
     if (!token) return;
     try {
-      const res = await fetch(`${API_BASE}/api/reports/evaluate`, {
+      const res = await authFetch(`${API_BASE}/api/reports/evaluate`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -137,7 +138,7 @@ export default function DiagnosticHubView({ token, onEvaluationSuccess }: Diagno
     e.preventDefault();
     if (!editingRecord || !token) return;
     try {
-      const response = await fetch(`${API_BASE}/api/ropa/${editingRecord.id}`, {
+      const response = await authFetch(`${API_BASE}/api/ropa/${editingRecord.id}`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
@@ -169,7 +170,7 @@ export default function DiagnosticHubView({ token, onEvaluationSuccess }: Diagno
   const handleRejectDraft = async (record: RopaRecord) => {
     if (!token) return;
     try {
-      const response = await fetch(`${API_BASE}/api/ropa/${record.id}`, {
+      const response = await authFetch(`${API_BASE}/api/ropa/${record.id}`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
@@ -205,7 +206,7 @@ export default function DiagnosticHubView({ token, onEvaluationSuccess }: Diagno
     
     setIsTransitioning(true);
     try {
-      const res = await fetch(`${API_BASE}/api/reports/diagnosis?domain=${window.location.hostname}`, {
+      const res = await authFetch(`${API_BASE}/api/reports/diagnosis?domain=${window.location.hostname}`, {
         headers: {
           'Authorization': `Bearer ${token}`
         }

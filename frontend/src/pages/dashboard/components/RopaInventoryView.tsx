@@ -1,3 +1,4 @@
+import { authFetch } from '../../../../lib/authFetch';
 import React, { useState, useEffect } from 'react';
 import { 
   FolderLock, 
@@ -82,7 +83,7 @@ export default function RopaInventoryView({ token, onRopaUpdated }: RopaInventor
     setIsLoading(true);
     setErrorMsg('');
     try {
-      const response = await fetch(`${API_BASE}/api/ropa`, {
+      const response = await authFetch(`${API_BASE}/api/ropa`, {
         headers: {
           'Authorization': `Bearer ${token}`
         }
@@ -193,7 +194,7 @@ export default function RopaInventoryView({ token, onRopaUpdated }: RopaInventor
   const handleDelete = async (id: string) => {
     if (!window.confirm('¿Está seguro de eliminar esta actividad de tratamiento de su RoPA?')) return;
     try {
-      const response = await fetch(`${API_BASE}/api/ropa/${id}`, {
+      const response = await authFetch(`${API_BASE}/api/ropa/${id}`, {
         method: 'DELETE',
         headers: {
           'Authorization': `Bearer ${token}`
@@ -216,7 +217,7 @@ export default function RopaInventoryView({ token, onRopaUpdated }: RopaInventor
     if (!window.confirm(`¿Está seguro de rechazar la sugerencia '${record.process_name}'?`)) return;
 
     try {
-      const response = await fetch(`${API_BASE}/api/ropa/${record.id}`, {
+      const response = await authFetch(`${API_BASE}/api/ropa/${record.id}`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
@@ -266,7 +267,7 @@ export default function RopaInventoryView({ token, onRopaUpdated }: RopaInventor
     formData.append('evidence', evidenceFile);
 
     try {
-      const response = await fetch(`${API_BASE}/api/ropa/analyze-evidence`, {
+      const response = await authFetch(`${API_BASE}/api/ropa/analyze-evidence`, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${token}`

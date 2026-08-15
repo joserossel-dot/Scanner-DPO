@@ -1,3 +1,4 @@
+import { authFetch } from '../../../../lib/authFetch';
 import React, { useState } from 'react';
 import { 
   Users, 
@@ -149,7 +150,7 @@ export default function DiagnosticQuestionnaire({ onSubmit, token }: DiagnosticQ
     
     const fetchScanData = async () => {
       try {
-        const response = await fetch(`${API_BASE}/api/scan/latest`, {
+        const response = await authFetch(`${API_BASE}/api/scan/latest`, {
           headers: {
             'Authorization': `Bearer ${token}`
           }

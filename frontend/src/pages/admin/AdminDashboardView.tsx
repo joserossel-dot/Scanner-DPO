@@ -1,3 +1,4 @@
+import { authFetch } from '../../../lib/authFetch';
 import React, { useState, useEffect } from 'react';
 import { 
   Shield, 
@@ -84,7 +85,7 @@ export default function AdminDashboardView({ token }: AdminDashboardViewProps) {
     setErrorMsg('');
     try {
       // 1. Fetch Tenants
-      const tenantsRes = await fetch(`${API_BASE}/api/admin/tenants`, {
+      const tenantsRes = await authFetch(`${API_BASE}/api/admin/tenants`, {
         headers: { 'Authorization': `Bearer ${token}` }
       });
       if (tenantsRes.ok) {
@@ -96,7 +97,7 @@ export default function AdminDashboardView({ token }: AdminDashboardViewProps) {
       }
 
       // 2. Fetch Leads
-      const leadsRes = await fetch(`${API_BASE}/api/admin/leads`, {
+      const leadsRes = await authFetch(`${API_BASE}/api/admin/leads`, {
         headers: { 'Authorization': `Bearer ${token}` }
       });
       if (leadsRes.ok) {
@@ -120,7 +121,7 @@ export default function AdminDashboardView({ token }: AdminDashboardViewProps) {
     e.preventDefault();
     if (!selectedLead || !token) return;
     try {
-      const response = await fetch(`${API_BASE}/api/admin/leads/${selectedLead.id}`, {
+      const response = await authFetch(`${API_BASE}/api/admin/leads/${selectedLead.id}`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
@@ -148,7 +149,7 @@ export default function AdminDashboardView({ token }: AdminDashboardViewProps) {
     e.preventDefault();
     if (!selectedTenant || !token) return;
     try {
-      const response = await fetch(`${API_BASE}/api/admin/tenants/${selectedTenant.id}`, {
+      const response = await authFetch(`${API_BASE}/api/admin/tenants/${selectedTenant.id}`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
