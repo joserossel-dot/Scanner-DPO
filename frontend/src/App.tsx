@@ -1,9 +1,7 @@
 import { useState, useEffect, FormEvent } from 'react';
 import { BrowserRouter, Routes, Route, Link, useLocation, useNavigate, Navigate } from 'react-router-dom';
 import LandingPage from './pages/LandingPage';
-import DiagnosticQuestionnaire from './pages/dashboard/components/Diagnostic
-Questionnaire';
-import DiagnosticHubView from './pages/dashboard/components/DiagnosticHubView';
+import DiagnosticQuestionnaire from './pages/dashboard/components/DiagnosticQuestionnaire';
 import ProgressStepper from './pages/dashboard/components/ProgressStepper';
 import DiagnosisResultsView from './pages/dashboard/DiagnosisResultsView';
 import ContractBuilderView from './pages/dashboard/components/ContractBuilderView';
