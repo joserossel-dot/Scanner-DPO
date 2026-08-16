@@ -427,7 +427,7 @@ export function Dashboard({ token, user, onLogout, initialTab }: DashboardProps)
       headers['Authorization'] = `Bearer ${token}`;
     }
     try {
-      const res = await fetch(`${API_BASE}/api/reports/diagnosis?domain=${window.location.hostname}`, { headers });
+      const res = await fetch(`${API_BASE}/api/reports/diagnosis?domain=${scanUrl}`, { headers });
      if (res.ok) {
         const data = await res.json();
         setDiagnosisData(data);
