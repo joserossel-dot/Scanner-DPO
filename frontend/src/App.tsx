@@ -911,7 +911,7 @@ Firmas autorizadas:
       const res = await fetch(`${API_BASE}/api/incidents/scan-vulnerabilities`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ domain: window.location.hostname })
+        body: JSON.stringify({ domain: scanUrl })
       });
       if (res.ok) {
         const data = await res.json();
