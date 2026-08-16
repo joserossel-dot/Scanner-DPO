@@ -1,4 +1,4 @@
-import { authFetch } from '../../../../lib/authFetch';
+import { authFetch } from '../../../lib/authFetch';
 import React, { useState, useEffect } from 'react';
 import { 
   Shield, 
