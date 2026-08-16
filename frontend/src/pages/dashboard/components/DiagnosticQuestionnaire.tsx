@@ -264,6 +264,9 @@ export default function DiagnosticQuestionnaire({ onSubmit, token }: DiagnosticQ
     console.log('📊 [Diagnóstico Legal] Cuestionario Operativo Interno Enviado:', formData);
     setFormSubmitted(true);
     onSubmit(formData);
+    if (setActiveTab) {
+      setActiveTab('diagnosis');
+    }
     
     // Smooth scroll to top
     const element = document.getElementById('diagnostic-questionnaire-root');
