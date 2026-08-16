@@ -388,7 +388,7 @@ export function Dashboard({ token, user, onLogout, initialTab }: DashboardProps)
       const res = await fetch(`${API_BASE}/api/scan`, {
         method: 'POST',
         headers: scanHeaders,
-        body: JSON.stringify({ url })
+        body: JSON.stringify({ domain: scanUrl })
       });
       if (res.ok) {
         const data = await res.json();
