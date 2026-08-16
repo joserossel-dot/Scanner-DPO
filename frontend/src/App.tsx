@@ -428,6 +428,7 @@ export function Dashboard({ token, user, onLogout, initialTab }: DashboardProps)
     }
     try {
       const res = await fetch(`${API_BASE}/api/reports/diagnosis?domain=${window.location.hostname}`, { headers });
+     if (res.ok) {
         const data = await res.json();
         setDiagnosisData(data);
         setFetchError(false);
