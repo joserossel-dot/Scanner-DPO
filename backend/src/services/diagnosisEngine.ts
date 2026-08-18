@@ -80,59 +80,6 @@ export interface EvaluationResult {
 }
 
 export function evaluateQuestionnaire(answers: DiagnosisAnswers): EvaluationResult {
-  const confirmedRopa = answers.confirmed_ropa_count ?? 0;
-  const draftRopa = answers.draft_ropa_count ?? 0;
-
-  if (confirmedRopa === 0) {
-    return {
-      scoreTotal: 0,
-      riesgoUTM: 20000,
-      findings: [{
-        id: 'FIND_ROPA_MISSING',
-        category: 'Gobernanza',
-        severity: 'Gravísima',
-        description: 'Ausencia de Registro de Actividades (RoPA)',
-        recommendation: 'Es imposible evaluar el cumplimiento sin confirmar primero el inventario de datos en la pestaña RoPA. Por favor, confirme o complete la información para generar su diagnóstico de riesgos.',
-        penalty: 100,
-        riskUtm: 20000,
-        effort: 'LOW'
-      }],
-      actionPlan: [{
-        step: 1,
-        title: 'Confirmar inventario RoPA',
-        description: 'Mapear e inventariar las actividades de tratamiento de datos personales de la empresa (Art. 12).',
-        priority: 'Alta',
-        estimatedEffort: '30 minutos',
-        details: 'Ingrese al módulo RoPA, revise las sugerencias automáticas generadas y confirme los borradores correspondientes para poder evaluar el cumplimiento.'
-      }]
-    };
-  }
-
-  if (draftRopa > 0) {
-    return {
-      scoreTotal: 0,
-      riesgoUTM: 20000,
-      findings: [{
-        id: 'FIND_ROPA_DRAFTS_PENDING',
-        category: 'Gobernanza',
-        severity: 'Gravísima',
-        description: 'Borradores de procesos detectados pendientes de revisión en el RoPA.',
-        recommendation: 'Tiene procesos detectados pendientes de revisión en su Inventario. Confirme o rechace los borradores para generar un diagnóstico preciso.',
-        penalty: 100,
-        riskUtm: 20000,
-        effort: 'LOW'
-      }],
-      actionPlan: [{
-        step: 1,
-        title: 'Revisar borradores pendientes en RoPA',
-        description: 'Revisar y confirmar o rechazar los borradores sugeridos en el Registro de Actividades de Tratamiento (RoPA).',
-        priority: 'Alta',
-        estimatedEffort: '15 minutos',
-        details: 'Ingrese al módulo RoPA, analice los borradores sugeridos por el escáner y la IA, y confírmelos o rechácelos para poder evaluar el cumplimiento.'
-      }]
-    };
-  }
-
   const findings: DiagnosisFinding[] = [];
   const actionPlan: ActionStep[] = [];
   let scoreTotal = 100;

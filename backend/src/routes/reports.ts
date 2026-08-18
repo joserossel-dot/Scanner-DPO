@@ -264,10 +264,12 @@ router.post('/evaluate', adminCors, async (req: any, res) => {
     const evaluation = evaluateQuestionnaire(answers);
     const domain = answers.domain || 'localhost:3000';
     
+    const findingsToStore = evaluation.findings.filter(f => !f.id.startsWith('FIND_ROPA_'));
+
     const severityCounts = {
-      leve: evaluation.findings.filter(f => f.severity === 'Leve').length,
-      grave: evaluation.findings.filter(f => f.severity === 'Grave').length,
-      gravisima: evaluation.findings.filter(f => f.severity === 'Gravísima').length
+      leve: findingsToStore.filter(f => f.severity === 'Leve').length,
+      grave: findingsToStore.filter(f => f.severity === 'Grave').length,
+      gravisima: findingsToStore.filter(f => f.severity === 'Gravísima').length
     };
 
     const result = await db.query(
@@ -277,7 +279,7 @@ router.post('/evaluate', adminCors, async (req: any, res) => {
         domain,
         evaluation.scoreTotal,
         JSON.stringify(severityCounts),
-        JSON.stringify(evaluation.findings),
+        JSON.stringify(findingsToStore),
         JSON.stringify([]),
         JSON.stringify([]),
         req.user.id

@@ -219,17 +219,18 @@ router.post('/evaluate', adminCors, async (req, res) => {
         const answers = { ...req.body, confirmed_ropa_count, draft_ropa_count };
         const evaluation = evaluateQuestionnaire(answers);
         const domain = answers.domain || 'localhost:3000';
+        const findingsToStore = evaluation.findings.filter(f => !f.id.startsWith('FIND_ROPA_'));
         const severityCounts = {
-            leve: evaluation.findings.filter(f => f.severity === 'Leve').length,
-            grave: evaluation.findings.filter(f => f.severity === 'Grave').length,
-            gravisima: evaluation.findings.filter(f => f.severity === 'Gravísima').length
+            leve: findingsToStore.filter(f => f.severity === 'Leve').length,
+            grave: findingsToStore.filter(f => f.severity === 'Grave').length,
+            gravisima: findingsToStore.filter(f => f.severity === 'Gravísima').length
         };
         const result = await db.query(`INSERT INTO audit_reports (url, score, severity_counts, findings, pages_analyzed, pages_skipped, user_id)
        VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id`, [
             domain,
             evaluation.scoreTotal,
             JSON.stringify(severityCounts),
-            JSON.stringify(evaluation.findings),
+            JSON.stringify(findingsToStore),
             JSON.stringify([]),
             JSON.stringify([]),
             req.user.id

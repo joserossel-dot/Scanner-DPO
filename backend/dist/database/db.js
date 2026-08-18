@@ -301,6 +301,22 @@ export async function initDb() {
       downloaded_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
     )
   `);
+    // Run the cleanup query to remove legacy FIND_ROPA_ findings from audit_reports (Step 3)
+    try {
+        await pool.query(`
+      UPDATE audit_reports 
+      SET findings = (
+        SELECT jsonb_agg(f) 
+        FROM jsonb_array_elements(findings) f 
+        WHERE f->>'id' NOT LIKE 'FIND_ROPA_%'
+      ) 
+      WHERE findings::text LIKE '%FIND_ROPA_%'
+    `);
+        console.log('🧹 Limpieza de hallazgos legacy FIND_ROPA_ realizada.');
+    }
+    catch (err) {
+        console.error('⚠️ Error ejecutando la limpieza de FIND_ROPA_:', err.message);
+    }
     console.log('✅ Tablas y esquema de PostgreSQL validados/creados.');
     return pool;
 }
