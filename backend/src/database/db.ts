@@ -330,18 +330,20 @@ export async function initDb() {
     )
   `);
 
-  // Run the cleanup query to remove legacy FIND_ROPA_ findings from audit_reports (Step 3)
+  // Run the cleanup to remove legacy FIND_ROPA_ findings from audit_reports (Step 3)
   try {
-    await pool.query(`
-      UPDATE audit_reports 
-      SET findings = (
-        SELECT jsonb_agg(f) 
-        FROM jsonb_array_elements(findings) f 
-        WHERE f->>'id' NOT LIKE 'FIND_ROPA_%'
-      ) 
-      WHERE findings::text LIKE '%FIND_ROPA_%'
-    `);
-    console.log('🧹 Limpieza de hallazgos legacy FIND_ROPA_ realizada.');
+    const reportsToClean = await pool.query(
+      `SELECT id, findings FROM audit_reports WHERE findings::text LIKE '%FIND_ROPA_%'`
+    );
+    for (const row of reportsToClean.rows) {
+      const findings = Array.isArray(row.findings) ? row.findings : [];
+      const cleaned = findings.filter((f: any) => !f?.id?.startsWith('FIND_ROPA_'));
+      await pool.query(
+        `UPDATE audit_reports SET findings = $1 WHERE id = $2`,
+        [JSON.stringify(cleaned), row.id]
+      );
+    }
+    console.log(`🧹 Limpieza de hallazgos legacy FIND_ROPA_ realizada. Filas procesadas: ${reportsToClean.rowCount}`);
   } catch (err: any) {
     console.error('⚠️ Error ejecutando la limpieza de FIND_ROPA_:', err.message);
   }
