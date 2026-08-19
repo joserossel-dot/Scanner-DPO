@@ -50,25 +50,51 @@ router.get('/diagnosis', adminCors, async (req, res) => {
     }
     const db = getDb();
     try {
-        // 1. Get latest audit report from scanner
-        const scanRes = await db.query(`SELECT * FROM audit_reports WHERE user_id = $1 ORDER BY created_at DESC LIMIT 1`, [req.user.id]);
-        // 2. Get registered international transfers
-        const transfersRes = await db.query(`SELECT * FROM international_transfers WHERE user_id = $1`, [req.user.id]);
-        // 3. Get security incidents
-        const incidentsRes = await db.query(`SELECT * FROM security_incidents WHERE user_id = $1`, [req.user.id]);
+        // 1a. Fetch latest actual web scan (where pages_analyzed is not empty)
+        const scanRes = await db.query(`SELECT * FROM audit_reports 
+       WHERE user_id = $1 AND pages_analyzed IS NOT NULL AND pages_analyzed::text != '[]' 
+       ORDER BY created_at DESC LIMIT 1`, [req.user.id]);
         let crawlScore = 100;
-        let severityCounts = { leve: 0, grave: 0, gravisima: 0 };
-        let findings = [];
-        let actionPlan = [];
+        let scanFindings = [];
+        let scanActionPlan = [];
         let pagesAnalyzed = [];
         if (scanRes.rowCount && scanRes.rows[0]) {
             const row = scanRes.rows[0];
             crawlScore = row.score;
-            severityCounts = row.severity_counts || { leve: 0, grave: 0, gravisima: 0 };
-            findings = row.findings || [];
-            actionPlan = row.action_plan || [];
+            scanFindings = row.findings || [];
+            scanActionPlan = row.action_plan || [];
             pagesAnalyzed = row.pages_analyzed || [];
         }
+        // 1b. Fetch latest questionnaire evaluation report (where pages_analyzed is empty)
+        const evalRes = await db.query(`SELECT * FROM audit_reports 
+       WHERE user_id = $1 AND (pages_analyzed IS NULL OR pages_analyzed::text = '[]') 
+       ORDER BY created_at DESC LIMIT 1`, [req.user.id]);
+        let evalFindings = [];
+        let evalActionPlan = [];
+        if (evalRes.rowCount && evalRes.rows[0]) {
+            const row = evalRes.rows[0];
+            evalFindings = row.findings || [];
+            evalActionPlan = row.action_plan || [];
+        }
+        // Merge findings and action plans
+        const mergedFindingsMap = new Map();
+        scanFindings.forEach((f) => mergedFindingsMap.set(f.id, f));
+        evalFindings.forEach((f) => mergedFindingsMap.set(f.id, f));
+        const findings = Array.from(mergedFindingsMap.values());
+        const mergedActionsMap = new Map();
+        scanActionPlan.forEach((a) => {
+            const key = a.title || a.description || JSON.stringify(a);
+            mergedActionsMap.set(key, a);
+        });
+        evalActionPlan.forEach((a) => {
+            const key = a.title || a.description || JSON.stringify(a);
+            mergedActionsMap.set(key, a);
+        });
+        const actionPlan = Array.from(mergedActionsMap.values());
+        // 2. Get registered international transfers
+        const transfersRes = await db.query(`SELECT * FROM international_transfers WHERE user_id = $1`, [req.user.id]);
+        // 3. Get security incidents
+        const incidentsRes = await db.query(`SELECT * FROM security_incidents WHERE user_id = $1`, [req.user.id]);
         // 4. Calculate international transfers risk impact
         let transfersScore = 100;
         const transferFindings = [];
