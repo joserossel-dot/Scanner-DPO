@@ -388,7 +388,7 @@ export function Dashboard({ token, user, onLogout, initialTab }: DashboardProps)
       const res = await fetch(`${API_BASE}/api/scan`, {
         method: 'POST',
         headers: scanHeaders,
-        body: JSON.stringify({ domain: scanUrl })
+        body: JSON.stringify({ url })
       });
       if (res.ok) {
         const data = await res.json();
@@ -1073,6 +1073,42 @@ Firmas autorizadas:
                     </>
                   )}
                 </div>
+
+                {/* Hallazgos del Crawler detailed report */}
+                <h4 style={{ margin: '20px 0 10px 0', fontSize: '13px', fontWeight: 600, color: 'var(--color-primary)' }}>🔍 Hallazgos del Crawler ({latestScan.findings?.length || 0} brechas detectadas)</h4>
+                
+                {(!latestScan.findings || latestScan.findings.length === 0) ? (
+                  <div style={{ background: 'rgba(16, 185, 129, 0.05)', border: '1px solid rgba(16, 185, 129, 0.2)', padding: '12px', borderRadius: '6px', fontSize: '12px', color: '#34d399', textAlign: 'center' }}>
+                    🟢 ¡Excelente! No se detectaron brechas de cumplimiento críticas en el sitio web escaneado.
+                  </div>
+                ) : (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                    {latestScan.findings.map((f, idx) => {
+                      return (
+                        <div key={idx} style={{ background: 'rgba(255,255,255,0.01)', border: '1px solid var(--border-color)', borderRadius: '6px', padding: '12px', display: 'flex', flexDirection: 'column', gap: '8px', textAlign: 'left' }}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                            <span style={{ fontSize: '12px', fontWeight: 'bold', color: 'var(--text-primary)' }}>{f.description}</span>
+                            {f.severity === 'Gravísima' ? (
+                              <span style={{ background: 'rgba(239, 68, 68, 0.15)', color: '#ef4444', border: '1px solid rgba(239, 68, 68, 0.3)', padding: '2px 8px', borderRadius: '4px', fontSize: '10px', fontWeight: 'bold' }}>Crítico</span>
+                            ) : f.severity === 'Grave' ? (
+                              <span style={{ background: 'rgba(245, 158, 11, 0.15)', color: '#f59e0b', border: '1px solid rgba(245, 158, 11, 0.3)', padding: '2px 8px', borderRadius: '4px', fontSize: '10px', fontWeight: 'bold' }}>Medio</span>
+                            ) : (
+                              <span style={{ background: 'rgba(59, 130, 246, 0.15)', color: '#3b82f6', border: '1px solid rgba(59, 130, 246, 0.3)', padding: '2px 8px', borderRadius: '4px', fontSize: '10px', fontWeight: 'bold' }}>Bajo</span>
+                            )}
+                          </div>
+                          <div style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>
+                            <strong>Recomendación:</strong> {f.recommendation}
+                          </div>
+                          {f.details && (
+                            <div style={{ fontSize: '10px', color: '#64748b', fontStyle: 'italic' }}>
+                              {f.details}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
               </div>
             )}
           </div>
