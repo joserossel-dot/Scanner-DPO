@@ -124,7 +124,9 @@ router.post('/scan', adminCors, authenticateToken, async (req, res) => {
 router.get('/scan/latest', adminCors, authenticateToken, async (req, res) => {
     try {
         const db = getDb();
-        const result = await db.query('SELECT * FROM audit_reports WHERE user_id = $1 ORDER BY id DESC LIMIT 1', [req.user.id]);
+        const result = await db.query(`SELECT * FROM audit_reports 
+       WHERE user_id = $1 AND pages_analyzed IS NOT NULL AND pages_analyzed::text != '[]' 
+       ORDER BY id DESC LIMIT 1`, [req.user.id]);
         const latest = result.rows[0];
         if (!latest) {
             return res.json(null);
@@ -148,7 +150,10 @@ router.get('/scan/latest', adminCors, authenticateToken, async (req, res) => {
 router.get('/scan/history', adminCors, authenticateToken, async (req, res) => {
     try {
         const db = getDb();
-        const result = await db.query('SELECT id, url, score, severity_counts, created_at FROM audit_reports WHERE user_id = $1 ORDER BY id DESC LIMIT 10', [req.user.id]);
+        const result = await db.query(`SELECT id, url, score, severity_counts, created_at 
+       FROM audit_reports 
+       WHERE user_id = $1 AND pages_analyzed IS NOT NULL AND pages_analyzed::text != '[]' 
+       ORDER BY id DESC LIMIT 10`, [req.user.id]);
         return res.json(result.rows.map((r) => ({
             id: r.id,
             url: r.url,

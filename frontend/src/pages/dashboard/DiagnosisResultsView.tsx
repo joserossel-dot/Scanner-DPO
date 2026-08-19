@@ -124,25 +124,12 @@ export default function DiagnosisResultsView({
         return 1;
       }
       
-      // Fase 2: Blindaje Documental: Política de Privacidad, Textos Informativos y Contratos DPA/SCC.
+      // Fase 2: Blindaje Documental: Política de Privacidad, Textos Informativos.
       if (
         id?.includes('POLICY') || 
         id?.includes('POLICIES') || 
-        id?.includes('CONTRACT') || 
-        id?.includes('TRANSFER') || 
-        id?.includes('TID') || 
-        id?.includes('DPA') || 
-        id?.includes('SCC') || 
-        id?.includes('VENDORS') || 
         cat.includes('polic') || 
-        cat.includes('contract') || 
-        cat.includes('transfer') || 
-        cat.includes('proveedor') ||
-        desc.includes('política') || 
-        desc.includes('contrato') || 
-        desc.includes('cláusula') ||
-        desc.includes('scc') ||
-        desc.includes('dpa')
+        desc.includes('política')
       ) {
         return 2;
       }

@@ -333,10 +333,13 @@ export function Dashboard({ token, user, onLogout, initialTab }: DashboardProps)
       if (token) {
         headers['Authorization'] = `Bearer ${token}`;
       }
+      const cleanDomain = (() => {
+        try { return new URL(scanUrl).hostname; } catch (e) { return scanUrl.replace(/^https?:\/\//, '').replace(/\/$/, ''); }
+      })();
       const res = await fetch(`${API_BASE}/api/reports/evaluate`, {
         method: 'POST',
         headers,
-        body: JSON.stringify({ ...answers, domain: window.location.hostname })
+        body: JSON.stringify({ ...answers, domain: cleanDomain })
       });
       if (res.ok) {
         const data = await res.json();
@@ -435,6 +438,10 @@ export function Dashboard({ token, user, onLogout, initialTab }: DashboardProps)
         const data = await res.json();
         setDiagnosisData(data);
         setFetchError(false);
+        // Sync evalResults if there's any findings or a diagnosis was done
+        if (data && (data.findings?.length > 0 || data.globalScore < 100)) {
+          setEvalResults(data);
+        }
       } else {
         showToast('Error al cargar el diagnóstico consolidado.', 'warning');
         setFetchError(true);
@@ -1229,7 +1236,7 @@ Firmas autorizadas:
               hasError={fetchError}
             />
           ) : (
-            <DiagnosticHubView token={token} onEvaluationSuccess={(data: any) => setEvalResults(data)} setActiveTab={setActiveTab} />
+            <DiagnosticHubView token={token} scanUrl={scanUrl} onEvaluationSuccess={(data: any) => setEvalResults(data)} setActiveTab={setActiveTab} />
           )}
         </div>
       </div>

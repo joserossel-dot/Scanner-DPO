@@ -64,6 +64,16 @@ router.get('/diagnosis', adminCors, async (req, res) => {
             scanFindings = row.findings || [];
             scanActionPlan = row.action_plan || [];
             pagesAnalyzed = row.pages_analyzed || [];
+            // Override domain with actual scanned host if domain is the dashboard host or unresolved
+            if (!req.query.domain || domain.includes('onrender.com') || domain.includes('localhost')) {
+                try {
+                    const parsed = new URL(row.url.startsWith('http') ? row.url : 'http://' + row.url);
+                    domain = parsed.hostname;
+                }
+                catch {
+                    domain = row.url;
+                }
+            }
         }
         // 1b. Fetch latest questionnaire evaluation report (where pages_analyzed is empty)
         const evalRes = await db.query(`SELECT * FROM audit_reports 

@@ -29,6 +29,7 @@ interface RopaRecord {
 
 interface DiagnosticHubViewProps {
   token: string | null;
+  scanUrl?: string;
   onEvaluationSuccess?: (evalData: any) => void;
   setActiveTab?: (tab: 'scanner' | 'diagnosis' | 'remediation' | 'dpo' | 'dossier' | 'ropa' | 'admin') => void;
 }
@@ -52,7 +53,7 @@ const API_BASE = (() => {
   return url;
 })();
 
-export default function DiagnosticHubView({ token, onEvaluationSuccess, setActiveTab }: DiagnosticHubViewProps) {
+export default function DiagnosticHubView({ token, scanUrl, onEvaluationSuccess, setActiveTab }: DiagnosticHubViewProps) {
   const [drafts, setDrafts] = useState<RopaRecord[]>([]);
   const [isLoadingDrafts, setIsLoadingDrafts] = useState(false);
   const [evaluationData, setEvaluationData] = useState<any>(null);
@@ -97,13 +98,17 @@ export default function DiagnosticHubView({ token, onEvaluationSuccess, setActiv
   const handleQuestionnaireSubmit = async (answers: any) => {
     if (!token) return;
     try {
+      const cleanDomain = (() => {
+        const url = scanUrl || 'localhost:3000';
+        try { return new URL(url).hostname; } catch (e) { return url.replace(/^https?:\/\//, '').replace(/\/$/, ''); }
+      })();
       const res = await authFetch(`${API_BASE}/api/reports/evaluate`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${token}`
         },
-        body: JSON.stringify({ ...answers, domain: window.location.hostname || 'localhost' })
+        body: JSON.stringify({ ...answers, domain: cleanDomain })
       });
       if (res.ok) {
         const data = await res.json();
