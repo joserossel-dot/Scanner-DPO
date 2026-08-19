@@ -65,6 +65,10 @@ export async function initDb() {
       updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
     )
   `);
+    // Ensure api_key column exists before inserting default config
+    await pool.query(`
+    ALTER TABLE site_configs ADD COLUMN IF NOT EXISTS api_key VARCHAR(255);
+  `);
     // Insert default client config if not exists
     const defaultDomain = 'localhost:3000';
     const configExists = await pool.query('SELECT 1 FROM site_configs WHERE domain = $1', [defaultDomain]);
@@ -202,9 +206,6 @@ export async function initDb() {
     // Alter existing tables to ensure they include user_id FK column for multi-tenancy
     await pool.query(`
     ALTER TABLE site_configs ADD COLUMN IF NOT EXISTS user_id UUID REFERENCES users(id) ON DELETE CASCADE;
-  `);
-    await pool.query(`
-    ALTER TABLE site_configs ADD COLUMN IF NOT EXISTS api_key VARCHAR(255);
   `);
     await pool.query(`
     ALTER TABLE audit_reports ADD COLUMN IF NOT EXISTS user_id UUID REFERENCES users(id) ON DELETE CASCADE;
