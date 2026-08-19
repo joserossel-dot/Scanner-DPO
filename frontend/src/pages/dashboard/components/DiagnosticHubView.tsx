@@ -108,6 +108,9 @@ export default function DiagnosticHubView({ token, onEvaluationSuccess, setActiv
       if (res.ok) {
         const data = await res.json();
         setEvaluationData(data);
+        if (onEvaluationSuccess) {
+          onEvaluationSuccess(data);
+        }
         if (data.ropaDraftsGenerated) {
           setDrafts(data.ropaDraftsGenerated);
         } else {
