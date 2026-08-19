@@ -40,6 +40,7 @@ export interface DiagnosisResults {
   riesgoUTM: number;
   findings: DiagnosisFinding[];
   actionPlan: ActionStep[];
+  globalScore?: number;
 }
 
 interface DiagnosisResultsViewProps {

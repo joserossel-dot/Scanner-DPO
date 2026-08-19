@@ -341,7 +341,7 @@ export default function AdminDashboardView({ token }: AdminDashboardViewProps) {
                                 setLeadNotes(l.sales_notes || '');
                               }}
                               className="btn-action"
-                              style={{ padding: '4px 8px', fontSize: '11px', display: 'flex', itemsCenter: 'center', gap: '4px' }}
+                              style={{ padding: '4px 8px', fontSize: '11px', display: 'flex', alignItems: 'center', gap: '4px' }}
                             >
                               <Edit3 size={11} />
                               <span>Seguimiento</span>
@@ -422,7 +422,7 @@ export default function AdminDashboardView({ token }: AdminDashboardViewProps) {
                                 setTenantNotes(t.sales_notes || '');
                               }}
                               className="btn-action"
-                              style={{ padding: '4px 8px', fontSize: '11px', display: 'flex', itemsCenter: 'center', gap: '4px' }}
+                              style={{ padding: '4px 8px', fontSize: '11px', display: 'flex', alignItems: 'center', gap: '4px' }}
                             >
                               <Edit3 size={11} />
                               <span>Seguimiento</span>

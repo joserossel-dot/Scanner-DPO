@@ -115,6 +115,7 @@ const initialFormState: QuestionnaireState = {
 interface DiagnosticQuestionnaireProps {
   onSubmit: (answers: any) => void;
   token?: string | null;
+  setActiveTab?: (tab: 'scanner' | 'diagnosis' | 'remediation' | 'dpo' | 'dossier' | 'ropa' | 'admin') => void;
 }
 
 const API_BASE = (() => {
@@ -136,7 +137,7 @@ const API_BASE = (() => {
   return url;
 })();
 
-export default function DiagnosticQuestionnaire({ onSubmit, token }: DiagnosticQuestionnaireProps) {
+export default function DiagnosticQuestionnaire({ onSubmit, token, setActiveTab }: DiagnosticQuestionnaireProps) {
   const [formData, setFormData] = useState<QuestionnaireState>(initialFormState);
   const [activeAccordion, setActiveAccordion] = useState<number | null>(0);
   const [formSubmitted, setFormSubmitted] = useState(false);

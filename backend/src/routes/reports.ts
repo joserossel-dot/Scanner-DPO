@@ -39,9 +39,20 @@ router.use(authenticateToken);
 
 // GET /api/reports/diagnosis - Unified Compliance Center Report
 router.get('/diagnosis', adminCors, async (req: any, res) => {
-  const { domain } = req.query;
+  let domain = req.query.domain as string;
   if (!domain) {
-    return res.status(400).json({ error: 'Falta parámetro domain' });
+    const referer = req.headers.referer;
+    if (referer) {
+      try {
+        const urlObj = new URL(referer);
+        domain = urlObj.hostname;
+      } catch (e) {
+        // Safe to ignore
+      }
+    }
+    if (!domain) {
+      domain = req.headers.host || 'localhost:3000';
+    }
   }
 
   const db = getDb();

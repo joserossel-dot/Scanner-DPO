@@ -2,6 +2,7 @@ import { useState, useEffect, FormEvent } from 'react';
 import { BrowserRouter, Routes, Route, Link, useLocation, useNavigate, Navigate } from 'react-router-dom';
 import LandingPage from './pages/LandingPage';
 import DiagnosticQuestionnaire from './pages/dashboard/components/DiagnosticQuestionnaire';
+import DiagnosticHubView from './pages/dashboard/components/DiagnosticHubView';
 import ProgressStepper from './pages/dashboard/components/ProgressStepper';
 import DiagnosisResultsView from './pages/dashboard/DiagnosisResultsView';
 import ContractBuilderView from './pages/dashboard/components/ContractBuilderView';
@@ -1192,7 +1193,7 @@ Firmas autorizadas:
               hasError={fetchError}
             />
           ) : (
-            <DiagnosticHubView token={token} onEvaluationSuccess={(data) => setEvalResults(data)} />
+            <DiagnosticHubView token={token} onEvaluationSuccess={(data: any) => setEvalResults(data)} setActiveTab={setActiveTab} />
           )}
         </div>
       </div>
@@ -1631,21 +1632,23 @@ Firmas autorizadas:
                           <th>
                             <div style={{ display: 'flex', alignItems: 'center', gap: '4px', whiteSpace: 'nowrap' }}>
                               <span>Garantía (SCC)</span>
-                              <Info 
-                                size={12} 
-                                className="text-slate-400 cursor-help mt-0.5" 
-                                title="Standard Contractual Clauses: Cláusulas internacionales obligatorias si el servidor del proveedor está fuera de Chile." 
-                              />
+                              <span title="Standard Contractual Clauses: Cláusulas internacionales obligatorias si el servidor del proveedor está fuera de Chile.">
+                                <Info 
+                                  size={12} 
+                                  className="text-slate-400 cursor-help mt-0.5" 
+                                />
+                              </span>
                             </div>
                           </th>
                           <th>
                             <div style={{ display: 'flex', alignItems: 'center', gap: '4px', whiteSpace: 'nowrap' }}>
                               <span>Acuerdo (DPA)</span>
-                              <Info 
-                                size={12} 
-                                className="text-slate-400 cursor-help mt-0.5" 
-                                title="Data Processing Agreement: Contrato nacional que obliga a su proveedor a cuidar los datos." 
-                              />
+                              <span title="Data Processing Agreement: Contrato nacional que obliga a su proveedor a cuidar los datos.">
+                                <Info 
+                                  size={12} 
+                                  className="text-slate-400 cursor-help mt-0.5" 
+                                />
+                              </span>
                             </div>
                           </th>
                           <th>Acción</th>

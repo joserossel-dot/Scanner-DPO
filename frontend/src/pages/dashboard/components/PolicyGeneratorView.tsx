@@ -219,7 +219,7 @@ export default function PolicyGeneratorView({ token }: PolicyGeneratorViewProps)
       {/* Header card */}
       <div className="card" style={{ padding: '20px' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-          <div style={{ p: '8px', background: 'rgba(99, 102, 241, 0.1)', color: 'var(--color-primary)', borderRadius: '8px' }}>
+          <div style={{ padding: '8px', background: 'rgba(99, 102, 241, 0.1)', color: 'var(--color-primary)', borderRadius: '8px' }}>
             <FileText size={20} />
           </div>
           <div>

@@ -30,6 +30,7 @@ interface RopaRecord {
 interface DiagnosticHubViewProps {
   token: string | null;
   onEvaluationSuccess?: (evalData: any) => void;
+  setActiveTab?: (tab: 'scanner' | 'diagnosis' | 'remediation' | 'dpo' | 'dossier' | 'ropa' | 'admin') => void;
 }
 
 const API_BASE = (() => {
@@ -51,7 +52,7 @@ const API_BASE = (() => {
   return url;
 })();
 
-export default function DiagnosticHubView({ token, onEvaluationSuccess }: DiagnosticHubViewProps) {
+export default function DiagnosticHubView({ token, onEvaluationSuccess, setActiveTab }: DiagnosticHubViewProps) {
   const [drafts, setDrafts] = useState<RopaRecord[]>([]);
   const [isLoadingDrafts, setIsLoadingDrafts] = useState(false);
   const [evaluationData, setEvaluationData] = useState<any>(null);
@@ -245,7 +246,7 @@ export default function DiagnosticHubView({ token, onEvaluationSuccess }: Diagno
               <FileText className="text-indigo-400 w-4 h-4" />
               <span>Cuestionario de Cumplimiento PYME</span>
             </h2>
-            <DiagnosticQuestionnaire onSubmit={handleQuestionnaireSubmit} token={token} />
+            <DiagnosticQuestionnaire onSubmit={handleQuestionnaireSubmit} token={token} setActiveTab={setActiveTab} />
           </div>
         </div>
 
