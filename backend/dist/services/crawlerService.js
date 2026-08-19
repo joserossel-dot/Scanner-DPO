@@ -57,6 +57,8 @@ export async function runAudit(url) {
     let totalPreCheckedOptIn = 0;
     let privacyLinkUrl = '';
     const crawledHtmls = [];
+    let hasCookieBanner = false;
+    let hasArcoLink = false;
     while (queue.length > 0 && visited.size < maxPages) {
         const currentUrl = queue.shift();
         // Normalize URL to avoid crawling same page with trailing slashes or hash
@@ -84,6 +86,22 @@ export async function runAudit(url) {
             const html = await response.text();
             crawledHtmls.push({ url: currentUrl, html });
             const $ = cheerio.load(html);
+            // Check for cookie banner presence (classes, IDs, or text keywords)
+            const bodyText = $('body').text().toLowerCase();
+            const hasCookieSelectors = $('[id*="cookie" i], [class*="cookie" i], [id*="consent" i], [class*="consent" i]').length > 0;
+            const hasCookieTerms = /aceptar cookies|acepto cookies|configurar cookies|rechazar cookies|política de cookies|banner-cookies|aviso-cookies/i.test(bodyText);
+            if (hasCookieSelectors || hasCookieTerms) {
+                hasCookieBanner = true;
+            }
+            // Check for ARCO request link or text presence
+            $('a').each((_, el) => {
+                const text = $(el).text().toLowerCase();
+                const href = $(el).attr('href') || '';
+                if (/arco|derechos\s+arco|ejercer\s+derechos|solicitud\s+arco|gestión\s+de\s+datos/i.test(text) || /arco/i.test(href)) {
+                    hasArcoLink = true;
+                    return false; // Break loop
+                }
+            });
             // --- 1. Detect trackers/cookies scripts ---
             $('script').each((_, el) => {
                 const src = $(el).attr('src') || '';
@@ -182,6 +200,17 @@ export async function runAudit(url) {
             details: `Scripts detectados: ${uniqueTrackers.join(', ')}. El rastreo de usuarios sin consentimiento previo explícito vulnera el principio de licitud de la Ley N° 21.719.`
         });
     }
+    // 1.5 Cookie Banner presence check
+    if (!hasCookieBanner) {
+        findings.push({
+            id: 'missing_cookie_banner',
+            category: 'cookies_scripts',
+            severity: 'Grave',
+            description: 'No se detectó un banner o mecanismo activo para la aceptación y gestión de cookies en el sitio web.',
+            recommendation: 'Implementar el CMP (Consent Management Platform) de PrivacyTech para gestionar las preferencias de cookies del usuario conforme a la Ley N° 21.719.',
+            details: 'La ley exige obtener el consentimiento previo del usuario antes de almacenar cookies no necesarias o de seguimiento en su navegador.'
+        });
+    }
     // 2. Form findings
     if (totalMissingOptIn > 0) {
         findings.push({
@@ -201,6 +230,17 @@ export async function runAudit(url) {
             description: `Se detectaron casillas de consentimiento pre-marcadas (pre-checked) en los formularios analizados.`,
             recommendation: 'Modificar las casillas de aceptación de términos y políticas para que aparezcan vacías por defecto.',
             details: 'La ley exige que el consentimiento sea una acción afirmativa clara. Las casillas pre-marcadas no constituyen consentimiento válido.'
+        });
+    }
+    // 2.5 ARCO Link presence check
+    if (!hasArcoLink) {
+        findings.push({
+            id: 'missing_arco_channel',
+            category: 'forms',
+            severity: 'Grave',
+            description: 'No se encontró un canal digital o formulario interactivo para la gestión y ejercicio de los Derechos ARCO+.',
+            recommendation: 'Integrar y publicar en su sitio el enlace al formulario interactivo ARCO+ provisto por el Widget de PrivacyTech.',
+            details: 'El titular de datos tiene derecho a solicitar el acceso, rectificación, cancelación, oposición o bloqueo de su información personal de forma expedita.'
         });
     }
     // 3. Privacy Policy Link & Content findings
@@ -352,14 +392,26 @@ function generateActionPlan(findings) {
             details: 'Inserta el script de cumplimiento CMP de PrivacyTech en la cabecera del sitio.'
         });
     }
-    plan.push({
-        step: stepCounter++,
-        title: 'Habilitar Portal de Derechos ARCO+ (Acceso, Rectificación, Bloqueo)',
-        description: 'La Ley N° 21.719 exige la existencia de un canal expedito para que las personas soliciten la gestión de sus datos.',
-        priority: 'Media',
-        estimatedEffort: '2 horas',
-        details: 'Activa y publica en tu sitio el enlace al formulario interactivo ARCO+ provisto por el Widget de PrivacyTech.'
-    });
+    if (findings.some(f => f.id === 'missing_cookie_banner')) {
+        plan.push({
+            step: stepCounter++,
+            title: 'Habilitar Banner de Consentimiento de Cookies',
+            description: 'No se detectó un banner de cookies activo para obtener el consentimiento previo de los usuarios.',
+            priority: 'Alta',
+            estimatedEffort: '1 hora',
+            details: 'Integrar el CMP (Consent Management Platform) de PrivacyTech para bloquear automáticamente cookies no esenciales hasta que el usuario decida aceptarlas.'
+        });
+    }
+    if (findings.some(f => f.id === 'missing_arco_channel')) {
+        plan.push({
+            step: stepCounter++,
+            title: 'Habilitar Portal de Derechos ARCO+ (Acceso, Rectificación, Bloqueo)',
+            description: 'La Ley N° 21.719 exige la existencia de un canal expedito para que las personas soliciten la gestión de sus datos.',
+            priority: 'Alta',
+            estimatedEffort: '2 horas',
+            details: 'Activa y publica en tu sitio el enlace al formulario interactivo ARCO+ provisto por el Widget de PrivacyTech.'
+        });
+    }
     if (plan.length === 1) {
         plan.unshift({
             step: stepCounter++,
