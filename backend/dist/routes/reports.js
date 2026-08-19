@@ -263,14 +263,15 @@ router.post('/evaluate', adminCors, async (req, res) => {
             grave: findingsToStore.filter(f => f.severity === 'Grave').length,
             gravisima: findingsToStore.filter(f => f.severity === 'Gravísima').length
         };
-        const result = await db.query(`INSERT INTO audit_reports (url, score, severity_counts, findings, pages_analyzed, pages_skipped, user_id)
-       VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id`, [
+        const result = await db.query(`INSERT INTO audit_reports (url, score, severity_counts, findings, pages_analyzed, pages_skipped, action_plan, user_id)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id`, [
             domain,
             evaluation.scoreTotal,
             JSON.stringify(severityCounts),
             JSON.stringify(findingsToStore),
             JSON.stringify([]),
             JSON.stringify([]),
+            JSON.stringify(evaluation.actionPlan || []),
             req.user.id
         ]);
         // Asynchronously generate ROPA drafts from questionnaire answers (isolated try-catch for resilience)

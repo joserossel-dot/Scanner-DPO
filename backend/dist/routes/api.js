@@ -95,8 +95,8 @@ router.post('/scan', adminCors, authenticateToken, async (req, res) => {
         const report = await runAudit(url);
         const db = getDb();
         const result = await db.query(`
-      INSERT INTO audit_reports (url, score, severity_counts, findings, pages_analyzed, pages_skipped, user_id)
-      VALUES ($1, $2, $3, $4, $5, $6, $7)
+      INSERT INTO audit_reports (url, score, severity_counts, findings, pages_analyzed, pages_skipped, action_plan, user_id)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
       RETURNING id
     `, [
             report.url,
@@ -105,6 +105,7 @@ router.post('/scan', adminCors, authenticateToken, async (req, res) => {
             JSON.stringify(report.findings),
             JSON.stringify(report.pagesAnalyzed || []),
             JSON.stringify(report.pagesSkipped || []),
+            JSON.stringify(report.actionPlan || []),
             req.user.id
         ]);
         const reportId = result.rows[0].id;

@@ -320,8 +320,8 @@ router.post('/evaluate', adminCors, async (req: any, res) => {
     };
 
     const result = await db.query(
-      `INSERT INTO audit_reports (url, score, severity_counts, findings, pages_analyzed, pages_skipped, user_id)
-       VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id`,
+      `INSERT INTO audit_reports (url, score, severity_counts, findings, pages_analyzed, pages_skipped, action_plan, user_id)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id`,
       [
         domain,
         evaluation.scoreTotal,
@@ -329,6 +329,7 @@ router.post('/evaluate', adminCors, async (req: any, res) => {
         JSON.stringify(findingsToStore),
         JSON.stringify([]),
         JSON.stringify([]),
+        JSON.stringify(evaluation.actionPlan || []),
         req.user.id
       ]
     );

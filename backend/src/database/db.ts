@@ -109,6 +109,7 @@ export async function initDb() {
       findings JSONB NOT NULL,
       pages_analyzed JSONB,
       pages_skipped JSONB,
+      action_plan JSONB,
       created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
     )
   `);
@@ -116,7 +117,8 @@ export async function initDb() {
   await pool.query(`
     ALTER TABLE audit_reports 
     ADD COLUMN IF NOT EXISTS pages_analyzed JSONB,
-    ADD COLUMN IF NOT EXISTS pages_skipped JSONB
+    ADD COLUMN IF NOT EXISTS pages_skipped JSONB,
+    ADD COLUMN IF NOT EXISTS action_plan JSONB
   `);
 
   await pool.query(`
@@ -220,6 +222,9 @@ export async function initDb() {
   // Alter existing tables to ensure they include user_id FK column for multi-tenancy
   await pool.query(`
     ALTER TABLE site_configs ADD COLUMN IF NOT EXISTS user_id UUID REFERENCES users(id) ON DELETE CASCADE;
+  `);
+  await pool.query(`
+    ALTER TABLE site_configs ADD COLUMN IF NOT EXISTS api_key VARCHAR(255);
   `);
   await pool.query(`
     ALTER TABLE audit_reports ADD COLUMN IF NOT EXISTS user_id UUID REFERENCES users(id) ON DELETE CASCADE;
