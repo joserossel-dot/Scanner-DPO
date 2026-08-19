@@ -2054,6 +2054,39 @@ Firmas autorizadas:
             <span>🛠️ 3. Herramientas de Cumplimiento</span>
           </div>
 
+          {activeTab === 'remediation' && (
+            <div style={{ paddingLeft: '15px', display: 'flex', flexDirection: 'column', gap: '3px', marginTop: '3px', marginBottom: '5px' }}>
+              <div 
+                className={`nav-item ${remediationSubTab === 'cmp' ? 'active' : ''}`}
+                style={{ fontSize: '11px', padding: '6px 12px' }}
+                onClick={() => setRemediationSubTab('cmp')}
+              >
+                <span>🌐 Adecuación Web & CMP</span>
+              </div>
+              <div 
+                className={`nav-item ${remediationSubTab === 'policies' ? 'active' : ''}`}
+                style={{ fontSize: '11px', padding: '6px 12px' }}
+                onClick={() => setRemediationSubTab('policies')}
+              >
+                <span>📄 Generador de Políticas</span>
+              </div>
+              <div 
+                className={`nav-item ${remediationSubTab === 'transfers' ? 'active' : ''}`}
+                style={{ fontSize: '11px', padding: '6px 12px' }}
+                onClick={() => setRemediationSubTab('transfers')}
+              >
+                <span>✈️ Regularización TID</span>
+              </div>
+              <div 
+                className={`nav-item ${remediationSubTab === 'contracts' ? 'active' : ''}`}
+                style={{ fontSize: '11px', padding: '6px 12px' }}
+                onClick={() => setRemediationSubTab('contracts')}
+              >
+                <span>📝 Contratos DPA/SCC</span>
+              </div>
+            </div>
+          )}
+
           <div 
             className={`nav-item ${activeTab === 'dpo' ? 'active' : ''}`}
             style={{ 

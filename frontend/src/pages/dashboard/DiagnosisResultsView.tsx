@@ -455,6 +455,21 @@ export default function DiagnosisResultsView({
                   </div>
                 ))
               )}
+
+              {/* Permanent access to Privacy Policy Generator */}
+              <div className="pt-4 flex flex-col sm:flex-row gap-3 justify-between items-start sm:items-center">
+                <div className="space-y-1">
+                  <span className="text-xs font-bold text-white block">Herramienta: Generador de Políticas de Privacidad (Art. 14 ter)</span>
+                  <span className="text-[10px] text-slate-400 block text-left">Redacte, personalice e instale las cláusulas de privacidad de su sitio web de forma automatizada.</span>
+                </div>
+                <button
+                  onClick={() => onNavigateToRemediation('policies')}
+                  className="flex items-center gap-1.5 px-3.5 py-2 bg-indigo-650 hover:bg-indigo-500 text-white font-bold text-xs rounded-lg transition-all flex-shrink-0"
+                >
+                  <span>Generar e Instalar Política</span>
+                  <ArrowRight size={12} />
+                </button>
+              </div>
             </div>
           )}
         </div>
