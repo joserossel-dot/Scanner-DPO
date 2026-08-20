@@ -18,6 +18,7 @@ import ArcoRequestPublic from './pages/legal/ArcoRequestPublic';
 import RopaInventoryView from './pages/dashboard/components/RopaInventoryView';
 import ComplianceOverviewView from './pages/dashboard/components/ComplianceOverviewView';
 import LegalCopilot from './components/LegalCopilot';
+import CmpManagerView from './pages/dashboard/components/CmpManagerView';
 import ForgotPasswordView from './pages/auth/ForgotPasswordView';
 import ResetPasswordView from './pages/auth/ResetPasswordView';
 import AdminDashboardView from './pages/admin/AdminDashboardView';
@@ -2113,6 +2114,18 @@ Firmas autorizadas:
             <FileText size={16} />
             <span>📋 5. Dossier Imprimible</span>
           </div>
+
+          <div 
+            className={`nav-item ${activeTab === 'cmp' ? 'active' : ''}`}
+            style={{ 
+              borderLeft: activeTab === 'cmp' ? '3px solid #10b981' : 'none',
+              background: activeTab === 'cmp' ? 'rgba(16, 185, 129, 0.05)' : 'none'
+            }}
+            onClick={() => setActiveTab('cmp')}
+          >
+            <Settings size={16} className="text-emerald-450" />
+            <span>🛡️ 6. Gestor CMP (B2B)</span>
+          </div>
           {user?.role === 'superadmin' && (
             <div 
               className={`nav-item ${activeTab === 'admin' ? 'active' : ''}`}
@@ -2206,6 +2219,7 @@ Firmas autorizadas:
         {activeTab === 'dossier' && <AuditDossierView token={token} />}
         {activeTab === 'ropa' && <RopaInventoryView token={token} onRopaUpdated={handleFetchDiagnosis} />}
         {activeTab === 'admin' && <AdminDashboardView token={token} />}
+        {activeTab === 'cmp' && <CmpManagerView token={token} />}
 
         {/* Modal: SCC Agreement Generator Viewer */}
         {isGeneratingScc && (

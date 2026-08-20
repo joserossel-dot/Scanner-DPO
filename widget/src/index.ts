@@ -258,18 +258,19 @@ class PrivacyTechWidget {
 
     // Log to API
     try {
-      await fetch(`${this.apiHost}/api/consent`, {
+      await fetch(`${this.apiHost}/api/consent/collect`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
+          client_id: this.domain,
           domain: this.domain,
-          consentTypes: preferences,
+          preferences: preferences,
           policyVersion: this.config?.policy_version || 'v1.0.0',
           userAgent: navigator.userAgent
         })
       });
     } catch (e) {
-      console.warn('[PrivacyTech] Error registrando log de consentimiento en servidor.');
+      console.warn('[PrivacyTech] Error registrando log de consentimiento en el servidor.');
     }
 
     this.unblockScripts();

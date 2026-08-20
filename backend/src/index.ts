@@ -53,8 +53,16 @@ app.use('/sdk', cors(), express.static(widgetDistPath));
 app.get('/widget.js', cors(), (req, res) => {
   res.sendFile(path.join(widgetDistPath, 'widget.js'), (err) => {
     if (err) {
-      // If not built yet, we can serve a placeholder or send a 404
       res.status(404).send('Widget script not found. Build the widget workspace first using: npm run build -w widget');
+    }
+  });
+});
+
+// CMP Multi-tenant Embed Route (P3)
+app.get('/embed/cmp.js', cors(), (req, res) => {
+  res.sendFile(path.join(widgetDistPath, 'widget.js'), (err) => {
+    if (err) {
+      res.status(404).send('CMP widget script not found. Build the widget workspace first using: npm run build -w widget');
     }
   });
 });

@@ -7,7 +7,9 @@ import { authenticateToken } from '../middlewares/auth.js';
 import { sendLeadAlert } from '../services/emailService.js';
 import rateLimit from 'express-rate-limit';
 import crypto from 'crypto';
+import jwt from 'jsonwebtoken';
 const router = Router();
+const JWT_SECRET = process.env.JWT_SECRET;
 // Rate limiters for public endpoints (P2-B)
 const publicScanLimiter = rateLimit({
     windowMs: 15 * 60 * 1000, // 15 minutes
@@ -278,7 +280,7 @@ router.patch('/arco/tickets/:id/status', adminCors, authenticateToken, async (re
         return res.status(500).json({ error: error.message });
     }
 });
-// 8. Update Site Config (written by Admin Dashboard)
+// 8. Update Site Config (written by Admin Dashboard) - Generates B2B api_key if missing
 router.put('/config/:domain', adminCors, authenticateToken, async (req, res) => {
     const { domain } = req.params;
     const { company_name, policy_version, policy_content, banner_title, banner_description } = req.body;
@@ -287,9 +289,15 @@ router.put('/config/:domain', adminCors, authenticateToken, async (req, res) => 
     }
     try {
         const db = getDb();
+        // Check if site config already has an api_key, otherwise generate one
+        const currentConfig = await db.query('SELECT api_key FROM site_configs WHERE domain = $1', [domain]);
+        let apiKey = currentConfig.rows[0]?.api_key;
+        if (!apiKey) {
+            apiKey = 'pt_live_' + crypto.randomBytes(16).toString('hex');
+        }
         await db.query(`
-      INSERT INTO site_configs (domain, company_name, policy_version, policy_content, banner_title, banner_description, updated_at, user_id)
-      VALUES ($1, $2, $3, $4, $5, $6, CURRENT_TIMESTAMP, $7)
+      INSERT INTO site_configs (domain, company_name, policy_version, policy_content, banner_title, banner_description, updated_at, user_id, api_key)
+      VALUES ($1, $2, $3, $4, $5, $6, CURRENT_TIMESTAMP, $7, $8)
       ON CONFLICT (domain) DO UPDATE SET
         company_name = EXCLUDED.company_name,
         policy_version = EXCLUDED.policy_version,
@@ -297,7 +305,8 @@ router.put('/config/:domain', adminCors, authenticateToken, async (req, res) => 
         banner_title = EXCLUDED.banner_title,
         banner_description = EXCLUDED.banner_description,
         updated_at = CURRENT_TIMESTAMP,
-        user_id = EXCLUDED.user_id
+        user_id = EXCLUDED.user_id,
+        api_key = COALESCE(site_configs.api_key, EXCLUDED.api_key)
     `, [
             domain,
             company_name,
@@ -305,12 +314,25 @@ router.put('/config/:domain', adminCors, authenticateToken, async (req, res) => 
             JSON.stringify(policy_content),
             banner_title,
             banner_description,
-            req.user.id
+            req.user.id,
+            apiKey
         ]);
-        return res.json({ success: true });
+        return res.json({ success: true, api_key: apiKey });
     }
     catch (error) {
         return res.status(500).json({ error: error.message });
+    }
+});
+// GET /api/configs - List all configurations and B2B keys owned by the active tenant
+router.get('/configs', adminCors, authenticateToken, async (req, res) => {
+    const db = getDb();
+    try {
+        const result = await db.query('SELECT domain, company_name, policy_version, banner_title, banner_description, api_key, updated_at FROM site_configs WHERE user_id = $1 ORDER BY updated_at DESC', [req.user.id]);
+        res.json(result.rows);
+    }
+    catch (error) {
+        console.error('Error fetching site configs list:', error.message);
+        res.status(500).json({ error: 'Error al consultar las configuraciones de sitio.' });
     }
 });
 // --- PUBLIC WIDGET ENDPOINTS (No authenticateToken) ---
@@ -446,6 +468,111 @@ router.post('/free-scan', openCors, publicScanLimiter, async (req, res) => {
     catch (error) {
         console.error('Error running public free scan:', error.message);
         return res.status(422).json({ error: error.message });
+    }
+});
+// 13. Public B2B Consent Collection (CORS flexible)
+router.post('/consent/collect', cors({ origin: '*' }), async (req, res) => {
+    const { client_id, domain: reqDomain, consent_token, preferences, userAgent, policyVersion } = req.body;
+    const domain = reqDomain || client_id || 'localhost';
+    // Get real IP
+    const rawIp = req.headers['x-forwarded-for']?.split(',')[0]?.trim()
+        || req.socket.remoteAddress
+        || 'unknown';
+    const salt = process.env.CONSENT_HASH_SALT || 'dev_only_change_in_prod';
+    const ipHash = crypto.createHash('sha256').update(rawIp + salt).digest('hex');
+    // Compute consent token if not sent
+    const finalToken = consent_token || crypto.createHash('md5').update(ipHash + domain).digest('hex');
+    // Parse and map granular preferences (essential, analytics/analytical, marketing)
+    const finalPreferences = preferences || req.body.consentTypes || {
+        essential: true,
+        analytical: false,
+        marketing: false
+    };
+    if (finalPreferences.analytics !== undefined && finalPreferences.analytical === undefined) {
+        finalPreferences.analytical = finalPreferences.analytics;
+    }
+    if (finalPreferences.analytical !== undefined && finalPreferences.analytics === undefined) {
+        finalPreferences.analytics = finalPreferences.analytical;
+    }
+    try {
+        const db = getDb();
+        // Fetch dynamic policy version or use default/supplied
+        const configRes = await db.query('SELECT policy_version FROM site_configs WHERE domain = $1', [domain]);
+        const currentPolicyVersion = policyVersion || configRes.rows[0]?.policy_version || 'sin_version_registrada';
+        const result = await db.query(`
+      INSERT INTO consent_logs (domain, ip_hash, consent_types, user_agent, policy_version, consent_token)
+      VALUES ($1, $2, $3, $4, $5, $6)
+      RETURNING *
+    `, [
+            domain,
+            ipHash,
+            JSON.stringify(finalPreferences),
+            userAgent || req.headers['user-agent'] || '',
+            currentPolicyVersion,
+            finalToken
+        ]);
+        res.json({ success: true, log: result.rows[0] });
+    }
+    catch (error) {
+        console.error('Error in consent collect route:', error.message);
+        res.status(500).json({ error: error.message });
+    }
+});
+// 14. Retrieve and Audit Consent Logs (Protected via authenticateToken or X-API-Key for B2B)
+router.get('/consent/logs', adminCors, async (req, res) => {
+    const { client_id } = req.query;
+    if (!client_id) {
+        return res.status(400).json({ error: 'El parámetro client_id (dominio) es obligatorio.' });
+    }
+    const db = getDb();
+    const authHeader = req.headers['authorization'];
+    const apiKeyHeader = req.headers['x-api-key'];
+    let hasAccess = false;
+    const targetDomain = client_id;
+    if (authHeader) {
+        const token = authHeader.split(' ')[1];
+        if (token) {
+            try {
+                const decoded = jwt.verify(token, JWT_SECRET);
+                req.user = decoded;
+                // Verify tenant owns the requested domain
+                const ownershipRes = await db.query('SELECT 1 FROM site_configs WHERE domain = $1 AND user_id = $2', [targetDomain, req.user.id]);
+                if (ownershipRes.rowCount && ownershipRes.rowCount > 0) {
+                    hasAccess = true;
+                }
+            }
+            catch (err) {
+                // Fall through
+            }
+        }
+    }
+    if (!hasAccess && apiKeyHeader) {
+        // Verify API Key
+        const apiKeyRes = await db.query('SELECT 1 FROM site_configs WHERE domain = $1 AND api_key = $2', [targetDomain, apiKeyHeader]);
+        if (apiKeyRes.rowCount && apiKeyRes.rowCount > 0) {
+            hasAccess = true;
+        }
+    }
+    if (!hasAccess) {
+        return res.status(401).json({ error: 'Acceso no autorizado. Se requiere token JWT válido o cabecera X-API-Key.' });
+    }
+    try {
+        const result = await db.query('SELECT * FROM consent_logs WHERE domain = $1 ORDER BY id DESC LIMIT 100', [targetDomain]);
+        return res.json(result.rows.map((r) => ({
+            id: r.id,
+            client_id: r.domain,
+            domain: r.domain,
+            ip_hash: r.ip_hash,
+            consent_token: r.consent_token || '',
+            preferences: safeParseJson(r.consent_types),
+            consent_types: safeParseJson(r.consent_types),
+            user_agent: r.user_agent,
+            policy_version: r.policy_version,
+            created_at: r.timestamp
+        })));
+    }
+    catch (error) {
+        return res.status(500).json({ error: error.message });
     }
 });
 export default router;
