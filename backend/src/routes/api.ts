@@ -766,4 +766,180 @@ router.get('/consent/form-logs', adminCors, async (req: any, res) => {
   }
 });
 
+// 17. Submit Employee Training Answers & Declaration (Public)
+router.post('/training/submit', cors({ origin: '*' }), async (req: any, res) => {
+  const { client_id, employee_name, employee_email, declaration_accepted, answers } = req.body;
+
+  if (!client_id || !employee_name || !employee_email || declaration_accepted === undefined || !answers) {
+    return res.status(400).json({ error: 'Faltan parámetros obligatorios para el registro de capacitación.' });
+  }
+
+  if (!declaration_accepted) {
+    return res.status(400).json({ error: 'Debe aceptar la declaración jurada para completar la capacitación.' });
+  }
+
+  // Grade the quiz of 5 questions on the backend
+  const CORRECT_ANSWERS = [1, 0, 1, 1, 1]; // Correct indices
+  let score = 0;
+  if (Array.isArray(answers)) {
+    for (let i = 0; i < CORRECT_ANSWERS.length; i++) {
+      if (Number(answers[i]) === CORRECT_ANSWERS[i]) {
+        score++;
+      }
+    }
+  }
+
+  // Passing grade is >= 4 out of 5 (80%)
+  const status = score >= 4 ? 'Aprobado' : 'Pendiente';
+
+  try {
+    const db = getDb();
+    const result = await db.query(`
+      INSERT INTO employee_trainings (client_id, employee_name, employee_email, declaration_accepted, quiz_score, status)
+      VALUES ($1, $2, $3, $4, $5, $6)
+      RETURNING *
+    `, [
+      client_id,
+      employee_name,
+      employee_email,
+      declaration_accepted,
+      score,
+      status
+    ]);
+
+    return res.json({ 
+      success: true, 
+      score, 
+      status, 
+      passed: score >= 4,
+      log: result.rows[0] 
+    });
+  } catch (error: any) {
+    console.error('Error submitting employee training:', error.message);
+    return res.status(500).json({ error: error.message });
+  }
+});
+
+// 18. Retrieve Employee Training Reports (Protected via JWT or X-API-Key for B2B)
+router.get('/training/reports', adminCors, async (req: any, res) => {
+  const { client_id } = req.query;
+  if (!client_id) {
+    return res.status(400).json({ error: 'El parámetro client_id (dominio) es obligatorio.' });
+  }
+
+  const db = getDb();
+  const authHeader = req.headers['authorization'];
+  const apiKeyHeader = req.headers['x-api-key'];
+
+  let hasAccess = false;
+  const targetDomain = client_id;
+
+  if (authHeader) {
+    const token = authHeader.split(' ')[1];
+    if (token) {
+      try {
+        const decoded: any = jwt.verify(token, JWT_SECRET);
+        req.user = decoded;
+        
+        // Verify tenant owns the requested domain
+        const ownershipRes = await db.query(
+          'SELECT 1 FROM site_configs WHERE domain = $1 AND user_id = $2',
+          [targetDomain, req.user.id]
+        );
+        if (ownershipRes.rowCount && ownershipRes.rowCount > 0) {
+          hasAccess = true;
+        }
+      } catch (err) {
+        // Fall through
+      }
+    }
+  }
+
+  if (!hasAccess && apiKeyHeader) {
+    // Verify API Key
+    const apiKeyRes = await db.query(
+      'SELECT 1 FROM site_configs WHERE domain = $1 AND api_key = $2',
+      [targetDomain, apiKeyHeader]
+    );
+    if (apiKeyRes.rowCount && apiKeyRes.rowCount > 0) {
+      hasAccess = true;
+    }
+  }
+
+  if (!hasAccess) {
+    return res.status(401).json({ error: 'Acceso no autorizado. Se requiere token JWT válido o cabecera X-API-Key.' });
+  }
+
+  try {
+    const result = await db.query(
+      'SELECT * FROM employee_trainings WHERE client_id = $1 ORDER BY id DESC LIMIT 200',
+      [targetDomain]
+    );
+    return res.json(result.rows);
+  } catch (error: any) {
+    return res.status(500).json({ error: error.message });
+  }
+});
+
+// 19. Retrieve Training Materials for client (Public)
+router.get('/training/materials/:client_id', openCors, async (req: any, res) => {
+  const { client_id } = req.params;
+  try {
+    const db = getDb();
+    const result = await db.query(
+      'SELECT * FROM training_materials WHERE client_id = $1',
+      [client_id]
+    );
+    
+    if (result.rowCount && result.rowCount > 0) {
+      return res.json(result.rows[0]);
+    }
+
+    // Default professional materials if not customized yet
+    return res.json({
+      client_id,
+      presentation_url: 'https://docs.google.com/presentation/d/123456/embed',
+      policy_text: 'Directrices Corporativas de Privacidad y Protección de Datos:\n\n1. Respetar el principio de finalidad y proporcionalidad de los datos.\n2. Cifrar los datos sensibles de salud, biométricos o financieros.\n3. Recopilar datos solo tras consentimiento expreso del titular.\n4. No compartir bases de datos sin base legal clara.\n5. Canalizar solicitudes de usuarios al Canal ARCO+ oficial.'
+    });
+  } catch (error: any) {
+    return res.status(500).json({ error: error.message });
+  }
+});
+
+// 20. Update Training Materials (Protected by JWT)
+router.put('/training/materials/:client_id', adminCors, authenticateToken, async (req: any, res) => {
+  const { client_id } = req.params;
+  const { presentation_url, policy_text } = req.body;
+
+  if (!presentation_url || !policy_text) {
+    return res.status(400).json({ error: 'Faltan parámetros obligatorios presentation_url o policy_text.' });
+  }
+
+  try {
+    const db = getDb();
+    
+    // Verify tenant owns the requested domain
+    const ownershipRes = await db.query(
+      'SELECT 1 FROM site_configs WHERE domain = $1 AND user_id = $2',
+      [client_id, req.user.id]
+    );
+    if (!ownershipRes.rowCount || ownershipRes.rowCount === 0) {
+      return res.status(403).json({ error: 'No está autorizado para modificar este dominio.' });
+    }
+
+    await db.query(`
+      INSERT INTO training_materials (client_id, presentation_url, policy_text, updated_at)
+      VALUES ($1, $2, $3, CURRENT_TIMESTAMP)
+      ON CONFLICT (client_id) DO UPDATE SET
+        presentation_url = EXCLUDED.presentation_url,
+        policy_text = EXCLUDED.policy_text,
+        updated_at = CURRENT_TIMESTAMP
+    `, [client_id, presentation_url, policy_text]);
+
+    return res.json({ success: true });
+  } catch (error: any) {
+    return res.status(500).json({ error: error.message });
+  }
+});
+
 export default router;

@@ -19,6 +19,8 @@ import RopaInventoryView from './pages/dashboard/components/RopaInventoryView';
 import ComplianceOverviewView from './pages/dashboard/components/ComplianceOverviewView';
 import LegalCopilot from './components/LegalCopilot';
 import CmpManagerView from './pages/dashboard/components/CmpManagerView';
+import EmployeeTrainingPublic from './pages/legal/EmployeeTrainingPublic';
+import EmployeeTrainingDashboard from './pages/dashboard/components/EmployeeTrainingDashboard';
 import ForgotPasswordView from './pages/auth/ForgotPasswordView';
 import ResetPasswordView from './pages/auth/ResetPasswordView';
 import AdminDashboardView from './pages/admin/AdminDashboardView';
@@ -2126,6 +2128,18 @@ Firmas autorizadas:
             <Settings size={16} className="text-emerald-450" />
             <span>🛡️ 6. Gestor CMP (B2B)</span>
           </div>
+
+          <div 
+            className={`nav-item ${activeTab === 'training' ? 'active' : ''}`}
+            style={{ 
+              borderLeft: activeTab === 'training' ? '3px solid #3b82f6' : 'none',
+              background: activeTab === 'training' ? 'rgba(59, 130, 246, 0.05)' : 'none'
+            }}
+            onClick={() => setActiveTab('training')}
+          >
+            <Award size={16} className="text-blue-400" />
+            <span>🎓 7. Capacitación</span>
+          </div>
           {user?.role === 'superadmin' && (
             <div 
               className={`nav-item ${activeTab === 'admin' ? 'active' : ''}`}
@@ -2220,6 +2234,7 @@ Firmas autorizadas:
         {activeTab === 'ropa' && <RopaInventoryView token={token} onRopaUpdated={handleFetchDiagnosis} />}
         {activeTab === 'admin' && <AdminDashboardView token={token} />}
         {activeTab === 'cmp' && <CmpManagerView token={token} />}
+        {activeTab === 'training' && <EmployeeTrainingDashboard token={token} />}
 
         {/* Modal: SCC Agreement Generator Viewer */}
         {isGeneratingScc && (
@@ -2385,6 +2400,7 @@ export default function App() {
         <Route path="/cookies" element={<CookiesPolicyPublic />} />
         <Route path="/terminos" element={<TermsAndConditions />} />
         <Route path="/arco" element={<ArcoRequestPublic />} />
+        <Route path="/train/:clientId" element={<EmployeeTrainingPublic />} />
       </Routes>
     </BrowserRouter>
   );

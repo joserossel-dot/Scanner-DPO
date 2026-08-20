@@ -154,6 +154,27 @@ export async function initDb() {
       ip_hash VARCHAR(255) NOT NULL,
       created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
     )
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS employee_trainings (
+      id SERIAL PRIMARY KEY,
+      client_id VARCHAR(255) NOT NULL,
+      employee_name VARCHAR(255) NOT NULL,
+      employee_email VARCHAR(255) NOT NULL,
+      completed_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+      declaration_accepted BOOLEAN NOT NULL,
+      quiz_score INTEGER NOT NULL,
+      status VARCHAR(20) NOT NULL
+    )
+  `);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS training_materials (
+      id SERIAL PRIMARY KEY,
+      client_id VARCHAR(255) UNIQUE NOT NULL,
+      presentation_url VARCHAR(500) NOT NULL,
+      policy_text TEXT NOT NULL,
+      updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+    )
   `);
 
   await pool.query(`

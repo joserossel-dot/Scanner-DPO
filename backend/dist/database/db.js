@@ -139,221 +139,281 @@ export async function initDb() {
       ip_hash VARCHAR(255) NOT NULL,
       created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
     )
-  `);
-    await pool.query(`
-    CREATE TABLE IF NOT EXISTS arco_requests (
-      id SERIAL PRIMARY KEY,
-      domain VARCHAR(255) NOT NULL,
-      requester_name VARCHAR(255) NOT NULL,
-      requester_email VARCHAR(255) NOT NULL,
-      request_type VARCHAR(50) NOT NULL,
-      details TEXT NOT NULL,
-      status VARCHAR(50) NOT NULL DEFAULT 'Pendiente',
-      due_date TIMESTAMP WITH TIME ZONE NOT NULL,
-      created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-      resolved_at TIMESTAMP WITH TIME ZONE
-    )
-  `);
-    await pool.query(`
-    CREATE TABLE IF NOT EXISTS adequate_countries_reference (
-      country_code VARCHAR(2) PRIMARY KEY,
-      country_name VARCHAR(100) NOT NULL,
-      is_adequate BOOLEAN NOT NULL,
-      notes TEXT
-    )
-  `);
-    await pool.query(`
-    INSERT INTO adequate_countries_reference (country_code, country_name, is_adequate, notes)
-    VALUES 
-      ('CL', 'Chile', TRUE, 'Origen y jurisdicción principal de la Ley N° 21.719.'),
-      ('ES', 'España (UE/EEE)', TRUE, 'Nivel adecuado por equivalencia RGPD de la Unión Europea.'),
-      ('DE', 'Alemania (UE/EEE)', TRUE, 'Nivel adecuado por equivalencia RGPD de la Unión Europea.'),
-      ('FR', 'Francia (UE/EEE)', TRUE, 'Nivel adecuado por equivalencia RGPD de la Unión Europea.'),
-      ('IT', 'Italia (UE/EEE)', TRUE, 'Nivel adecuado por equivalencia RGPD de la Unión Europea.'),
-      ('GB', 'Reino Unido', TRUE, 'Adecuación reconocida post-Brexit.'),
-      ('CA', 'Canadá', TRUE, 'Reconocido bajo la Ley PIPEDA federal.'),
-      ('JP', 'Japón', TRUE, 'Nivel adecuado por reconocimiento de adecuación recíproco.'),
-      ('NZ', 'Nueva Zelanda', TRUE, 'Nivel de protección adecuado reconocido.'),
-      ('US', 'Estados Unidos', FALSE, 'No adecuado de forma automática. Requiere firma de Cláusulas Contractuales Tipo (SCC).')
-    ON CONFLICT (country_code) DO NOTHING
-  `);
-    await pool.query(`
-    CREATE TABLE IF NOT EXISTS international_transfers (
-      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-      domain VARCHAR(255) NOT NULL,
-      vendor_name VARCHAR(255) NOT NULL,
-      destination_country VARCHAR(100) NOT NULL,
-      data_categories JSONB NOT NULL,
-      transfer_mechanism VARCHAR(50) NOT NULL,
-      has_signed_scc BOOLEAN NOT NULL DEFAULT FALSE,
-      signature_status VARCHAR(50) NOT NULL DEFAULT 'PENDING',
-      scc_document_url VARCHAR(500),
-      created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-      updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
-    )
-  `);
-    await pool.query(`
-    ALTER TABLE international_transfers 
-    ADD COLUMN IF NOT EXISTS signature_status VARCHAR(50) NOT NULL DEFAULT 'PENDING'
-  `);
-    await pool.query(`
-    CREATE TABLE IF NOT EXISTS security_incidents (
-      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-      domain VARCHAR(255) NOT NULL,
-      incident_title VARCHAR(255) NOT NULL,
-      incident_date TIMESTAMP WITH TIME ZONE NOT NULL,
-      incident_type VARCHAR(50) NOT NULL,
-      affected_data_categories JSONB NOT NULL,
-      approx_affected_titulars INTEGER NOT NULL,
-      description_and_effects TEXT NOT NULL,
-      mitigation_measures TEXT NOT NULL,
-      requires_agency_notification BOOLEAN NOT NULL DEFAULT FALSE,
-      requires_titulars_notification BOOLEAN NOT NULL DEFAULT FALSE,
-      agency_notified_at TIMESTAMP WITH TIME ZONE,
-      titulars_notified_at TIMESTAMP WITH TIME ZONE,
-      status VARCHAR(50) NOT NULL DEFAULT 'DETECTED',
-      created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-      updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
-    )
-  `);
-    await pool.query(`
-    CREATE INDEX IF NOT EXISTS idx_incidents_domain ON security_incidents(domain)
-  `);
-    // Alter existing tables to ensure they include user_id FK column for multi-tenancy
-    await pool.query(`
-    ALTER TABLE site_configs ADD COLUMN IF NOT EXISTS user_id UUID REFERENCES users(id) ON DELETE CASCADE;
-  `);
-    await pool.query(`
-    ALTER TABLE audit_reports ADD COLUMN IF NOT EXISTS user_id UUID REFERENCES users(id) ON DELETE CASCADE;
-  `);
-    await pool.query(`
-    ALTER TABLE consent_logs ADD COLUMN IF NOT EXISTS user_id UUID REFERENCES users(id) ON DELETE CASCADE;
-  `);
-    await pool.query(`
-    ALTER TABLE arco_requests ADD COLUMN IF NOT EXISTS user_id UUID REFERENCES users(id) ON DELETE CASCADE;
-  `);
-    await pool.query(`
-    ALTER TABLE international_transfers ADD COLUMN IF NOT EXISTS user_id UUID REFERENCES users(id) ON DELETE CASCADE;
-  `);
-    await pool.query(`
-    ALTER TABLE security_incidents ADD COLUMN IF NOT EXISTS user_id UUID REFERENCES users(id) ON DELETE CASCADE;
-  `);
-    await pool.query(`
-    CREATE TABLE IF NOT EXISTS leads (
-      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-      domain VARCHAR(255) NOT NULL,
-      email VARCHAR(255) NOT NULL,
-      score_detected INTEGER NOT NULL,
-      status VARCHAR(50) DEFAULT 'NEW',
-      sales_notes TEXT,
-      created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
-    )
-  `);
-    await pool.query(`
-    ALTER TABLE leads ADD COLUMN IF NOT EXISTS status VARCHAR(50) DEFAULT 'NEW';
-  `);
-    await pool.query(`
-    ALTER TABLE leads ADD COLUMN IF NOT EXISTS sales_notes TEXT;
-  `);
-    await pool.query(`
-    CREATE TABLE IF NOT EXISTS privacy_policies (
-      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-      user_id UUID UNIQUE REFERENCES users(id) ON DELETE CASCADE,
-      company_rut VARCHAR(50) NOT NULL,
-      address VARCHAR(255) NOT NULL,
-      contact_email VARCHAR(255) NOT NULL,
-      data_categories JSONB NOT NULL,
-      purposes JSONB NOT NULL,
-      retention_rules TEXT NOT NULL,
-      policy_html TEXT NOT NULL,
-      updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
-    )
-  `);
-    await pool.query(`
-    CREATE TABLE IF NOT EXISTS risk_matrix (
-      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-      user_id UUID REFERENCES users(id) ON DELETE CASCADE,
-      process_name VARCHAR(255) NOT NULL,
-      identified_risk TEXT NOT NULL,
-      severity VARCHAR(50) NOT NULL,
-      mitigation_control TEXT NOT NULL,
-      status VARCHAR(50) NOT NULL DEFAULT 'IMPLEMENTED',
-      created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
-    )
-  `);
-    await pool.query(`
-    CREATE TABLE IF NOT EXISTS whistleblower_reports (
-      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-      user_id UUID REFERENCES users(id) ON DELETE CASCADE,
-      incident_description TEXT NOT NULL,
-      reported_date TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-      status VARCHAR(50) NOT NULL DEFAULT 'PENDING'
-    )
-  `);
-    await pool.query(`
-    CREATE TABLE IF NOT EXISTS ropa_inventory (
-      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-      user_id UUID REFERENCES users(id) ON DELETE CASCADE,
-      process_name VARCHAR(255) NOT NULL,
-      purpose TEXT NOT NULL,
-      legal_basis VARCHAR(255) NOT NULL,
-      data_categories JSONB NOT NULL,
-      retention_period VARCHAR(255) NOT NULL,
-      cross_border_transfer BOOLEAN NOT NULL DEFAULT FALSE,
-      source VARCHAR(50) DEFAULT 'manual',
-      status VARCHAR(50) DEFAULT 'draft',
-      created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
-    )
-  `);
-    // Ensure status and source exist in ropa_inventory table for existing databases
-    await pool.query(`
-    ALTER TABLE ropa_inventory ADD COLUMN IF NOT EXISTS source VARCHAR(50) DEFAULT 'manual';
-  `);
-    await pool.query(`
-    ALTER TABLE ropa_inventory ADD COLUMN IF NOT EXISTS status VARCHAR(50) DEFAULT 'draft';
-  `);
-    // Document downloads audit trail table (P1 - Punto 8)
-    await pool.query(`
-    CREATE TABLE IF NOT EXISTS document_downloads (
-      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-      user_id UUID REFERENCES users(id) ON DELETE CASCADE,
-      document_type VARCHAR(50) NOT NULL, -- 'privacy_policy' | 'dpa' | 'scc' | 'terms'
-      content_hash VARCHAR(64) NOT NULL, -- Hash SHA-256 del texto descargado
-      disclaimer_version VARCHAR(20) NOT NULL, -- Ej: 'DISCLAIMER_V1'
-      downloaded_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
-    )
-  `);
-    // Table to track tenant implementation requests for medium/high effort findings (P0-A)
-    await pool.query(`
-    CREATE TABLE IF NOT EXISTS implementation_requests (
-      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-      user_id UUID REFERENCES users(id) ON DELETE CASCADE,
-      finding_id VARCHAR(255) NOT NULL,
-      finding_description TEXT NOT NULL,
-      effort VARCHAR(50) NOT NULL,
-      status VARCHAR(50) NOT NULL DEFAULT 'pending',
-      created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
-    )
-  `);
-    // Run the cleanup to remove legacy FIND_ROPA_ findings from audit_reports (Step 3)
-    try {
-        const reportsToClean = await pool.query(`SELECT id, findings FROM audit_reports WHERE findings::text LIKE '%FIND_ROPA_%'`);
-        for (const row of reportsToClean.rows) {
-            const findings = Array.isArray(row.findings) ? row.findings : [];
-            const cleaned = findings.filter((f) => !f?.id?.startsWith('FIND_ROPA_'));
-            await pool.query(`UPDATE audit_reports SET findings = $1 WHERE id = $2`, [JSON.stringify(cleaned), row.id]);
-        }
-        console.log(`🧹 Limpieza de hallazgos legacy FIND_ROPA_ realizada. Filas procesadas: ${reportsToClean.rowCount}`);
+  await pool.query(`, CREATE, TABLE, IF, NOT, EXISTS, employee_trainings(id, SERIAL, PRIMARY, KEY, client_id, VARCHAR(255), NOT, NULL, employee_name, VARCHAR(255), NOT, NULL, employee_email, VARCHAR(255), NOT, NULL, completed_at, TIMESTAMP, WITH, TIME, ZONE, DEFAULT, CURRENT_TIMESTAMP, declaration_accepted, BOOLEAN, NOT, NULL, quiz_score, INTEGER, NOT, NULL, status, VARCHAR(20), NOT, NULL) `);
+
+  await pool.query(`, CREATE, TABLE, IF, NOT, EXISTS, training_materials(id, SERIAL, PRIMARY, KEY, client_id, VARCHAR(255), UNIQUE, NOT, NULL, presentation_url, VARCHAR(500), NOT, NULL, policy_text, TEXT, NOT, NULL, updated_at, TIMESTAMP, WITH, TIME, ZONE, DEFAULT, CURRENT_TIMESTAMP) `);
+
+  await pool.query(`, CREATE, TABLE, IF, NOT, EXISTS, arco_requests(id, SERIAL, PRIMARY, KEY, domain, VARCHAR(255), NOT, NULL, requester_name, VARCHAR(255), NOT, NULL, requester_email, VARCHAR(255), NOT, NULL, request_type, VARCHAR(50), NOT, NULL, details, TEXT, NOT, NULL, status, VARCHAR(50), NOT, NULL, DEFAULT, 'Pendiente', due_date, TIMESTAMP, WITH, TIME, ZONE, NOT, NULL, created_at, TIMESTAMP, WITH, TIME, ZONE, DEFAULT, CURRENT_TIMESTAMP, resolved_at, TIMESTAMP, WITH, TIME, ZONE) `);
+
+  await pool.query(`, CREATE, TABLE, IF, NOT, EXISTS, adequate_countries_reference(country_code, VARCHAR(2), PRIMARY, KEY, country_name, VARCHAR(100), NOT, NULL, is_adequate, BOOLEAN, NOT, NULL, notes, TEXT) `);
+
+  await pool.query(`, INSERT, INTO, adequate_countries_reference(country_code, country_name, is_adequate, notes), VALUES('CL', 'Chile', TRUE, 'Origen y jurisdicción principal de la Ley N° 21.719.'), ('ES', 'España (UE/EEE)', TRUE, 'Nivel adecuado por equivalencia RGPD de la Unión Europea.'), ('DE', 'Alemania (UE/EEE)', TRUE, 'Nivel adecuado por equivalencia RGPD de la Unión Europea.'), ('FR', 'Francia (UE/EEE)', TRUE, 'Nivel adecuado por equivalencia RGPD de la Unión Europea.'), ('IT', 'Italia (UE/EEE)', TRUE, 'Nivel adecuado por equivalencia RGPD de la Unión Europea.'), ('GB', 'Reino Unido', TRUE, 'Adecuación reconocida post-Brexit.'), ('CA', 'Canadá', TRUE, 'Reconocido bajo la Ley PIPEDA federal.'), ('JP', 'Japón', TRUE, 'Nivel adecuado por reconocimiento de adecuación recíproco.'), ('NZ', 'Nueva Zelanda', TRUE, 'Nivel de protección adecuado reconocido.'), ('US', 'Estados Unidos', FALSE, 'No adecuado de forma automática. Requiere firma de Cláusulas Contractuales Tipo (SCC).'), ON, CONFLICT(country_code), DO, NOTHING `);
+
+  await pool.query(`, CREATE, TABLE, IF, NOT, EXISTS, international_transfers(id, UUID, PRIMARY, KEY, DEFAULT, gen_random_uuid(), domain, VARCHAR(255), NOT, NULL, vendor_name, VARCHAR(255), NOT, NULL, destination_country, VARCHAR(100), NOT, NULL, data_categories, JSONB, NOT, NULL, transfer_mechanism, VARCHAR(50), NOT, NULL, has_signed_scc, BOOLEAN, NOT, NULL, DEFAULT, FALSE, signature_status, VARCHAR(50), NOT, NULL, DEFAULT, 'PENDING', scc_document_url, VARCHAR(500), created_at, TIMESTAMP, WITH, TIME, ZONE, DEFAULT, CURRENT_TIMESTAMP, updated_at, TIMESTAMP, WITH, TIME, ZONE, DEFAULT, CURRENT_TIMESTAMP) `);
+
+  await pool.query(`, ALTER, TABLE, international_transfers, ADD, COLUMN, IF, NOT, EXISTS, signature_status, VARCHAR(50), NOT, NULL, DEFAULT, 'PENDING' `);
+
+  await pool.query(`, CREATE, TABLE, IF, NOT, EXISTS, security_incidents(id, UUID, PRIMARY, KEY, DEFAULT, gen_random_uuid(), domain, VARCHAR(255), NOT, NULL, incident_title, VARCHAR(255), NOT, NULL, incident_date, TIMESTAMP, WITH, TIME, ZONE, NOT, NULL, incident_type, VARCHAR(50), NOT, NULL, affected_data_categories, JSONB, NOT, NULL, approx_affected_titulars, INTEGER, NOT, NULL, description_and_effects, TEXT, NOT, NULL, mitigation_measures, TEXT, NOT, NULL, requires_agency_notification, BOOLEAN, NOT, NULL, DEFAULT, FALSE, requires_titulars_notification, BOOLEAN, NOT, NULL, DEFAULT, FALSE, agency_notified_at, TIMESTAMP, WITH, TIME, ZONE, titulars_notified_at, TIMESTAMP, WITH, TIME, ZONE, status, VARCHAR(50), NOT, NULL, DEFAULT, 'DETECTED', created_at, TIMESTAMP, WITH, TIME, ZONE, DEFAULT, CURRENT_TIMESTAMP, updated_at, TIMESTAMP, WITH, TIME, ZONE, DEFAULT, CURRENT_TIMESTAMP) `);
+
+  await pool.query(`, CREATE, INDEX, IF, NOT, EXISTS, idx_incidents_domain, ON, security_incidents(domain) `);
+
+  // Alter existing tables to ensure they include user_id FK column for multi-tenancy
+  await pool.query(`, ALTER, TABLE, site_configs, ADD, COLUMN, IF, NOT, EXISTS, user_id, UUID, REFERENCES, users(id), ON, DELETE, CASCADE);
+    `);
+
+  await pool.query(`;
+    ALTER;
+    TABLE;
+    audit_reports;
+    ADD;
+    COLUMN;
+    IF;
+    NOT;
+    EXISTS;
+    user_id;
+    UUID;
+    REFERENCES;
+    users(id);
+    ON;
+    DELETE;
+    CASCADE;
+    `);
+  await pool.query(`;
+    ALTER;
+    TABLE;
+    consent_logs;
+    ADD;
+    COLUMN;
+    IF;
+    NOT;
+    EXISTS;
+    user_id;
+    UUID;
+    REFERENCES;
+    users(id);
+    ON;
+    DELETE;
+    CASCADE;
+    `);
+  await pool.query(`;
+    ALTER;
+    TABLE;
+    arco_requests;
+    ADD;
+    COLUMN;
+    IF;
+    NOT;
+    EXISTS;
+    user_id;
+    UUID;
+    REFERENCES;
+    users(id);
+    ON;
+    DELETE;
+    CASCADE;
+    `);
+  await pool.query(`;
+    ALTER;
+    TABLE;
+    international_transfers;
+    ADD;
+    COLUMN;
+    IF;
+    NOT;
+    EXISTS;
+    user_id;
+    UUID;
+    REFERENCES;
+    users(id);
+    ON;
+    DELETE;
+    CASCADE;
+    `);
+  await pool.query(`;
+    ALTER;
+    TABLE;
+    security_incidents;
+    ADD;
+    COLUMN;
+    IF;
+    NOT;
+    EXISTS;
+    user_id;
+    UUID;
+    REFERENCES;
+    users(id);
+    ON;
+    DELETE;
+    CASCADE;
+    `);
+
+  await pool.query(`;
+    CREATE;
+    TABLE;
+    IF;
+    NOT;
+    EXISTS;
+    leads(id, UUID, PRIMARY, KEY, DEFAULT, gen_random_uuid(), domain, VARCHAR(255), NOT, NULL, email, VARCHAR(255), NOT, NULL, score_detected, INTEGER, NOT, NULL, status, VARCHAR(50), DEFAULT, 'NEW', sales_notes, TEXT, created_at, TIMESTAMP, WITH, TIME, ZONE, DEFAULT, CURRENT_TIMESTAMP) `);
+
+  await pool.query(`;
+    ALTER;
+    TABLE;
+    leads;
+    ADD;
+    COLUMN;
+    IF;
+    NOT;
+    EXISTS;
+    status;
+    VARCHAR(50);
+    DEFAULT;
+    'NEW';
+    `);
+  await pool.query(`;
+    ALTER;
+    TABLE;
+    leads;
+    ADD;
+    COLUMN;
+    IF;
+    NOT;
+    EXISTS;
+    sales_notes;
+    TEXT;
+    `);
+
+  await pool.query(`;
+    CREATE;
+    TABLE;
+    IF;
+    NOT;
+    EXISTS;
+    privacy_policies(id, UUID, PRIMARY, KEY, DEFAULT, gen_random_uuid(), user_id, UUID, UNIQUE, REFERENCES, users(id), ON, DELETE, CASCADE, company_rut, VARCHAR(50), NOT, NULL, address, VARCHAR(255), NOT, NULL, contact_email, VARCHAR(255), NOT, NULL, data_categories, JSONB, NOT, NULL, purposes, JSONB, NOT, NULL, retention_rules, TEXT, NOT, NULL, policy_html, TEXT, NOT, NULL, updated_at, TIMESTAMP, WITH, TIME, ZONE, DEFAULT, CURRENT_TIMESTAMP) `);
+
+  await pool.query(`;
+    CREATE;
+    TABLE;
+    IF;
+    NOT;
+    EXISTS;
+    risk_matrix(id, UUID, PRIMARY, KEY, DEFAULT, gen_random_uuid(), user_id, UUID, REFERENCES, users(id), ON, DELETE, CASCADE, process_name, VARCHAR(255), NOT, NULL, identified_risk, TEXT, NOT, NULL, severity, VARCHAR(50), NOT, NULL, mitigation_control, TEXT, NOT, NULL, status, VARCHAR(50), NOT, NULL, DEFAULT, 'IMPLEMENTED', created_at, TIMESTAMP, WITH, TIME, ZONE, DEFAULT, CURRENT_TIMESTAMP) `);
+
+  await pool.query(`;
+    CREATE;
+    TABLE;
+    IF;
+    NOT;
+    EXISTS;
+    whistleblower_reports(id, UUID, PRIMARY, KEY, DEFAULT, gen_random_uuid(), user_id, UUID, REFERENCES, users(id), ON, DELETE, CASCADE, incident_description, TEXT, NOT, NULL, reported_date, TIMESTAMP, WITH, TIME, ZONE, DEFAULT, CURRENT_TIMESTAMP, status, VARCHAR(50), NOT, NULL, DEFAULT, 'PENDING') `);
+
+  await pool.query(`;
+    CREATE;
+    TABLE;
+    IF;
+    NOT;
+    EXISTS;
+    ropa_inventory(id, UUID, PRIMARY, KEY, DEFAULT, gen_random_uuid(), user_id, UUID, REFERENCES, users(id), ON, DELETE, CASCADE, process_name, VARCHAR(255), NOT, NULL, purpose, TEXT, NOT, NULL, legal_basis, VARCHAR(255), NOT, NULL, data_categories, JSONB, NOT, NULL, retention_period, VARCHAR(255), NOT, NULL, cross_border_transfer, BOOLEAN, NOT, NULL, DEFAULT, FALSE, source, VARCHAR(50), DEFAULT, 'manual', status, VARCHAR(50), DEFAULT, 'draft', created_at, TIMESTAMP, WITH, TIME, ZONE, DEFAULT, CURRENT_TIMESTAMP) `);
+
+  // Ensure status and source exist in ropa_inventory table for existing databases
+  await pool.query(`;
+    ALTER;
+    TABLE;
+    ropa_inventory;
+    ADD;
+    COLUMN;
+    IF;
+    NOT;
+    EXISTS;
+    source;
+    VARCHAR(50);
+    DEFAULT;
+    'manual';
+    `);
+  await pool.query(`;
+    ALTER;
+    TABLE;
+    ropa_inventory;
+    ADD;
+    COLUMN;
+    IF;
+    NOT;
+    EXISTS;
+    status;
+    VARCHAR(50);
+    DEFAULT;
+    'draft';
+    `);
+
+  // Document downloads audit trail table (P1 - Punto 8)
+  await pool.query(`;
+    CREATE;
+    TABLE;
+    IF;
+    NOT;
+    EXISTS;
+    document_downloads(id, UUID, PRIMARY, KEY, DEFAULT, gen_random_uuid(), user_id, UUID, REFERENCES, users(id), ON, DELETE, CASCADE, document_type, VARCHAR(50), NOT, NULL, --'privacy_policy' | 'dpa' | 'scc' | 'terms', content_hash, VARCHAR(64), NOT, NULL, --Hash, SHA - 256, del, texto, descargado, disclaimer_version, VARCHAR(20), NOT, NULL, --Ej, 'DISCLAIMER_V1', downloaded_at, TIMESTAMP, WITH, TIME, ZONE, DEFAULT, CURRENT_TIMESTAMP) `);
+
+  // Table to track tenant implementation requests for medium/high effort findings (P0-A)
+  await pool.query(`;
+    CREATE;
+    TABLE;
+    IF;
+    NOT;
+    EXISTS;
+    implementation_requests(id, UUID, PRIMARY, KEY, DEFAULT, gen_random_uuid(), user_id, UUID, REFERENCES, users(id), ON, DELETE, CASCADE, finding_id, VARCHAR(255), NOT, NULL, finding_description, TEXT, NOT, NULL, effort, VARCHAR(50), NOT, NULL, status, VARCHAR(50), NOT, NULL, DEFAULT, 'pending', created_at, TIMESTAMP, WITH, TIME, ZONE, DEFAULT, CURRENT_TIMESTAMP) `);
+
+  // Run the cleanup to remove legacy FIND_ROPA_ findings from audit_reports (Step 3)
+  try {
+    const reportsToClean = await pool.query(
+      `;
+    SELECT;
+    id, findings;
+    FROM;
+    audit_reports;
+    WHERE;
+    findings: : text;
+    LIKE;
+    '%FIND_ROPA_%' `
+    );
+    for (const row of reportsToClean.rows) {
+      const findings = Array.isArray(row.findings) ? row.findings : [];
+      const cleaned = findings.filter((f: any) => !f?.id?.startsWith('FIND_ROPA_'));
+      await pool.query(
+        `;
+    UPDATE;
+    audit_reports;
+    SET;
+    findings = $1;
+    WHERE;
+    id = $2 `,
+        [JSON.stringify(cleaned), row.id]
+      );
     }
-    catch (err) {
-        console.error('⚠️ Error ejecutando la limpieza de FIND_ROPA_:', err.message);
+    console.log(`;
+    Limpieza;
+    de;
+    hallazgos;
+    legacy;
+    FIND_ROPA_;
+    realizada.Filas;
+    procesadas: $;
+    {
+        reportsToClean.rowCount;
     }
-    console.log('✅ Tablas y esquema de PostgreSQL validados/creados.');
-    return pool;
+    `);
+  } catch (err: any) {
+    console.error('⚠️ Error ejecutando la limpieza de FIND_ROPA_:', err.message);
+  }
+
+  console.log('✅ Tablas y esquema de PostgreSQL validados/creados.');
+  return pool;
 }
+
 export function getDb() {
-    if (!pool) {
-        throw new Error('Database pool not initialized. Call initDb() first.');
-    }
-    return pool;
+  if (!pool) {
+    throw new Error('Database pool not initialized. Call initDb() first.');
+  }
+  return pool;
+}
+    ;
 }
