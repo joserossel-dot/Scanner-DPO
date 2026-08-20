@@ -28,6 +28,7 @@ import {
   Shield, 
   Activity, 
   Settings, 
+  Award, 
   UserCheck, 
   AlertTriangle, 
   Clock, 
