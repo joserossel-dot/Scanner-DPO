@@ -6,6 +6,7 @@ import { analyzeScanResults } from '../services/ropaDraftService.js';
 import { authenticateToken } from '../middlewares/auth.js';
 import { sendLeadAlert } from '../services/emailService.js';
 import rateLimit from 'express-rate-limit';
+import crypto from 'crypto';
 const router = Router();
 // Rate limiters for public endpoints (P2-B)
 const publicScanLimiter = rateLimit({
@@ -313,50 +314,38 @@ router.put('/config/:domain', adminCors, authenticateToken, async (req, res) => 
     }
 });
 // --- PUBLIC WIDGET ENDPOINTS (No authenticateToken) ---
-// 9. Log Consent from Widget (Public)
-router.post('/consent', openCors, async (req, res) => {
-    const { domain, ipHash, consentTypes, userAgent, policyVersion } = req.body;
-    if (!domain || !consentTypes || !policyVersion) {
-        return res.status(400).json({ error: 'Faltan parámetros requeridos de consentimiento' });
-    }
-    try {
-        const db = getDb();
-        await db.query(`
-      INSERT INTO consent_logs (domain, ip_hash, consent_types, user_agent, policy_version)
-      VALUES ($1, $2, $3, $4, $5)
-    `, [
-            domain,
-            ipHash || 'anon',
-            JSON.stringify(consentTypes),
-            userAgent || '',
-            policyVersion
-        ]);
-        return res.json({ success: true });
-    }
-    catch (error) {
-        return res.status(500).json({ error: error.message });
-    }
-});
-// Log Consent from custom lightweight widget (Public)
+// 9. Log Consent from Widget (Public) — identificador de visitante calculado en servidor
 router.post('/remediation/consent-log', openCors, async (req, res) => {
-    const { tenantId, url, action, userAgent } = req.body;
+    const { url, action, userAgent, consentTypes } = req.body;
     const domain = url ? new URL(url).hostname : 'localhost';
-    const consentTypes = {
+    // IP real vista por el servidor (no la que declare el cliente), hasheada con sal.
+    // Nunca se guarda la IP en texto plano — solo el hash sirve para distinguir visitantes.
+    const rawIp = req.headers['x-forwarded-for']?.split(',')[0]?.trim()
+        || req.socket.remoteAddress
+        || 'unknown';
+    const salt = process.env.CONSENT_HASH_SALT || 'dev_only_change_in_prod';
+    const ipHash = crypto.createHash('sha256').update(rawIp + salt).digest('hex');
+    // Si el widget manda categorías granulares (Cambio 2), se respetan.
+    // Si es una versión vieja del widget que solo manda accept/reject, se cae al binario.
+    const finalConsentTypes = consentTypes || {
         essential: true,
         analytical: action === 'accepted',
         marketing: action === 'accepted'
     };
     try {
         const db = getDb();
+        // Versión real de la política vigente para ese dominio en este momento — nunca hardcodeada
+        const configRes = await db.query('SELECT policy_version FROM site_configs WHERE domain = $1', [domain]);
+        const currentPolicyVersion = configRes.rows[0]?.policy_version || 'sin_version_registrada';
         await db.query(`
       INSERT INTO consent_logs (domain, ip_hash, consent_types, user_agent, policy_version)
       VALUES ($1, $2, $3, $4, $5)
     `, [
             domain,
-            tenantId || 'anon',
-            JSON.stringify(consentTypes),
+            ipHash,
+            JSON.stringify(finalConsentTypes),
             userAgent || '',
-            'v1.0.0'
+            currentPolicyVersion
         ]);
         return res.json({ success: true });
     }
