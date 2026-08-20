@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { authFetch } from '../../../lib/authFetch';
 import { 
   Shield, 
   Copy, 
@@ -110,11 +111,7 @@ export default function CmpManagerView({ token }: CmpManagerViewProps) {
     setIsLoading(true);
     setError(null);
     try {
-      const headers: Record<string, string> = {};
-      if (token) {
-        headers['Authorization'] = `Bearer ${token}`;
-      }
-      const res = await fetch(`${API_BASE}/api/configs`, { headers });
+      const res = await authFetch(`${API_BASE}/api/configs`);
       if (res.ok) {
         const data = await res.json();
         setConfigs(data);
@@ -140,11 +137,7 @@ export default function CmpManagerView({ token }: CmpManagerViewProps) {
     if (!domain) return;
     setIsLogsLoading(true);
     try {
-      const headers: Record<string, string> = {};
-      if (token) {
-        headers['Authorization'] = `Bearer ${token}`;
-      }
-      const res = await fetch(`${API_BASE}/api/consent/logs?client_id=${encodeURIComponent(domain)}`, { headers });
+      const res = await authFetch(`${API_BASE}/api/consent/logs?client_id=${encodeURIComponent(domain)}`);
       if (res.ok) {
         const data = await res.json();
         setLogs(data);
@@ -161,11 +154,7 @@ export default function CmpManagerView({ token }: CmpManagerViewProps) {
     if (!domain) return;
     setIsFormLogsLoading(true);
     try {
-      const headers: Record<string, string> = {};
-      if (token) {
-        headers['Authorization'] = `Bearer ${token}`;
-      }
-      const res = await fetch(`${API_BASE}/api/consent/form-logs?client_id=${encodeURIComponent(domain)}`, { headers });
+      const res = await authFetch(`${API_BASE}/api/consent/form-logs?client_id=${encodeURIComponent(domain)}`);
       if (res.ok) {
         const data = await res.json();
         setFormLogs(data);
@@ -227,13 +216,6 @@ export default function CmpManagerView({ token }: CmpManagerViewProps) {
     
     setIsSubmitting(true);
     try {
-      const headers: Record<string, string> = {
-        'Content-Type': 'application/json'
-      };
-      if (token) {
-        headers['Authorization'] = `Bearer ${token}`;
-      }
-      
       const payload = {
         company_name: newCompanyName,
         policy_version: 'v1.0.0',
@@ -248,9 +230,11 @@ export default function CmpManagerView({ token }: CmpManagerViewProps) {
         banner_description: 'Este sitio utiliza cookies analíticas y comerciales para optimizar su experiencia según la Ley N° 21.719.'
       };
 
-      const res = await fetch(`${API_BASE}/api/config/${encodeURIComponent(newDomain)}`, {
+      const res = await authFetch(`${API_BASE}/api/config/${encodeURIComponent(newDomain)}`, {
         method: 'PUT',
-        headers,
+        headers: {
+          'Content-Type': 'application/json'
+        },
         body: JSON.stringify(payload)
       });
 

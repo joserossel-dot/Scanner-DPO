@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { authFetch } from '../../../lib/authFetch';
 import { 
   Award, 
   BookOpen, 
@@ -78,11 +79,7 @@ export default function EmployeeTrainingDashboard({ token }: EmployeeTrainingDas
     setIsLoading(true);
     setError(null);
     try {
-      const headers: Record<string, string> = {};
-      if (token) {
-        headers['Authorization'] = `Bearer ${token}`;
-      }
-      const res = await fetch(`${API_BASE}/api/configs`, { headers });
+      const res = await authFetch(`${API_BASE}/api/configs`);
       if (res.ok) {
         const data = await res.json();
         setConfigs(data);
@@ -108,11 +105,7 @@ export default function EmployeeTrainingDashboard({ token }: EmployeeTrainingDas
     if (!domain) return;
     setIsReportsLoading(true);
     try {
-      const headers: Record<string, string> = {};
-      if (token) {
-        headers['Authorization'] = `Bearer ${token}`;
-      }
-      const res = await fetch(`${API_BASE}/api/training/reports?client_id=${encodeURIComponent(domain)}`, { headers });
+      const res = await authFetch(`${API_BASE}/api/training/reports?client_id=${encodeURIComponent(domain)}`);
       if (res.ok) {
         const data = await res.json();
         setReports(data);
@@ -176,16 +169,11 @@ export default function EmployeeTrainingDashboard({ token }: EmployeeTrainingDas
     setIsSavingMaterials(true);
     setSaveSuccess(false);
     try {
-      const headers: Record<string, string> = {
-        'Content-Type': 'application/json'
-      };
-      if (token) {
-        headers['Authorization'] = `Bearer ${token}`;
-      }
-
-      const res = await fetch(`${API_BASE}/api/training/materials/${encodeURIComponent(selectedDomain)}`, {
+      const res = await authFetch(`${API_BASE}/api/training/materials/${encodeURIComponent(selectedDomain)}`, {
         method: 'PUT',
-        headers,
+        headers: {
+          'Content-Type': 'application/json'
+        },
         body: JSON.stringify({
           presentation_url: presentationUrl,
           policy_text: policyText

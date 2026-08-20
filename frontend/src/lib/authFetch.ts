@@ -14,14 +14,14 @@ const TOKEN_KEY = 'dpo_token';
 
 export function getStoredToken(): string | null {
   if (typeof window === 'undefined') return null;
-  return localStorage.getItem(TOKEN_KEY);
+  return localStorage.getItem(TOKEN_KEY) || localStorage.getItem('token');
 }
 
 /**
  * Authenticated fetch wrapper.
  * Automatically injects Authorization header if a token is present.
- * Falls through to window.fetch for requests that don't need auth
- * (the token simply won't be present in localStorage if the user is logged out).
+ * Falls through to window.fetch for requests that don't need auth.
+ * Automatically cleans localStorage and redirects to /login on 401 or 403.
  */
 export async function authFetch(
   url: string,
@@ -40,5 +40,21 @@ export async function authFetch(
     headers['Authorization'] = `Bearer ${token}`;
   }
 
-  return window.fetch(url, { ...options, headers });
+  try {
+    const res = await window.fetch(url, { ...options, headers });
+
+    if (res.status === 401 || res.status === 403) {
+      localStorage.removeItem('dpo_token');
+      localStorage.removeItem('token');
+      localStorage.removeItem('dpo_user');
+      if (typeof window !== 'undefined' && !window.location.pathname.startsWith('/login')) {
+        window.location.href = '/login';
+      }
+    }
+
+    return res;
+  } catch (error) {
+    console.error('[authFetch] Network error:', error);
+    throw error;
+  }
 }
