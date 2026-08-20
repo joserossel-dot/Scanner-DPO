@@ -656,4 +656,114 @@ router.get('/consent/logs', adminCors, async (req: any, res) => {
   }
 });
 
+// 15. Public Form Consent Collection (CORS flexible)
+router.post('/consent/form-collect', cors({ origin: '*' }), async (req: any, res) => {
+  const { client_id, user_identifier, privacy_policy_accepted, privacy_policy_version, marketing_opt_in, form_id } = req.body;
+  
+  if (!client_id || !user_identifier || privacy_policy_accepted === undefined || marketing_opt_in === undefined) {
+    return res.status(400).json({ error: 'Faltan parámetros obligatorios de consentimiento de formulario.' });
+  }
+
+  // Get real IP
+  const rawIp = (req.headers['x-forwarded-for'] as string)?.split(',')[0]?.trim()
+    || req.socket.remoteAddress
+    || 'unknown';
+  const salt = process.env.CONSENT_HASH_SALT || 'dev_only_change_in_prod';
+  const ipHash = crypto.createHash('sha256').update(rawIp + salt).digest('hex');
+
+  try {
+    const db = getDb();
+    
+    // Fetch policy version from config if not supplied
+    let currentPolicyVersion = privacy_policy_version;
+    if (!currentPolicyVersion) {
+      const configRes = await db.query(
+        'SELECT policy_version FROM site_configs WHERE domain = $1',
+        [client_id]
+      );
+      currentPolicyVersion = configRes.rows[0]?.policy_version || 'sin_version_registrada';
+    }
+
+    const result = await db.query(`
+      INSERT INTO form_consent_logs (client_id, user_identifier, privacy_policy_accepted, privacy_policy_version, marketing_opt_in, form_id, ip_hash)
+      VALUES ($1, $2, $3, $4, $5, $6, $7)
+      RETURNING *
+    `, [
+      client_id,
+      user_identifier,
+      privacy_policy_accepted,
+      currentPolicyVersion,
+      marketing_opt_in,
+      form_id || 'default_contact_form',
+      ipHash
+    ]);
+
+    res.json({ success: true, log: result.rows[0] });
+  } catch (error: any) {
+    console.error('Error in form consent collect route:', error.message);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// 16. Retrieve Form Consent Logs (Protected via JWT or X-API-Key for B2B)
+router.get('/consent/form-logs', adminCors, async (req: any, res) => {
+  const { client_id } = req.query;
+  if (!client_id) {
+    return res.status(400).json({ error: 'El parámetro client_id (dominio) es obligatorio.' });
+  }
+
+  const db = getDb();
+  const authHeader = req.headers['authorization'];
+  const apiKeyHeader = req.headers['x-api-key'];
+
+  let hasAccess = false;
+  const targetDomain = client_id;
+
+  if (authHeader) {
+    const token = authHeader.split(' ')[1];
+    if (token) {
+      try {
+        const decoded: any = jwt.verify(token, JWT_SECRET);
+        req.user = decoded;
+        
+        // Verify tenant owns the requested domain
+        const ownershipRes = await db.query(
+          'SELECT 1 FROM site_configs WHERE domain = $1 AND user_id = $2',
+          [targetDomain, req.user.id]
+        );
+        if (ownershipRes.rowCount && ownershipRes.rowCount > 0) {
+          hasAccess = true;
+        }
+      } catch (err) {
+        // Fall through
+      }
+    }
+  }
+
+  if (!hasAccess && apiKeyHeader) {
+    // Verify API Key
+    const apiKeyRes = await db.query(
+      'SELECT 1 FROM site_configs WHERE domain = $1 AND api_key = $2',
+      [targetDomain, apiKeyHeader]
+    );
+    if (apiKeyRes.rowCount && apiKeyRes.rowCount > 0) {
+      hasAccess = true;
+    }
+  }
+
+  if (!hasAccess) {
+    return res.status(401).json({ error: 'Acceso no autorizado. Se requiere token JWT válido o cabecera X-API-Key.' });
+  }
+
+  try {
+    const result = await db.query(
+      'SELECT * FROM form_consent_logs WHERE client_id = $1 ORDER BY id DESC LIMIT 100',
+      [targetDomain]
+    );
+    return res.json(result.rows);
+  } catch (error: any) {
+    return res.status(500).json({ error: error.message });
+  }
+});
+
 export default router;

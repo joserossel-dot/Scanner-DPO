@@ -128,6 +128,19 @@ export async function initDb() {
     ALTER TABLE consent_logs ADD COLUMN IF NOT EXISTS consent_token VARCHAR(255);
   `);
     await pool.query(`
+    CREATE TABLE IF NOT EXISTS form_consent_logs (
+      id SERIAL PRIMARY KEY,
+      client_id VARCHAR(255) NOT NULL,
+      user_identifier VARCHAR(255) NOT NULL,
+      privacy_policy_accepted BOOLEAN NOT NULL,
+      privacy_policy_version VARCHAR(50) NOT NULL,
+      marketing_opt_in BOOLEAN NOT NULL,
+      form_id VARCHAR(255) NOT NULL,
+      ip_hash VARCHAR(255) NOT NULL,
+      created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+    )
+  `);
+    await pool.query(`
     CREATE TABLE IF NOT EXISTS arco_requests (
       id SERIAL PRIMARY KEY,
       domain VARCHAR(255) NOT NULL,
