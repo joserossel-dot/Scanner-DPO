@@ -3,6 +3,7 @@ import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import { getDb } from '../database/db.js';
 import crypto from 'crypto';
+import { sendPasswordResetEmail } from '../services/emailService.js';
 const router = Router();
 const JWT_SECRET = process.env.JWT_SECRET;
 if (!JWT_SECRET) {
@@ -111,11 +112,11 @@ router.post('/forgot-password', async (req, res) => {
         const expiry = new Date(Date.now() + 3600000); // 1 hour
         // Store in DB
         await db.query('UPDATE users SET reset_token = $1, reset_token_expiry = $2 WHERE id = $3', [token, expiry, userId]);
-        // Simular el envío del email con el enlace
-        console.log(`[EMAIL SEND SIMULATION] Link de recuperación: http://localhost:5173/reset-password/${token}`);
+        // Enviar correo de recuperación real o simulación
+        await sendPasswordResetEmail(email, token);
         res.json({
             success: true,
-            message: 'Se ha generado un enlace de recuperación. Revise la consola del servidor para ver el simulador.'
+            message: 'Se ha enviado un correo con instrucciones para restablecer su contraseña.'
         });
     }
     catch (error) {

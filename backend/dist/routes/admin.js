@@ -89,13 +89,18 @@ router.put('/leads/:id', adminCors, authenticateToken, requireSuperAdmin, async 
         res.status(500).json({ error: 'Error al actualizar el prospecto.' });
     }
 });
-// PUT /api/admin/tenants/:id - Update tenant sales status & notes (only superadmin)
+// PUT /api/admin/tenants/:id - Update tenant sales status, notes & subscription (only superadmin)
 router.put('/tenants/:id', adminCors, authenticateToken, requireSuperAdmin, async (req, res) => {
     const db = getDb();
     const { id } = req.params;
-    const { sales_status, sales_notes } = req.body;
+    const { sales_status, sales_notes, subscription_plan, subscription_status } = req.body;
     try {
-        const result = await db.query(`UPDATE users SET sales_status = $1, sales_notes = $2 WHERE id = $3 RETURNING *`, [sales_status, sales_notes, id]);
+        const result = await db.query(`UPDATE users 
+       SET sales_status = COALESCE($1, sales_status), 
+           sales_notes = COALESCE($2, sales_notes),
+           subscription_plan = COALESCE($3, subscription_plan),
+           subscription_status = COALESCE($4, subscription_status)
+       WHERE id = $5 RETURNING *`, [sales_status, sales_notes, subscription_plan, subscription_status, id]);
         if (result.rowCount === 0) {
             return res.status(404).json({ error: 'Organización no encontrada.' });
         }
@@ -103,7 +108,7 @@ router.put('/tenants/:id', adminCors, authenticateToken, requireSuperAdmin, asyn
     }
     catch (error) {
         console.error('Error updating tenant sales profile:', error.message);
-        res.status(500).json({ error: 'Error al actualizar el perfil de ventas de la organización.' });
+        res.status(500).json({ error: 'Error al actualizar el perfil de la organización.' });
     }
 });
 export default router;

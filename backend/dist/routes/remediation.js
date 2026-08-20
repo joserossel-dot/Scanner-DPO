@@ -4,6 +4,7 @@ import { generateContractText } from '../services/contractBuilder.js';
 import { generatePrivacyPolicy } from '../services/policyBuilder.js';
 import { authenticateToken } from '../middlewares/auth.js';
 import { getDb } from '../database/db.js';
+import { sendImplementationRequestAlert } from '../services/emailService.js';
 const router = Router();
 // CORS setup matching dashboard origins
 const adminCors = cors((req, callback) => {
@@ -208,6 +209,34 @@ router.post('/log-download', adminCors, async (req, res) => {
     catch (error) {
         console.error('Error logging document download:', error.message);
         res.status(500).json({ error: 'Error al registrar la descarga en la bitácora legal: ' + error.message });
+    }
+});
+// POST /api/remediation/request-help - Request implementation help for a finding (P0-A)
+router.post('/request-help', adminCors, async (req, res) => {
+    const { findingId, description, effort } = req.body;
+    if (!findingId || !description || !effort) {
+        return res.status(400).json({ error: 'Faltan campos obligatorios: findingId, description, effort.' });
+    }
+    const db = getDb();
+    const userId = req.user.id;
+    try {
+        // 1. Insert into database
+        await db.query(`INSERT INTO implementation_requests (user_id, finding_id, finding_description, effort)
+       VALUES ($1, $2, $3, $4)`, [userId, findingId, description, effort]);
+        // 2. Fetch tenant email and company name to send alert
+        const userRes = await db.query('SELECT email, company_name FROM users WHERE id = $1', [userId]);
+        const userEmail = userRes.rows[0]?.email || 'unknown@tenant.cl';
+        const companyName = userRes.rows[0]?.company_name || 'Inquilino';
+        // 3. Dispatch alert email to internal team
+        await sendImplementationRequestAlert(userId, userEmail, companyName, findingId, description, effort);
+        return res.json({
+            success: true,
+            message: 'Solicitud enviada — nuestro equipo la revisará en las próximas 24-48 horas'
+        });
+    }
+    catch (error) {
+        console.error('Error in request-help remediation route:', error.message);
+        return res.status(500).json({ error: 'Error interno al procesar la solicitud: ' + error.message });
     }
 });
 export default router;

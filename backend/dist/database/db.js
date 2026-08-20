@@ -24,8 +24,8 @@ export async function initDb() {
       password_hash VARCHAR(255) NOT NULL,
       company_name VARCHAR(255) NOT NULL,
       role VARCHAR(50) DEFAULT 'tenant',
-      subscription_plan VARCHAR(100) DEFAULT 'Pro',
-      subscription_status VARCHAR(100) DEFAULT 'Active',
+      subscription_plan VARCHAR(100) DEFAULT 'Free',
+      subscription_status VARCHAR(100) DEFAULT 'Inactive',
       reset_token VARCHAR(255),
       reset_token_expiry TIMESTAMP,
       created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
@@ -36,10 +36,10 @@ export async function initDb() {
     ALTER TABLE users ADD COLUMN IF NOT EXISTS role VARCHAR(50) DEFAULT 'tenant';
   `);
     await pool.query(`
-    ALTER TABLE users ADD COLUMN IF NOT EXISTS subscription_plan VARCHAR(100) DEFAULT 'Pro';
+    ALTER TABLE users ADD COLUMN IF NOT EXISTS subscription_plan VARCHAR(100) DEFAULT 'Free';
   `);
     await pool.query(`
-    ALTER TABLE users ADD COLUMN IF NOT EXISTS subscription_status VARCHAR(100) DEFAULT 'Active';
+    ALTER TABLE users ADD COLUMN IF NOT EXISTS subscription_status VARCHAR(100) DEFAULT 'Inactive';
   `);
     await pool.query(`
     ALTER TABLE users ADD COLUMN IF NOT EXISTS reset_token VARCHAR(255);
@@ -305,6 +305,18 @@ export async function initDb() {
       content_hash VARCHAR(64) NOT NULL, -- Hash SHA-256 del texto descargado
       disclaimer_version VARCHAR(20) NOT NULL, -- Ej: 'DISCLAIMER_V1'
       downloaded_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+    )
+  `);
+    // Table to track tenant implementation requests for medium/high effort findings (P0-A)
+    await pool.query(`
+    CREATE TABLE IF NOT EXISTS implementation_requests (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      user_id UUID REFERENCES users(id) ON DELETE CASCADE,
+      finding_id VARCHAR(255) NOT NULL,
+      finding_description TEXT NOT NULL,
+      effort VARCHAR(50) NOT NULL,
+      status VARCHAR(50) NOT NULL DEFAULT 'pending',
+      created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
     )
   `);
     // Run the cleanup to remove legacy FIND_ROPA_ findings from audit_reports (Step 3)

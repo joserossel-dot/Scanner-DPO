@@ -57,3 +57,68 @@ export async function sendTenantActivationAlert(userId: string, companyName: str
     console.log(`[EmailService] [SIMULACIÓN] Alerta de activación para ${companyName} (User ID: ${userId}, Score: ${score}%)`);
   }
 }
+
+export async function sendImplementationRequestAlert(
+  userId: string, 
+  userEmail: string, 
+  companyName: string, 
+  findingId: string, 
+  description: string, 
+  effort: string
+) {
+  const subject = `🛠️ Solicitud de Ayuda para Implementación: ${companyName}`;
+  const html = `
+    <h1>Nueva Solicitud de Ayuda para Implementación</h1>
+    <p><strong>Empresa:</strong> ${companyName}</p>
+    <p><strong>ID Usuario:</strong> ${userId}</p>
+    <p><strong>Email del Usuario:</strong> ${userEmail}</p>
+    <p><strong>ID del Hallazgo:</strong> ${findingId}</p>
+    <p><strong>Descripción del Hallazgo:</strong> ${description}</p>
+    <p><strong>Esfuerzo Estimado:</strong> ${effort}</p>
+    <p><em>El equipo de PrivacyTech debe contactar a este cliente dentro de las próximas 24-48 horas para coordinar la remediación técnica.</em></p>
+  `;
+
+  if (resend) {
+    try {
+      await resend.emails.send({
+        from: 'Scanner DPO Alerts <alerts@privacytech.cl>',
+        to: ADMIN_EMAIL,
+        subject,
+        html
+      });
+      console.log(`[EmailService] Alerta de ayuda para implementación enviada con Resend para ${companyName}`);
+    } catch (err: any) {
+      console.error(`[EmailService] Error enviando correo de ayuda para implementación con Resend:`, err.message);
+    }
+  } else {
+    console.log(`[EmailService] [SIMULACIÓN] Alerta de ayuda para implementación para ${companyName} (User ID: ${userId}, Finding ID: ${findingId}, Esfuerzo: ${effort})`);
+  }
+}
+
+export async function sendPasswordResetEmail(toEmail: string, resetToken: string) {
+  const resetUrl = `${process.env.FRONTEND_URL || 'http://localhost:5173'}/reset-password/${resetToken}`;
+  const subject = 'Recupera tu contraseña — Scanner DPO';
+  const html = `
+    <h1>Recuperación de contraseña</h1>
+    <p>Recibimos una solicitud para restablecer tu contraseña para tu cuenta de Scanner DPO.</p>
+    <p><a href="${resetUrl}">Haz clic aquí para crear una nueva contraseña</a></p>
+    <p>Este enlace expira en 1 hora. Si no solicitaste esto, puedes ignorar este correo de forma segura.</p>
+  `;
+
+  if (resend) {
+    try {
+      await resend.emails.send({
+        from: 'Scanner DPO <noreply@privacytech.cl>',
+        to: toEmail,
+        subject,
+        html
+      });
+      console.log(`[EmailService] Correo de recuperación enviado con Resend para ${toEmail}`);
+    } catch (err: any) {
+      console.error(`[EmailService] Error enviando correo de recuperación con Resend:`, err.message);
+      throw err;
+    }
+  } else {
+    console.log(`[EmailService] [SIMULACIÓN] Link de recuperación: ${resetUrl}`);
+  }
+}

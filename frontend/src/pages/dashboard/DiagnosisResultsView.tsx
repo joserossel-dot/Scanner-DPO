@@ -49,21 +49,84 @@ interface DiagnosisResultsViewProps {
   onReset: () => void;
   isLoading?: boolean;
   hasError?: boolean;
+  token?: string | null;
 }
+
+const API_BASE = (() => {
+  const url = (import.meta as any).env.VITE_API_URL || '';
+  if (typeof window !== 'undefined') {
+    const hostname = window.location.hostname;
+    if (hostname.includes('onrender.com')) {
+      const parts = hostname.split('.');
+      const sub = parts[0];
+      if (sub.endsWith('-dashboard')) {
+        const baseSub = sub.replace('-dashboard', '-api');
+        return `https://${baseSub}.onrender.com`;
+      }
+    }
+  }
+  if (url && !url.startsWith('http://') && !url.startsWith('https://')) {
+    return 'https://' + url;
+  }
+  return url;
+})();
 
 export default function DiagnosisResultsView({ 
   results, 
   onNavigateToRemediation, 
   onReset,
   isLoading = false,
-  hasError = false
+  hasError = false,
+  token = null
 }: DiagnosisResultsViewProps) {
   const isFetchingDiagnosis = false;
   const [expandedPhase, setExpandedPhase] = useState<number | null>(1);
   const [meetingAlertText, setMeetingAlertText] = useState<string | null>(null);
+  const [isRequestingHelp, setIsRequestingHelp] = useState<string | null>(null);
+  const [helpSuccessMsg, setHelpSuccessMsg] = useState<string | null>(null);
 
   const handleScheduleMeeting = (f: DiagnosisFinding) => {
-    setMeetingAlertText(`Se ha agendado una reunión interna para abordar la brecha operativa: "${f.description}". Se enviará un recordatorio automático a su equipo de TI y Operaciones.`);
+    const subject = encodeURIComponent(`[Scanner DPO] Brecha pendiente: ${f.description}`);
+    const body = encodeURIComponent(
+      `Se detectó la siguiente brecha de cumplimiento (Ley 21.719):\n\n` +
+      `Hallazgo: ${f.description}\n` +
+      `Severidad: ${f.severity}\n` +
+      `Recomendación: ${f.recommendation}\n\n` +
+      `Por favor coordinar la corrección con el equipo de TI/Operaciones.`
+    );
+    window.location.href = `mailto:?subject=${subject}&body=${body}`;
+  };
+
+  const handleRequestImplementationHelp = async (f: DiagnosisFinding) => {
+    setIsRequestingHelp(f.id);
+    try {
+      const headers: Record<string, string> = {
+        'Content-Type': 'application/json'
+      };
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
+      }
+      const res = await fetch(`${API_BASE}/api/remediation/request-help`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({
+          findingId: f.id,
+          description: f.description,
+          effort: f.effort
+        })
+      });
+      if (res.ok) {
+        setHelpSuccessMsg('Solicitud enviada — nuestro equipo la revisará en las próximas 24-48 horas');
+      } else {
+        const errData = await res.json().catch(() => ({}));
+        alert(errData.error || 'Error al enviar la solicitud de ayuda.');
+      }
+    } catch (err) {
+      console.error('Error requesting implementation help:', err);
+      alert('Error de conexión al enviar la solicitud.');
+    } finally {
+      setIsRequestingHelp(null);
+    }
   };
 
   // 2. ESTADOS DE CARGA (Loading Fallback)
@@ -558,13 +621,35 @@ export default function DiagnosisResultsView({
                     </div>
 
                     {!f.isGated && (
-                      <button
-                        onClick={() => handleScheduleMeeting(f)}
-                        className="flex items-center gap-1.5 px-3 py-1.5 bg-indigo-650 hover:bg-indigo-500 text-white font-bold text-xs rounded-lg transition-all flex-shrink-0"
-                      >
-                        <span>Agendar reunión interna</span>
-                        <ArrowRight size={12} />
-                      </button>
+                      <div className="flex flex-col sm:flex-row gap-2 flex-shrink-0">
+                        <button
+                          onClick={() => handleScheduleMeeting(f)}
+                          className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-350 hover:text-white font-bold text-xs rounded-lg transition-all border border-slate-750"
+                        >
+                          <span>Agendar reunión interna</span>
+                          <ArrowRight size={12} />
+                        </button>
+                        
+                        {(f.effort === 'MEDIUM' || f.effort === 'HIGH') && (
+                          <button
+                            onClick={() => handleRequestImplementationHelp(f)}
+                            disabled={isRequestingHelp === f.id}
+                            className="flex items-center gap-1.5 px-3 py-1.5 bg-amber-600 hover:bg-amber-500 disabled:bg-slate-850 text-white disabled:text-slate-500 font-bold text-xs rounded-lg transition-all"
+                          >
+                            {isRequestingHelp === f.id ? (
+                              <>
+                                <span className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                                <span>Enviando...</span>
+                              </>
+                            ) : (
+                              <>
+                                <span>Solicitar ayuda de implementación</span>
+                                <ArrowRight size={12} />
+                              </>
+                            )}
+                          </button>
+                        )}
+                      </div>
                     )}
                   </div>
                 ))
@@ -592,6 +677,31 @@ export default function DiagnosisResultsView({
             <div className="flex justify-end pt-2">
               <button 
                 onClick={() => setMeetingAlertText(null)}
+                className="px-4 py-2 bg-indigo-650 hover:bg-indigo-600 text-white font-bold text-xs rounded-xl transition-all"
+              >
+                Entendido
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Help Success modal (P0-A) */}
+      {helpSuccessMsg && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-in fade-in duration-200">
+          <div className="bg-slate-900 border border-slate-800 p-6 rounded-2xl max-w-md w-full shadow-2xl space-y-4 text-left">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-full bg-emerald-950/60 border border-emerald-900/40 flex items-center justify-center text-emerald-450">
+                <CheckCircle size={20} />
+              </div>
+              <h4 className="text-base font-bold text-white">Solicitud Recibida</h4>
+            </div>
+            <p className="text-xs text-slate-350 leading-relaxed">
+              {helpSuccessMsg}
+            </p>
+            <div className="flex justify-end pt-2">
+              <button 
+                onClick={() => setHelpSuccessMsg(null)}
                 className="px-4 py-2 bg-indigo-650 hover:bg-indigo-600 text-white font-bold text-xs rounded-xl transition-all"
               >
                 Entendido

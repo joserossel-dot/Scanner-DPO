@@ -5,7 +5,19 @@ import { runAudit } from '../services/crawlerService.js';
 import { analyzeScanResults } from '../services/ropaDraftService.js';
 import { authenticateToken } from '../middlewares/auth.js';
 import { sendLeadAlert } from '../services/emailService.js';
+import rateLimit from 'express-rate-limit';
 const router = Router();
+// Rate limiters for public endpoints (P2-B)
+const publicScanLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000, // 15 minutes
+    max: 10,
+    message: { error: 'Demasiados intentos de escaneo desde esta IP. Intente nuevamente en 15 minutos.' }
+});
+const publicArcoLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000, // 15 minutes
+    max: 10,
+    message: { error: 'Demasiados intentos de solicitudes ARCO+ desde esta IP. Intente nuevamente en 15 minutos.' }
+});
 // --- CORS CONFIGURATIONS ---
 // Public endpoints (Widget CMP and ARCO Form): accessible from anywhere
 const openCors = cors({
@@ -64,26 +76,28 @@ function addBusinessDays(date, days) {
 // Enable OPTIONS pre-flight calls globally
 router.options('*', cors());
 // --- TESTING ENDPOINTS ---
-router.delete('/testing/reset-my-data', adminCors, authenticateToken, async (req, res) => {
-    const db = getDb();
-    const userId = req.user.id;
-    try {
-        await db.query("DELETE FROM ropa_inventory WHERE user_id = $1", [userId]);
-        await db.query("DELETE FROM audit_reports WHERE user_id = $1", [userId]);
-        await db.query("DELETE FROM privacy_policies WHERE user_id = $1", [userId]);
-        await db.query("DELETE FROM consent_logs WHERE user_id = $1", [userId]);
-        await db.query("DELETE FROM arco_requests WHERE user_id = $1", [userId]);
-        await db.query("DELETE FROM international_transfers WHERE user_id = $1", [userId]);
-        await db.query("DELETE FROM security_incidents WHERE user_id = $1", [userId]);
-        await db.query("DELETE FROM site_configs WHERE user_id = $1", [userId]);
-        await db.query("DELETE FROM document_downloads WHERE user_id = $1", [userId]);
-        res.json({ success: true, message: "Todos los datos de prueba han sido reseteados correctamente." });
-    }
-    catch (error) {
-        console.error("Error resetting testing data:", error.message);
-        res.status(500).json({ error: "Error al resetear los datos de prueba: " + error.message });
-    }
-});
+if (process.env.NODE_ENV !== 'production') {
+    router.delete('/testing/reset-my-data', adminCors, authenticateToken, async (req, res) => {
+        const db = getDb();
+        const userId = req.user.id;
+        try {
+            await db.query("DELETE FROM ropa_inventory WHERE user_id = $1", [userId]);
+            await db.query("DELETE FROM audit_reports WHERE user_id = $1", [userId]);
+            await db.query("DELETE FROM privacy_policies WHERE user_id = $1", [userId]);
+            await db.query("DELETE FROM consent_logs WHERE user_id = $1", [userId]);
+            await db.query("DELETE FROM arco_requests WHERE user_id = $1", [userId]);
+            await db.query("DELETE FROM international_transfers WHERE user_id = $1", [userId]);
+            await db.query("DELETE FROM security_incidents WHERE user_id = $1", [userId]);
+            await db.query("DELETE FROM site_configs WHERE user_id = $1", [userId]);
+            await db.query("DELETE FROM document_downloads WHERE user_id = $1", [userId]);
+            res.json({ success: true, message: "Todos los datos de prueba han sido reseteados correctamente." });
+        }
+        catch (error) {
+            console.error("Error resetting testing data:", error.message);
+            res.status(500).json({ error: "Error al resetear los datos de prueba: " + error.message });
+        }
+    });
+}
 // --- ADMIN ENDPOINTS (Requires authenticateToken) ---
 // 1. Audit Scan Endpoint
 router.post('/scan', adminCors, authenticateToken, async (req, res) => {
@@ -109,11 +123,17 @@ router.post('/scan', adminCors, authenticateToken, async (req, res) => {
             req.user.id
         ]);
         const reportId = result.rows[0].id;
-        // Asynchronously generate ROPA drafts from scan findings
-        analyzeScanResults(req.user.id, report).catch((err) => {
+        // Synchronously generate ROPA drafts from scan findings to prevent race conditions (P1-B)
+        let ropaDraftsGenerated = [];
+        try {
+            await analyzeScanResults(req.user.id, report);
+            const draftsRes = await db.query("SELECT * FROM ropa_inventory WHERE user_id = $1 AND status = 'draft' ORDER BY created_at DESC", [req.user.id]);
+            ropaDraftsGenerated = draftsRes.rows;
+        }
+        catch (err) {
             console.error('[RoPADraftService] Error in scan inference:', err.message);
-        });
-        return res.json({ id: reportId, ...report });
+        }
+        return res.json({ id: reportId, ...report, ropaDraftsGenerated });
     }
     catch (error) {
         console.error('Error running scanner audit:', error.message);
@@ -345,7 +365,7 @@ router.post('/remediation/consent-log', openCors, async (req, res) => {
     }
 });
 // 10. Submit ARCO+ Request from Widget (Public)
-router.post('/arco', openCors, async (req, res) => {
+router.post('/arco', openCors, publicArcoLimiter, async (req, res) => {
     const { domain, requesterName, requesterEmail, requestType, details } = req.body;
     if (!domain || !requesterName || !requesterEmail || !requestType || !details) {
         return res.status(400).json({ error: 'Faltan campos requeridos para la solicitud ARCO+' });
@@ -413,7 +433,7 @@ router.get('/config/:domain', openCors, async (req, res) => {
     }
 });
 // 12. Public free scanner endpoint for the Landing Page Lead Magnet (No Auth)
-router.post('/free-scan', openCors, async (req, res) => {
+router.post('/free-scan', openCors, publicScanLimiter, async (req, res) => {
     const { domain, email } = req.body;
     if (!domain || !email) {
         return res.status(400).json({ error: 'Faltan parámetros obligatorios: domain y email.' });
