@@ -295,35 +295,73 @@ export default function EmployeeTrainingPublic() {
             </div>
 
             {/* Step 2: Read Materials */}
-            <div className="bg-slate-900/50 border border-slate-800 p-6 rounded-2xl space-y-4">
-              <h2 className="text-sm font-bold text-white uppercase tracking-wider flex items-center gap-2">
-                <span className="w-5 h-5 rounded-full bg-emerald-500 text-slate-950 flex items-center justify-center font-mono text-xs">2</span>
-                Materiales de Capacitación
-              </h2>
-              
-              <p className="text-xs text-slate-400 leading-relaxed">
-                Revise la presentación explicativa y lea detenidamente las directrices de cumplimiento corporativo sobre el tratamiento legítimo de datos.
-              </p>
-
-              {materials?.presentation_url && materials.presentation_url.includes('google.com') ? (
-                <div className="relative aspect-video w-full rounded-xl overflow-hidden border border-slate-800 bg-slate-950/60 flex items-center justify-center text-slate-500">
-                  <div className="text-center p-4 space-y-2">
-                    <BookOpen className="mx-auto text-slate-650" size={36} />
-                    <p className="text-xs font-bold text-slate-400">Presentación Explicativa de Privacidad</p>
-                    <p className="text-[10px] max-w-sm">Material multimedia interactivo. Por favor lea las directrices escritas a continuación.</p>
-                  </div>
-                </div>
-              ) : null}
-
-              <div className="bg-slate-950 p-4 rounded-xl border border-slate-850 space-y-2">
-                <h3 className="text-xs font-bold text-emerald-450 flex items-center gap-1.5">
-                  <BookOpen size={13} />
-                  Directrices Internas y Ley N° 21.719
-                </h3>
-                <pre className="text-xs text-slate-350 leading-relaxed font-sans whitespace-pre-wrap select-none text-left">
-                  {materials?.policy_text}
-                </pre>
+            <div className="bg-slate-900/50 border border-slate-800 p-6 rounded-2xl space-y-6">
+              <div className="space-y-2">
+                <h2 className="text-sm font-bold text-white uppercase tracking-wider flex items-center gap-2">
+                  <span className="w-5 h-5 rounded-full bg-emerald-500 text-slate-950 flex items-center justify-center font-mono text-xs">2</span>
+                  Presentación Formativa y Directrices
+                </h2>
+                <p className="text-xs text-slate-400 leading-relaxed">
+                  Lea detenidamente la siguiente pauta de cumplimiento corporativo antes de rendir la evaluación.
+                </p>
               </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="bg-slate-950 border border-slate-850 p-4 rounded-xl space-y-2">
+                  <h3 className="text-xs font-bold text-rose-400 flex items-center gap-1.5">
+                    <AlertCircle size={14} />
+                    Por qué proteger los datos
+                  </h3>
+                  <p className="text-[11px] text-slate-350 leading-relaxed">
+                    Un incidente de seguridad no solo daña nuestra reputación, sino que expone a la empresa a <strong>multas de hasta 10.000 UTM</strong> bajo la normativa vigente. La protección de la información es responsabilidad de todos los colaboradores.
+                  </p>
+                </div>
+
+                <div className="bg-slate-950 border border-slate-850 p-4 rounded-xl space-y-2">
+                  <h3 className="text-xs font-bold text-indigo-400 flex items-center gap-1.5">
+                    <BookOpen size={14} />
+                    Qué es un Dato Personal y Sensible
+                  </h3>
+                  <p className="text-[11px] text-slate-350 leading-relaxed">
+                    <strong>Dato Personal:</strong> Cualquier información que identifique a una persona (RUT, correo, teléfono).<br/>
+                    <strong>Dato Sensible:</strong> Información crítica que requiere máxima protección (salud, biometría, origen étnico, orientación sexual).
+                  </p>
+                </div>
+
+                <div className="bg-slate-950 border border-slate-850 p-4 rounded-xl space-y-2">
+                  <h3 className="text-xs font-bold text-amber-400 flex items-center gap-1.5">
+                    <CheckCircle size={14} />
+                    Reglas de Oro (Do's & Don'ts)
+                  </h3>
+                  <ul className="text-[11px] text-slate-350 leading-relaxed list-disc list-inside space-y-1">
+                    <li><strong>SIEMPRE</strong> bloquee su sesión al alejarse del equipo.</li>
+                    <li><strong>SIEMPRE</strong> utilice canales de comunicación seguros y oficiales.</li>
+                    <li><strong>NUNCA</strong> utilice discos o USB personales para almacenar datos de la empresa sin autorización explícita.</li>
+                  </ul>
+                </div>
+
+                <div className="bg-slate-950 border border-slate-850 p-4 rounded-xl space-y-2">
+                  <h3 className="text-xs font-bold text-emerald-450 flex items-center gap-1.5">
+                    <Shield size={14} />
+                    Manejo de Derechos ARCO+
+                  </h3>
+                  <p className="text-[11px] text-slate-350 leading-relaxed">
+                    Si un cliente solicita ejercer sus derechos de Acceso, Rectificación, Cancelación u Oposición sobre sus datos, usted debe <strong>derivar inmediatamente la solicitud al DPO</strong> o área legal habilitada. No debe procesarla por su cuenta ni ignorarla.
+                  </p>
+                </div>
+              </div>
+
+              {materials?.policy_text && (
+                <div className="bg-slate-950 p-4 rounded-xl border border-slate-850 space-y-2 mt-4">
+                  <h3 className="text-xs font-bold text-slate-400 flex items-center gap-1.5">
+                    <BookOpen size={13} />
+                    Anexo: Política Adicional del Cliente
+                  </h3>
+                  <pre className="text-[11px] text-slate-500 leading-relaxed font-sans whitespace-pre-wrap select-none text-left">
+                    {materials.policy_text}
+                  </pre>
+                </div>
+              )}
             </div>
 
             {/* Step 3: Interactive Quiz */}
