@@ -24,6 +24,7 @@ import EmployeeTrainingDashboard from './pages/dashboard/components/EmployeeTrai
 import ForgotPasswordView from './pages/auth/ForgotPasswordView';
 import ResetPasswordView from './pages/auth/ResetPasswordView';
 import AdminDashboardView from './pages/admin/AdminDashboardView';
+import { authFetch } from './lib/authFetch';
 import { 
   Shield, 
   Activity, 
@@ -174,14 +175,8 @@ export function Dashboard({ token, user, onLogout, initialTab }: DashboardProps)
   const location = useLocation();
   const navigate = useNavigate();
 
-  // Lexically shadow the global fetch with an authenticated fetch wrapper
-  const fetch = async (url: string, options: RequestInit = {}) => {
-    const headers = {
-      ...options.headers,
-      'Authorization': `Bearer ${token}`
-    };
-    return window.fetch(url, { ...options, headers });
-  };
+  // Lexically shadow the global fetch with our centralized authenticated fetch helper
+  const fetch = authFetch;
 
   const [activeTab, setActiveTab] = useState<'scanner' | 'diagnosis' | 'remediation' | 'dpo' | 'dossier' | 'ropa' | 'admin'>(initialTab || 'scanner');
   const [remediationSubTab, setRemediationSubTab] = useState<'cmp' | 'arco' | 'transfers' | 'policies' | 'contracts'>('cmp');
@@ -198,6 +193,7 @@ export function Dashboard({ token, user, onLogout, initialTab }: DashboardProps)
   const [consentLogs, setConsentLogs] = useState<ConsentLog[]>([]);
   const [arcoTickets, setArcoTickets] = useState<ArcoTicket[]>([]);
   const [config, setConfig] = useState<ClientConfig | null>(null);
+  const [activeDomain, setActiveDomain] = useState<string>('');
   
   // Actions states
   const [scanUrl, setScanUrl] = useState('localhost:3000/mock-site/index.html');
@@ -500,18 +496,20 @@ export function Dashboard({ token, user, onLogout, initialTab }: DashboardProps)
     fetchConsentLogs();
     fetchArcoTickets();
     fetchConfig();
-    fetchIncidents();
-    handleFetchDiagnosis();
     fetchRopaList();
   }, []);
 
+  useEffect(() => {
+    if (activeDomain) {
+      fetchTransfers();
+      fetchIncidents();
+      fetchCountries();
+    }
+  }, [activeDomain]);
+
   const fetchLatestScan = async () => {
     try {
-      const headers: Record<string, string> = {};
-      if (token) {
-        headers['Authorization'] = `Bearer ${token}`;
-      }
-      const res = await fetch(`${API_BASE}/api/scan/latest`, { headers });
+      const res = await fetch(`${API_BASE}/api/scan/latest`);
       if (res.ok) {
         const data = await res.json();
         setLatestScan(data);
@@ -547,11 +545,7 @@ export function Dashboard({ token, user, onLogout, initialTab }: DashboardProps)
 
   const fetchArcoTickets = async () => {
     try {
-      const headers: Record<string, string> = {};
-      if (token) {
-        headers['Authorization'] = `Bearer ${token}`;
-      }
-      const res = await fetch(`${API_BASE}/api/arco/tickets`, { headers });
+      const res = await fetch(`${API_BASE}/api/arco/tickets`);
       if (res.ok) {
         const data = await res.json();
         setArcoTickets(data);
@@ -563,36 +557,37 @@ export function Dashboard({ token, user, onLogout, initialTab }: DashboardProps)
 
   const fetchConfig = async () => {
     try {
-      const headers: Record<string, string> = {};
-      if (token) {
-        headers['Authorization'] = `Bearer ${token}`;
-      }
-      const res = await fetch(`${API_BASE}/api/config/${window.location.hostname}`, { headers });
-      if (res.ok) {
-        const data = await res.json();
-        setConfig(data);
-        setConfigRepresentative(data.policy_content?.representative || '');
-        setConfigEmail(data.policy_content?.representative_email || '');
-        setConfigPurposes(data.policy_content?.purposes || '');
-        setConfigRetention(data.policy_content?.retention || '');
-        setConfigChannels(data.policy_content?.channels || '');
-        setConfigCompanyName(data.company_name || '');
-        setConfigBannerTitle(data.banner_title || '');
-        setConfigBannerDesc(data.banner_description || 'Utilizamos cookies esenciales para el funcionamiento del sitio, y cookies analíticas/comerciales opcionales. Puede aceptar todas o rechazarlas. Consulte nuestra Política de Privacidad para más detalles conforme a la Ley N° 21.719.');
-        setConfigVersion(data.policy_version || 'v1.0.0');
+      const configsRes = await fetch(`${API_BASE}/api/configs`);
+      if (configsRes.ok) {
+        const configsList = await configsRes.json();
+        if (configsList.length > 0) {
+          const dom = configsList[0].domain;
+          setActiveDomain(dom);
+
+          const res = await fetch(`${API_BASE}/api/config/${encodeURIComponent(dom)}`);
+          if (res.ok) {
+            const data = await res.json();
+            setConfig(data);
+            setConfigRepresentative(data.policy_content?.representative || '');
+            setConfigEmail(data.policy_content?.representative_email || '');
+            setConfigPurposes(data.policy_content?.purposes || '');
+            setConfigRetention(data.policy_content?.retention || '');
+            setConfigChannels(data.policy_content?.channels || '');
+            setConfigCompanyName(data.company_name || '');
+            setConfigBannerTitle(data.banner_title || '');
+            setConfigBannerDesc(data.banner_description || 'Utilizamos cookies esenciales para el funcionamiento del sitio, y cookies analíticas/comerciales opcionales. Puede aceptar todas o rechazarlas. Consulte nuestra Política de Privacidad para más detalles conforme a la Ley N° 21.719.');
+            setConfigVersion(data.policy_version || 'v1.0.0');
+          }
+        }
       }
     } catch (e) {
-      console.error(e);
+      console.error('Error fetching config context:', e);
     }
   };
 
   const fetchRopaList = async () => {
     try {
-      const headers: Record<string, string> = {};
-      if (token) {
-        headers['Authorization'] = `Bearer ${token}`;
-      }
-      const response = await fetch(`${API_BASE}/api/ropa`, { headers });
+      const response = await fetch(`${API_BASE}/api/ropa`);
       if (response.ok) {
         const data = await response.json();
         setRopaList(data);
@@ -603,12 +598,9 @@ export function Dashboard({ token, user, onLogout, initialTab }: DashboardProps)
   };
 
   const fetchTransfers = async () => {
+    if (!activeDomain) return;
     try {
-      const headers: Record<string, string> = {};
-      if (token) {
-        headers['Authorization'] = `Bearer ${token}`;
-      }
-      const res = await fetch(`${API_BASE}/api/transfers?domain=${window.location.hostname}`, { headers });
+      const res = await fetch(`${API_BASE}/api/transfers?domain=${encodeURIComponent(activeDomain)}`);
       if (res.ok) {
         const data = await res.json();
         setTransfers(data);
@@ -620,11 +612,7 @@ export function Dashboard({ token, user, onLogout, initialTab }: DashboardProps)
 
   const fetchCountries = async () => {
     try {
-      const headers: Record<string, string> = {};
-      if (token) {
-        headers['Authorization'] = `Bearer ${token}`;
-      }
-      const res = await fetch(`${API_BASE}/api/transfers/countries`, { headers });
+      const res = await fetch(`${API_BASE}/api/transfers/countries`);
       if (res.ok) {
         const data = await res.json();
         setCountries(data);
@@ -635,12 +623,9 @@ export function Dashboard({ token, user, onLogout, initialTab }: DashboardProps)
   };
 
   const fetchIncidents = async () => {
+    if (!activeDomain) return;
     try {
-      const headers: Record<string, string> = {};
-      if (token) {
-        headers['Authorization'] = `Bearer ${token}`;
-      }
-      const res = await fetch(`${API_BASE}/api/incidents?domain=${window.location.hostname}`, { headers });
+      const res = await fetch(`${API_BASE}/api/incidents?domain=${encodeURIComponent(activeDomain)}`);
       if (res.ok) {
         const data = await res.json();
         setIncidents(data);
@@ -702,7 +687,7 @@ export function Dashboard({ token, user, onLogout, initialTab }: DashboardProps)
           channels: configChannels
         }
       };
-      const res = await fetch(`${API_BASE}/api/config/${window.location.hostname}`, {
+      const res = await fetch(`${API_BASE}/api/config/${encodeURIComponent(activeDomain || window.location.hostname)}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)
@@ -727,7 +712,7 @@ export function Dashboard({ token, user, onLogout, initialTab }: DashboardProps)
     e.preventDefault();
     try {
       const payload = {
-        domain: window.location.hostname,
+        domain: activeDomain || window.location.hostname,
         provider_name: vendorName,
         country: destCountry,
         data_categories: selectedCategories,
@@ -839,7 +824,7 @@ Firmas autorizadas:
     e.preventDefault();
     try {
       const payload = {
-        domain: window.location.hostname,
+        domain: activeDomain || window.location.hostname,
         incident_title: incidentTitle,
         incident_date: incidentDate,
         incident_type: incidentType,
@@ -982,7 +967,7 @@ Firmas autorizadas:
     if (updated) {
       try {
         const payload = {
-          domain: window.location.hostname,
+          domain: activeDomain || window.location.hostname,
           provider_name: prev.vendorName,
           country: prev.country,
           data_categories: prev.categories,

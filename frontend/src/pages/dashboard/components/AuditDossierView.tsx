@@ -9,7 +9,10 @@ import {
   CheckSquare, 
   Calendar, 
   RefreshCw,
-  Award
+  Award,
+  BookOpen,
+  Eye,
+  Download
 } from 'lucide-react';
 
 const API_BASE = (() => {
@@ -56,6 +59,21 @@ interface ActionPlanStep {
   details: string;
 }
 
+interface DocumentVersion {
+  id: string;
+  version_number: number;
+  change_summary: string;
+  created_at: string;
+}
+
+interface DocumentInfo {
+  id: string;
+  title: string;
+  document_type: string;
+  created_at: string;
+  versions?: DocumentVersion[];
+}
+
 interface DossierData {
   company_name: string;
   company_email: string;
@@ -84,6 +102,8 @@ interface DossierData {
 
 export default function AuditDossierView({ token }: AuditDossierViewProps) {
   const [data, setData] = useState<DossierData | null>(null);
+  const [documents, setDocuments] = useState<DocumentInfo[]>([]);
+  const [expandedDoc, setExpandedDoc] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
 
@@ -100,9 +120,15 @@ export default function AuditDossierView({ token }: AuditDossierViewProps) {
       const response = await authFetch(`${API_BASE}/api/reports/dossier`, {
         headers: { 'Authorization': `Bearer ${token}` }
       });
-      if (response.ok) {
+      const docsResponse = await authFetch(`${API_BASE}/api/documents`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      
+      if (response.ok && docsResponse.ok) {
         const dossier = await response.json();
+        const docs = await docsResponse.json();
         setData(dossier);
+        setDocuments(docs);
       } else {
         setErrorMsg('No se pudo compilar la información de auditoría del inquilino.');
       }
@@ -116,6 +142,50 @@ export default function AuditDossierView({ token }: AuditDossierViewProps) {
 
   const handlePrint = () => {
     window.print();
+  };
+
+  const handleToggleDoc = async (docId: string) => {
+    if (expandedDoc === docId) {
+      setExpandedDoc(null);
+      return;
+    }
+    setExpandedDoc(docId);
+    
+    // Fetch history if not already loaded
+    const doc = documents.find(d => d.id === docId);
+    if (doc && !doc.versions) {
+      try {
+        const res = await authFetch(`${API_BASE}/api/documents/${docId}/history`, {
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
+        if (res.ok) {
+          const history = await res.json();
+          setDocuments(prev => prev.map(d => d.id === docId ? { ...d, versions: history } : d));
+        }
+      } catch (err) {
+        console.error('Error fetching document history', err);
+      }
+    }
+  };
+
+  const handleDownloadPdf = async (docId: string, versionNumber: number) => {
+    try {
+      const res = await authFetch(`${API_BASE}/api/documents/${docId}/version/${versionNumber}`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      if (res.ok) {
+        const data = await res.json();
+        const blob = new Blob([data.version.content], { type: 'text/plain' }); // Can be converted to PDF using a library later
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `${data.document.title}_v${versionNumber}.txt`; // Mock download
+        a.click();
+        URL.revokeObjectURL(url);
+      }
+    } catch (err) {
+      console.error('Error downloading document', err);
+    }
   };
 
   if (isLoading) {
@@ -461,6 +531,73 @@ export default function AuditDossierView({ token }: AuditDossierViewProps) {
             </div>
           ) : (
             <p className="text-xs text-emerald-600 font-semibold">🟢 Sin brechas de cumplimiento críticas (graves o gravísimas) pendientes de mitigar.</p>
+          )}
+        </div>
+
+        {/* SECTION 5: Biblioteca Documental */}
+        <div className="py-5 space-y-4 border-t border-slate-200">
+          <div className="flex items-center gap-2">
+            <BookOpen className="text-indigo-650 w-5 h-5" />
+            <h2 className="text-sm font-bold uppercase tracking-wider text-slate-900 font-serif">Sección 5: Biblioteca Documental (Versiones)</h2>
+          </div>
+          <p className="text-xs text-slate-700 leading-relaxed font-semibold" style={{ margin: 0 }}>
+            Registro histórico inalterable de políticas y contratos activos:
+          </p>
+
+          {documents.length > 0 ? (
+            <div className="space-y-3">
+              {documents.map(doc => (
+                <div key={doc.id} className="border border-slate-200 rounded-lg bg-slate-50 overflow-hidden">
+                  <div 
+                    className="flex justify-between items-center p-3 cursor-pointer hover:bg-slate-100 transition-colors"
+                    onClick={() => handleToggleDoc(doc.id)}
+                  >
+                    <div>
+                      <h4 className="text-xs font-bold text-slate-900">{doc.title}</h4>
+                      <div className="text-[10px] text-slate-500 uppercase mt-0.5">{doc.document_type}</div>
+                    </div>
+                    <div className="text-[10px] text-slate-400 font-semibold uppercase">
+                      {expandedDoc === doc.id ? 'Ocultar Historial' : 'Ver Historial'}
+                    </div>
+                  </div>
+                  
+                  {expandedDoc === doc.id && doc.versions && (
+                    <div className="p-3 border-t border-slate-200 bg-white">
+                      <table className="w-full text-left text-[11px]">
+                        <thead>
+                          <tr className="border-b border-slate-200 text-slate-500">
+                            <th className="py-2">Versión</th>
+                            <th className="py-2">Fecha</th>
+                            <th className="py-2">Resumen de Cambios</th>
+                            <th className="py-2 text-right">Acciones</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {doc.versions.map(v => (
+                            <tr key={v.id} className="border-b border-slate-100 last:border-0 hover:bg-slate-50">
+                              <td className="py-2 font-bold">v{v.version_number}.0</td>
+                              <td className="py-2">{new Date(v.created_at).toLocaleDateString('es-CL')}</td>
+                              <td className="py-2 text-slate-600">{v.change_summary}</td>
+                              <td className="py-2 text-right flex justify-end gap-2">
+                                <button
+                                  onClick={() => handleDownloadPdf(doc.id, v.version_number)}
+                                  className="print-hidden p-1.5 bg-indigo-50 text-indigo-600 hover:bg-indigo-100 rounded-lg flex items-center justify-center transition-colors"
+                                  title="Ver/Descargar"
+                                >
+                                  <Download size={14} />
+                                </button>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="text-xs text-slate-500 italic">No existen documentos versionados en la biblioteca para este inquilino.</p>
           )}
         </div>
 

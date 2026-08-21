@@ -14,7 +14,9 @@ const TOKEN_KEY = 'dpo_token';
 
 export function getStoredToken(): string | null {
   if (typeof window === 'undefined') return null;
-  return localStorage.getItem(TOKEN_KEY) || localStorage.getItem('token');
+  const token = localStorage.getItem(TOKEN_KEY) || localStorage.getItem('token');
+  if (!token || token === 'null' || token === 'undefined') return null;
+  return token;
 }
 
 /**

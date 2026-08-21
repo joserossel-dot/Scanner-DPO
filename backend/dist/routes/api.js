@@ -78,6 +78,10 @@ function addBusinessDays(date, days) {
 }
 // Enable OPTIONS pre-flight calls globally
 router.options('*', cors());
+// Dummy dashboard endpoint to resolve any ghost 404s
+router.get('/dashboard', adminCors, (req, res) => {
+    res.json({ success: true, message: "Dashboard API is active." });
+});
 // --- TESTING ENDPOINTS ---
 if (process.env.NODE_ENV !== 'production') {
     router.delete('/testing/reset-my-data', adminCors, authenticateToken, async (req, res) => {
@@ -327,7 +331,36 @@ router.put('/config/:domain', adminCors, authenticateToken, async (req, res) => 
 router.get('/configs', adminCors, authenticateToken, async (req, res) => {
     const db = getDb();
     try {
-        const result = await db.query('SELECT domain, company_name, policy_version, banner_title, banner_description, api_key, updated_at FROM site_configs WHERE user_id = $1 ORDER BY updated_at DESC', [req.user.id]);
+        let result = await db.query('SELECT domain, company_name, policy_version, banner_title, banner_description, api_key, updated_at FROM site_configs WHERE user_id = $1 ORDER BY updated_at DESC', [req.user.id]);
+        if (!result.rowCount || result.rowCount === 0) {
+            // Create a default domain configuration for the tenant so they always have an active domain
+            const companyName = req.user.company_name || 'Mi Empresa';
+            const cleanDomain = companyName.toLowerCase().replace(/[^a-z0-9]/g, '') + '.com';
+            const apiKey = 'pt_live_' + crypto.randomBytes(16).toString('hex');
+            const defaultPolicy = {
+                representative: 'Representante de Datos',
+                representative_email: `privacidad@${cleanDomain}`,
+                purposes: 'Finalidades del tratamiento declaradas en el portal.',
+                retention_time: '24 meses.',
+                exercise_channels: 'Formulario ARCO+ del sitio web.'
+            };
+            await db.query(`
+        INSERT INTO site_configs (domain, company_name, policy_version, policy_content, banner_title, banner_description, updated_at, user_id, api_key)
+        VALUES ($1, $2, $3, $4, $5, $6, CURRENT_TIMESTAMP, $7, $8)
+        ON CONFLICT (domain) DO NOTHING
+      `, [
+                cleanDomain,
+                companyName,
+                'v1.0.0',
+                JSON.stringify(defaultPolicy),
+                'Control de Cookies',
+                'Utilizamos cookies esenciales para el funcionamiento del sitio, y cookies analíticas/comerciales opcionales conforme a la Ley N° 21.719.',
+                req.user.id,
+                apiKey
+            ]);
+            // Refetch after insertion
+            result = await db.query('SELECT domain, company_name, policy_version, banner_title, banner_description, api_key, updated_at FROM site_configs WHERE user_id = $1 ORDER BY updated_at DESC', [req.user.id]);
+        }
         res.json(result.rows);
     }
     catch (error) {
@@ -798,6 +831,103 @@ router.put('/training/materials/:client_id', adminCors, authenticateToken, async
         updated_at = CURRENT_TIMESTAMP
     `, [client_id, presentation_url, policy_text]);
         return res.json({ success: true });
+    }
+    catch (error) {
+        return res.status(500).json({ error: error.message });
+    }
+});
+// --- DOCUMENT VERSIONING ENDPOINTS ---
+// 21. List all active documents for the tenant
+router.get('/documents', adminCors, authenticateToken, async (req, res) => {
+    try {
+        const db = getDb();
+        const result = await db.query('SELECT * FROM documents WHERE client_id = $1 AND is_active = TRUE ORDER BY created_at DESC', [req.user.id]);
+        return res.json(result.rows);
+    }
+    catch (error) {
+        return res.status(500).json({ error: error.message });
+    }
+});
+// 22. Get history (versions) for a specific document
+router.get('/documents/:document_id/history', adminCors, authenticateToken, async (req, res) => {
+    const { document_id } = req.params;
+    try {
+        const db = getDb();
+        // Validate ownership
+        const docRes = await db.query('SELECT 1 FROM documents WHERE id = $1 AND client_id = $2', [document_id, req.user.id]);
+        if (docRes.rowCount === 0) {
+            return res.status(403).json({ error: 'No autorizado o el documento no existe.' });
+        }
+        const result = await db.query('SELECT id, document_id, version_number, change_summary, author_id, created_at FROM document_versions WHERE document_id = $1 ORDER BY version_number DESC', [document_id]);
+        return res.json(result.rows);
+    }
+    catch (error) {
+        return res.status(500).json({ error: error.message });
+    }
+});
+// 23. Get specific version content
+router.get('/documents/:document_id/version/:version_number', adminCors, authenticateToken, async (req, res) => {
+    const { document_id, version_number } = req.params;
+    try {
+        const db = getDb();
+        // Validate ownership
+        const docRes = await db.query('SELECT title, document_type FROM documents WHERE id = $1 AND client_id = $2', [document_id, req.user.id]);
+        if (docRes.rowCount === 0) {
+            return res.status(403).json({ error: 'No autorizado o el documento no existe.' });
+        }
+        const result = await db.query('SELECT * FROM document_versions WHERE document_id = $1 AND version_number = $2', [document_id, parseInt(version_number)]);
+        if (result.rowCount === 0) {
+            return res.status(404).json({ error: 'Versión no encontrada.' });
+        }
+        return res.json({
+            document: docRes.rows[0],
+            version: result.rows[0]
+        });
+    }
+    catch (error) {
+        return res.status(500).json({ error: error.message });
+    }
+});
+// 24. Create or update a document (create new version)
+router.post('/documents/update', adminCors, authenticateToken, async (req, res) => {
+    // If document_id is not provided, it creates a new document.
+    const { document_id, title, document_type, content, change_summary } = req.body;
+    if (!content) {
+        return res.status(400).json({ error: 'El contenido del documento es obligatorio.' });
+    }
+    try {
+        const db = getDb();
+        let docId = document_id;
+        let nextVersion = 1;
+        if (docId) {
+            // Validate ownership
+            const docRes = await db.query('SELECT 1 FROM documents WHERE id = $1 AND client_id = $2', [docId, req.user.id]);
+            if (docRes.rowCount === 0) {
+                return res.status(403).json({ error: 'No autorizado o el documento no existe.' });
+            }
+            // Get latest version number
+            const verRes = await db.query('SELECT MAX(version_number) as max_ver FROM document_versions WHERE document_id = $1', [docId]);
+            if (verRes.rows[0]?.max_ver) {
+                nextVersion = verRes.rows[0].max_ver + 1;
+            }
+        }
+        else {
+            if (!title || !document_type) {
+                return res.status(400).json({ error: 'Falta título o tipo de documento para crearlo.' });
+            }
+            // Create document
+            const insertDocRes = await db.query(`
+        INSERT INTO documents (client_id, title, document_type)
+        VALUES ($1, $2, $3) RETURNING id
+      `, [req.user.id, title, document_type]);
+            docId = insertDocRes.rows[0].id;
+        }
+        // Insert new version
+        const insertVerRes = await db.query(`
+      INSERT INTO document_versions (document_id, version_number, content, change_summary, author_id)
+      VALUES ($1, $2, $3, $4, $5) RETURNING *
+    `, [docId, nextVersion, content, change_summary || 'Actualización de documento', req.user.id]);
+        return res.json({ success: true, document_id: docId, version: insertVerRes.rows[0] });
     }
     catch (error) {
         return res.status(500).json({ error: error.message });

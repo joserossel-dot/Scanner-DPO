@@ -356,6 +356,28 @@ export async function initDb() {
       created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
     )
   `);
+    // Document Versioning Module Tables
+    await pool.query(`
+    CREATE TABLE IF NOT EXISTS documents (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      client_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      title VARCHAR(255) NOT NULL,
+      document_type VARCHAR(100) NOT NULL,
+      created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+      is_active BOOLEAN DEFAULT TRUE
+    )
+  `);
+    await pool.query(`
+    CREATE TABLE IF NOT EXISTS document_versions (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      document_id UUID NOT NULL REFERENCES documents(id) ON DELETE CASCADE,
+      version_number INTEGER NOT NULL,
+      content TEXT NOT NULL,
+      change_summary TEXT,
+      author_id UUID REFERENCES users(id) ON DELETE SET NULL,
+      created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+    )
+  `);
     // Run the cleanup to remove legacy FIND_ROPA_ findings from audit_reports (Step 3)
     try {
         const reportsToClean = await pool.query(`SELECT id, findings FROM audit_reports WHERE findings::text LIKE '%FIND_ROPA_%'`);
