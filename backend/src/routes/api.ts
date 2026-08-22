@@ -939,7 +939,7 @@ router.get('/training/materials/:client_id', openCors, async (req: any, res) => 
     // Default professional materials if not customized yet
     return res.json({
       client_id,
-      presentation_url: 'https://docs.google.com/presentation/d/123456/embed',
+      presentation_url: '',
       policy_text: 'Directrices Corporativas de Privacidad y Protección de Datos:\n\n1. Respetar el principio de finalidad y proporcionalidad de los datos.\n2. Cifrar los datos sensibles de salud, biométricos o financieros.\n3. Recopilar datos solo tras consentimiento expreso del titular.\n4. No compartir bases de datos sin base legal clara.\n5. Canalizar solicitudes de usuarios al Canal ARCO+ oficial.'
     });
   } catch (error: any) {

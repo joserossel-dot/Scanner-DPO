@@ -294,11 +294,10 @@ export default function EmployeeTrainingDashboard({ token }: EmployeeTrainingDas
               
               <form onSubmit={handleSaveMaterials} className="space-y-3.5">
                 <div className="space-y-1">
-                  <label className="text-[10px] font-bold text-slate-450 block">URL Diapositivas Explicativas</label>
+                  <label className="text-[10px] font-bold text-slate-450 block">URL Diapositivas Explicativas (Opcional)</label>
                   <input
                     type="text"
-                    required
-                    placeholder="https://docs.google.com/presentation/..."
+                    placeholder="https://docs.google.com/presentation/... (Dejar en blanco para láminas nativas)"
                     value={presentationUrl}
                     onChange={(e) => setPresentationUrl(e.target.value)}
                     className="w-full bg-slate-950 border border-slate-850 text-xs text-white rounded-xl p-2.5 outline-none focus:border-emerald-500 transition-all font-mono"
