@@ -52,6 +52,7 @@ import {
   ChevronDown,
   ChevronUp,
   FolderLock,
+  ClipboardList,
   Info
 } from 'lucide-react';
 
