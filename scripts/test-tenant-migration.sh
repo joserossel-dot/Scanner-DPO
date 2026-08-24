@@ -7,6 +7,21 @@ activation="$repo_dir/backend/src/database/migrations/006_tenant_rls_activation.
 cluster_dir="$(mktemp -d "${TMPDIR:-/tmp}/scanner-dpo-pg.XXXXXX")"
 port="${SCANNER_DPO_TEST_PG_PORT:-55432}"
 
+# Debian and Ubuntu install versioned PostgreSQL binaries outside the default
+# PATH used by GitHub Actions. pg_config provides the active installation path.
+if ! command -v pg_config >/dev/null 2>&1; then
+  echo "ERROR: pg_config not found; install the PostgreSQL server development runtime." >&2
+  exit 1
+fi
+postgres_bin="$(pg_config --bindir)"
+for postgres_command in initdb pg_ctl createdb psql; do
+  if [[ ! -x "$postgres_bin/$postgres_command" ]]; then
+    echo "ERROR: PostgreSQL command not found: $postgres_bin/$postgres_command" >&2
+    exit 1
+  fi
+done
+export PATH="$postgres_bin:$PATH"
+
 cleanup() {
   pg_ctl -D "$cluster_dir" -m fast stop >/dev/null 2>&1 || true
   rm -rf "$cluster_dir"
