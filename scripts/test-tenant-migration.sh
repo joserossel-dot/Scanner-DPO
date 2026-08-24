@@ -29,7 +29,11 @@ cleanup() {
 trap cleanup EXIT
 
 initdb -D "$cluster_dir" --auth=trust --no-locale --encoding=UTF8 >/dev/null
-pg_ctl -D "$cluster_dir" -o "-h 127.0.0.1 -p $port" -w start >/dev/null
+if ! pg_ctl -D "$cluster_dir" -l "$cluster_dir/postgres.log" \
+  -o "-h 127.0.0.1 -p $port -k $cluster_dir" -w start >/dev/null; then
+  cat "$cluster_dir/postgres.log" >&2
+  exit 1
+fi
 createdb -h 127.0.0.1 -p "$port" scanner_dpo_migration_test
 psql_cmd=(psql -X -v ON_ERROR_STOP=1 -h 127.0.0.1 -p "$port" -d scanner_dpo_migration_test)
 
