@@ -1,47 +1,21 @@
 import { Router } from 'express';
-import cors from 'cors';
 import { getDb } from '../database/db.js';
 import { authenticateToken } from '../middlewares/auth.js';
+import { resolveActiveOrganization, requireOrganizationPermission } from '../tenancy/organizationContext.js';
 
 const router = Router();
 
-// CORS setup matching dashboard origins
-const adminCors = cors((req: any, callback: any) => {
-  const origin = req.header('Origin');
-  const host = req.header('Host');
-
-  const allowedOrigins = [
-    process.env.DASHBOARD_ORIGIN,
-    'http://localhost:5173',
-    'http://localhost:3000',
-    host
-  ].filter(Boolean) as string[];
-
-  const isAllowed = !origin || allowedOrigins.some(allowed => 
-    origin === allowed || 
-    origin === `https://${allowed}` || 
-    origin === `http://${allowed}`
-  );
-
-  let corsOptions;
-  if (isAllowed || process.env.NODE_ENV !== 'production') {
-    corsOptions = { origin: true, credentials: true };
-  } else {
-    corsOptions = { origin: false };
-  }
-  callback(null, corsOptions);
-});
-
 // Protect all routes under this router
 router.use(authenticateToken);
+router.use(resolveActiveOrganization);
 
 // GET /api/transfers - List all registered transfers for user
-router.get('/', adminCors, async (req: any, res) => {
+router.get('/', requireOrganizationPermission('compliance.read'), async (req: any, res) => {
   const db = getDb();
   try {
     const result = await db.query(
-      'SELECT * FROM international_transfers WHERE user_id = $1 ORDER BY created_at DESC',
-      [req.user.id]
+      'SELECT * FROM international_transfers WHERE organization_id = $1 ORDER BY created_at DESC',
+      [req.organization.id]
     );
     const mapped = result.rows.map((row: any) => ({
       ...row,
@@ -58,7 +32,7 @@ router.get('/', adminCors, async (req: any, res) => {
 });
 
 // POST /api/transfers - Register a new transfer flow for user
-router.post('/', adminCors, async (req: any, res) => {
+router.post('/', requireOrganizationPermission('compliance.write'), async (req: any, res) => {
   const { domain, vendor_name, provider_name, destination_country, country, data_categories, transfer_mechanism, has_signed_scc, has_scc, scc_document_url, signature_status, has_dpa } = req.body;
 
   const vName = vendor_name || provider_name;
@@ -74,8 +48,8 @@ router.post('/', adminCors, async (req: any, res) => {
   try {
     const result = await db.query(
       `INSERT INTO international_transfers 
-       (domain, vendor_name, destination_country, data_categories, transfer_mechanism, has_signed_scc, scc_document_url, signature_status, user_id)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+       (domain, vendor_name, destination_country, data_categories, transfer_mechanism, has_signed_scc, scc_document_url, signature_status, user_id, organization_id)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
        RETURNING *`,
       [
         domain,
@@ -86,7 +60,8 @@ router.post('/', adminCors, async (req: any, res) => {
         hasScc,
         scc_document_url || null,
         sigStatus,
-        req.user.id
+        req.user.id,
+        req.organization.id
       ]
     );
     
@@ -106,7 +81,7 @@ router.post('/', adminCors, async (req: any, res) => {
 });
 
 // PUT /api/transfers/:id - Update transfer mechanism or documents
-router.put('/:id', adminCors, async (req: any, res) => {
+router.put('/:id', requireOrganizationPermission('compliance.write'), async (req: any, res) => {
   const { id } = req.params;
   const { vendor_name, provider_name, destination_country, country, data_categories, transfer_mechanism, has_signed_scc, has_scc, scc_document_url, signature_status, has_dpa } = req.body;
 
@@ -118,7 +93,7 @@ router.put('/:id', adminCors, async (req: any, res) => {
   const db = getDb();
   try {
     // Check if transfer exists and belongs to the user
-    const check = await db.query('SELECT 1 FROM international_transfers WHERE id = $1 AND user_id = $2', [id, req.user.id]);
+    const check = await db.query('SELECT 1 FROM international_transfers WHERE id = $1 AND organization_id = $2', [id, req.organization.id]);
     if (check.rowCount === 0) {
       return res.status(404).json({ error: 'Registro de transferencia no encontrado o sin permisos.' });
     }
@@ -133,7 +108,7 @@ router.put('/:id', adminCors, async (req: any, res) => {
            scc_document_url = COALESCE($7, scc_document_url),
            signature_status = COALESCE($8, signature_status),
            updated_at = CURRENT_TIMESTAMP
-       WHERE id = $1 AND user_id = $9
+       WHERE id = $1 AND organization_id = $9
        RETURNING *`,
       [
         id,
@@ -144,7 +119,7 @@ router.put('/:id', adminCors, async (req: any, res) => {
         hasScc,
         scc_document_url,
         sigStatus,
-        req.user.id
+        req.organization.id
       ]
     );
     
@@ -164,16 +139,16 @@ router.put('/:id', adminCors, async (req: any, res) => {
 });
 
 // DELETE /api/transfers/:id - Delete transfer record
-router.delete('/:id', adminCors, async (req: any, res) => {
+router.delete('/:id', requireOrganizationPermission('compliance.write'), async (req: any, res) => {
   const { id } = req.params;
   const db = getDb();
   try {
-    const check = await db.query('SELECT 1 FROM international_transfers WHERE id = $1 AND user_id = $2', [id, req.user.id]);
+    const check = await db.query('SELECT 1 FROM international_transfers WHERE id = $1 AND organization_id = $2', [id, req.organization.id]);
     if (check.rowCount === 0) {
       return res.status(404).json({ error: 'Registro de transferencia no encontrado o sin permisos.' });
     }
 
-    await db.query('DELETE FROM international_transfers WHERE id = $1 AND user_id = $2', [id, req.user.id]);
+    await db.query('DELETE FROM international_transfers WHERE id = $1 AND organization_id = $2', [id, req.organization.id]);
     res.json({ message: 'Registro de transferencia eliminado exitosamente.' });
   } catch (error: any) {
     console.error('Error deleting international transfer:', error.message);
@@ -182,7 +157,7 @@ router.delete('/:id', adminCors, async (req: any, res) => {
 });
 
 // GET /api/transfers/countries - List all adequate countries and reference notes
-router.get('/countries', adminCors, async (req: any, res) => {
+router.get('/countries', requireOrganizationPermission('compliance.read'), async (req: any, res) => {
   const db = getDb();
   try {
     const result = await db.query('SELECT * FROM adequate_countries_reference ORDER BY country_name ASC');
@@ -194,7 +169,7 @@ router.get('/countries', adminCors, async (req: any, res) => {
 });
 
 // POST /api/transfers/generate-scc - Generate custom Model Contractual Clauses (SCC)
-router.post('/generate-scc', adminCors, async (req: any, res) => {
+router.post('/generate-scc', requireOrganizationPermission('compliance.read'), async (req: any, res) => {
   const { exporterName, exporterRut, exporterAddress, importerName, importerCountry, importerAddress, dataCategories } = req.body;
 
   if (!exporterName || !exporterRut || !exporterAddress || !importerName || !importerCountry || !importerAddress) {

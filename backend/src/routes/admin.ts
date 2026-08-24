@@ -1,37 +1,8 @@
 import { Router } from 'express';
-import cors from 'cors';
 import { getDb } from '../database/db.js';
 import { authenticateToken } from '../middlewares/auth.js';
 
 const router = Router();
-
-const adminCors = cors((req: any, callback: any) => {
-  const origin = req.header('Origin');
-  const host = req.header('Host');
-  const allowedOrigins = [
-    process.env.DASHBOARD_ORIGIN,
-    'http://localhost:5173',
-    'http://localhost:3000',
-    host
-  ].filter(Boolean);
-
-  const isAllowed = !origin || allowedOrigins.some(allowed => 
-    origin === allowed || 
-    origin === `https://${allowed}` || 
-    origin === `http://${allowed}`
-  );
-
-  let corsOptions;
-  if (isAllowed || process.env.NODE_ENV !== 'production') {
-    corsOptions = { origin: true, credentials: true };
-  } else {
-    corsOptions = { origin: false };
-  }
-  callback(null, corsOptions);
-});
-
-// OPTIONS pre-flight handler
-router.options('*', adminCors);
 
 // Middleware to check superadmin privileges
 const requireSuperAdmin = (req: any, res: any, next: any) => {
@@ -42,7 +13,7 @@ const requireSuperAdmin = (req: any, res: any, next: any) => {
 };
 
 // GET /api/admin/tenants - Get all tenant organizations with CRM details (only superadmin)
-router.get('/tenants', adminCors, authenticateToken, requireSuperAdmin, async (req: any, res) => {
+router.get('/tenants', authenticateToken, requireSuperAdmin, async (req: any, res) => {
   const db = getDb();
   try {
     const result = await db.query(`
@@ -69,7 +40,7 @@ router.get('/tenants', adminCors, authenticateToken, requireSuperAdmin, async (r
 });
 
 // GET /api/admin/leads - Get all leads from free scan (only superadmin)
-router.get('/leads', adminCors, authenticateToken, requireSuperAdmin, async (req: any, res) => {
+router.get('/leads', authenticateToken, requireSuperAdmin, async (req: any, res) => {
   const db = getDb();
   try {
     const result = await db.query(
@@ -83,7 +54,7 @@ router.get('/leads', adminCors, authenticateToken, requireSuperAdmin, async (req
 });
 
 // PUT /api/admin/leads/:id - Update lead sales status & notes (only superadmin)
-router.put('/leads/:id', adminCors, authenticateToken, requireSuperAdmin, async (req: any, res) => {
+router.put('/leads/:id', authenticateToken, requireSuperAdmin, async (req: any, res) => {
   const db = getDb();
   const { id } = req.params;
   const { status, sales_notes } = req.body;
@@ -103,7 +74,7 @@ router.put('/leads/:id', adminCors, authenticateToken, requireSuperAdmin, async 
 });
 
 // PUT /api/admin/tenants/:id - Update tenant sales status, notes & subscription (only superadmin)
-router.put('/tenants/:id', adminCors, authenticateToken, requireSuperAdmin, async (req: any, res) => {
+router.put('/tenants/:id', authenticateToken, requireSuperAdmin, async (req: any, res) => {
   const db = getDb();
   const { id } = req.params;
   const { sales_status, sales_notes, subscription_plan, subscription_status } = req.body;

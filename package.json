@@ -14,7 +14,9 @@
     "dev:widget": "npm run dev -w widget",
     "build:widget": "npm run build -w widget",
     "build:frontend": "npm run build -w frontend && mkdir -p frontend/dist && cp widget/dist/widget.js frontend/dist/widget.js",
-    "build:all": "npm run build:widget && npm run build:frontend",
+    "build": "npm run build -w backend && npm run build:widget && npm run build:frontend",
+    "build:all": "npm run build",
+    "test": "npm run test --workspaces --if-present",
     "start": "npm run start -w backend"
   },
   "dependencies": {

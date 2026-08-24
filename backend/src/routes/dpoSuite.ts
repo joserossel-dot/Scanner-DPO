@@ -1,48 +1,23 @@
 import { Router } from 'express';
-import cors from 'cors';
 import { getDb } from '../database/db.js';
 import { authenticateToken } from '../middlewares/auth.js';
+import { resolveActiveOrganization, requireOrganizationPermission } from '../tenancy/organizationContext.js';
 
 const router = Router();
 
-// CORS setup matching dashboard origins
-const adminCors = cors((req: any, callback: any) => {
-  const origin = req.header('Origin');
-  const host = req.header('Host');
-  const allowedOrigins = [
-    process.env.DASHBOARD_ORIGIN,
-    'http://localhost:5173',
-    'http://localhost:3000',
-    host
-  ].filter(Boolean);
-
-  const isAllowed = !origin || allowedOrigins.some(allowed => 
-    origin === allowed || 
-    origin === `https://${allowed}` || 
-    origin === `http://${allowed}`
-  );
-
-  let corsOptions;
-  if (isAllowed || process.env.NODE_ENV !== 'production') {
-    corsOptions = { origin: true, credentials: true };
-  } else {
-    corsOptions = { origin: false };
-  }
-  callback(null, corsOptions);
-});
-
 // Protect all routes
 router.use(authenticateToken);
+router.use(resolveActiveOrganization);
 
 // --- RISK MATRIX CRUD ---
 
 // GET /api/dpo/risks - List risks for the authenticated user
-router.get('/risks', adminCors, async (req: any, res) => {
+router.get('/risks', requireOrganizationPermission('compliance.read'), async (req: any, res) => {
   const db = getDb();
   try {
     const result = await db.query(
-      'SELECT * FROM risk_matrix WHERE user_id = $1 ORDER BY created_at DESC',
-      [req.user.id]
+      'SELECT * FROM risk_matrix WHERE organization_id = $1 ORDER BY created_at DESC',
+      [req.organization.id]
     );
     res.json(result.rows);
   } catch (error: any) {
@@ -52,7 +27,7 @@ router.get('/risks', adminCors, async (req: any, res) => {
 });
 
 // POST /api/dpo/risks - Add new risk in the matrix
-router.post('/risks', adminCors, async (req: any, res) => {
+router.post('/risks', requireOrganizationPermission('compliance.write'), async (req: any, res) => {
   const { process_name, identified_risk, severity, mitigation_control, status } = req.body;
 
   if (!process_name || !identified_risk || !severity || !mitigation_control) {
@@ -62,11 +37,12 @@ router.post('/risks', adminCors, async (req: any, res) => {
   const db = getDb();
   try {
     const result = await db.query(
-      `INSERT INTO risk_matrix (user_id, process_name, identified_risk, severity, mitigation_control, status)
-       VALUES ($1, $2, $3, $4, $5, $6)
+      `INSERT INTO risk_matrix (user_id, organization_id, process_name, identified_risk, severity, mitigation_control, status)
+       VALUES ($1, $2, $3, $4, $5, $6, $7)
        RETURNING *`,
       [
         req.user.id,
+        req.organization.id,
         process_name,
         identified_risk,
         severity,
@@ -82,7 +58,7 @@ router.post('/risks', adminCors, async (req: any, res) => {
 });
 
 // PUT /api/dpo/risks/:id - Update risk mitigation status or details
-router.put('/risks/:id', adminCors, async (req: any, res) => {
+router.put('/risks/:id', requireOrganizationPermission('compliance.write'), async (req: any, res) => {
   const { id } = req.params;
   const { status, mitigation_control } = req.body;
 
@@ -95,9 +71,9 @@ router.put('/risks/:id', adminCors, async (req: any, res) => {
     const result = await db.query(
       `UPDATE risk_matrix
        SET status = $1, mitigation_control = $2
-       WHERE id = $3 AND user_id = $4
+       WHERE id = $3 AND organization_id = $4
        RETURNING *`,
-      [status, mitigation_control, id, req.user.id]
+      [status, mitigation_control, id, req.organization.id]
     );
 
     if (result.rowCount === 0) {
@@ -111,13 +87,13 @@ router.put('/risks/:id', adminCors, async (req: any, res) => {
 });
 
 // DELETE /api/dpo/risks/:id - Delete a risk from the matrix
-router.delete('/risks/:id', adminCors, async (req: any, res) => {
+router.delete('/risks/:id', requireOrganizationPermission('compliance.write'), async (req: any, res) => {
   const { id } = req.params;
   const db = getDb();
   try {
     const result = await db.query(
-      'DELETE FROM risk_matrix WHERE id = $1 AND user_id = $2',
-      [id, req.user.id]
+      'DELETE FROM risk_matrix WHERE id = $1 AND organization_id = $2',
+      [id, req.organization.id]
     );
 
     if (result.rowCount === 0) {
@@ -133,12 +109,12 @@ router.delete('/risks/:id', adminCors, async (req: any, res) => {
 // --- WHISTLEBLOWER CANAL ENDPOINTS ---
 
 // GET /api/dpo/whistleblower - List reports for the authenticated user
-router.get('/whistleblower', adminCors, async (req: any, res) => {
+router.get('/whistleblower', requireOrganizationPermission('compliance.read'), async (req: any, res) => {
   const db = getDb();
   try {
     const result = await db.query(
-      'SELECT * FROM whistleblower_reports WHERE user_id = $1 ORDER BY reported_date DESC',
-      [req.user.id]
+      'SELECT * FROM whistleblower_reports WHERE organization_id = $1 ORDER BY reported_date DESC',
+      [req.organization.id]
     );
     res.json(result.rows);
   } catch (error: any) {
@@ -148,7 +124,7 @@ router.get('/whistleblower', adminCors, async (req: any, res) => {
 });
 
 // POST /api/dpo/whistleblower - Create whistleblower report (for tests or wizard)
-router.post('/whistleblower', adminCors, async (req: any, res) => {
+router.post('/whistleblower', requireOrganizationPermission('compliance.write'), async (req: any, res) => {
   const { incident_description, status } = req.body;
 
   if (!incident_description) {
@@ -158,10 +134,10 @@ router.post('/whistleblower', adminCors, async (req: any, res) => {
   const db = getDb();
   try {
     const result = await db.query(
-      `INSERT INTO whistleblower_reports (user_id, incident_description, status)
-       VALUES ($1, $2, $3)
+      `INSERT INTO whistleblower_reports (user_id, organization_id, incident_description, status)
+       VALUES ($1, $2, $3, $4)
        RETURNING *`,
-      [req.user.id, incident_description, status || 'PENDING']
+      [req.user.id, req.organization.id, incident_description, status || 'PENDING']
     );
     res.status(201).json(result.rows[0]);
   } catch (error: any) {
@@ -171,7 +147,7 @@ router.post('/whistleblower', adminCors, async (req: any, res) => {
 });
 
 // PATCH /api/dpo/whistleblower/:id/status - Change status of a whistleblower report
-router.patch('/whistleblower/:id/status', adminCors, async (req: any, res) => {
+router.patch('/whistleblower/:id/status', requireOrganizationPermission('compliance.write'), async (req: any, res) => {
   const { id } = req.params;
   const { status } = req.body;
 
@@ -184,9 +160,9 @@ router.patch('/whistleblower/:id/status', adminCors, async (req: any, res) => {
     const result = await db.query(
       `UPDATE whistleblower_reports
        SET status = $1
-       WHERE id = $2 AND user_id = $3
+       WHERE id = $2 AND organization_id = $3
        RETURNING *`,
-      [status, id, req.user.id]
+      [status, id, req.organization.id]
     );
 
     if (result.rowCount === 0) {

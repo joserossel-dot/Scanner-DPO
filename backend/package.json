@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "tsx watch src/index.ts",
     "build": "tsc",
+    "test": "npm run build && node --test dist/database/schemaContract.test.js dist/scanner/networkSafety.test.js tests/*.test.mjs",
     "start": "node dist/index.js"
   },
   "dependencies": {
@@ -17,6 +18,8 @@
     "express-rate-limit": "^8.6.2",
     "jsonwebtoken": "^9.0.3",
     "pg": "^8.11.5",
+    "rate-limit-redis": "^6.0.1",
+    "redis": "^6.2.1",
     "resend": "^6.19.0"
   },
   "devDependencies": {
