@@ -7,6 +7,7 @@ import { sendPasswordResetEmail } from '../services/emailService.js';
 import rateLimit from 'express-rate-limit';
 import { createRateLimitStore } from '../security/rateLimitStore.js';
 import { deriveSessionVersion } from '../security/sessionVersion.js';
+import { provisionOrganizationForUser } from '../tenancy/provisionOrganization.js';
 
 const router = Router();
 
@@ -76,13 +77,23 @@ router.post('/register', authRateLimiter, async (req, res) => {
     const salt = await bcrypt.genSalt(10);
     const passwordHash = await bcrypt.hash(password, salt);
 
-    // Save user to DB (default role: 'tenant')
-    const insertRes = await db.query(
-      'INSERT INTO users (email, password_hash, company_name, role) VALUES ($1, $2, $3, $4) RETURNING id, email, company_name, role',
-      [email, passwordHash, companyName, 'tenant']
-    );
-
-    const user = insertRes.rows[0];
+    const client = await db.connect();
+    let user;
+    try {
+      await client.query('BEGIN');
+      const insertRes = await client.query(
+        'INSERT INTO users (email, password_hash, company_name, role) VALUES ($1, $2, $3, $4) RETURNING id, email, company_name, role',
+        [email, passwordHash, companyName, 'tenant']
+      );
+      user = insertRes.rows[0];
+      await provisionOrganizationForUser(client, String(user.id), companyName);
+      await client.query('COMMIT');
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
+    }
 
     // Generate JWT
     const token = jwt.sign(

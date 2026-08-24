@@ -21,3 +21,12 @@ test('tenant-owned CRUD routes filter and write organization_id', async () => {
     assert.match(source, /req\.organization\.id/);
   }
 });
+
+test('registration provisions a complete organization owner transactionally', async () => {
+  const source = await readFile(routePath('auth'), 'utf8');
+  assert.match(source, /client\.query\('BEGIN'\)/);
+  assert.match(source, /provisionOrganizationForUser\(client/);
+  assert.match(source, /client\.query\('COMMIT'\)/);
+  assert.match(source, /client\.query\('ROLLBACK'\)/);
+  assert.match(source, /client\.release\(\)/);
+});

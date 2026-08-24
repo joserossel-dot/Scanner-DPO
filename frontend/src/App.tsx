@@ -336,7 +336,7 @@ export function Dashboard({ token, user, onLogout, initialTab }: DashboardProps)
       const cleanDomain = (() => {
         try { return new URL(scanUrl).hostname; } catch (e) { return scanUrl.replace(/^https?:\/\//, '').replace(/\/$/, ''); }
       })();
-      const res = await fetch(`${API_BASE}/api/reports/evaluate`, {
+      const res = await authFetch(`${API_BASE}/api/reports/evaluate`, {
         method: 'POST',
         headers,
         body: JSON.stringify({ ...answers, domain: cleanDomain })
@@ -388,7 +388,7 @@ export function Dashboard({ token, user, onLogout, initialTab }: DashboardProps)
       if (token) {
         scanHeaders['Authorization'] = `Bearer ${token}`;
       }
-      const res = await fetch(`${API_BASE}/api/scan`, {
+      const res = await authFetch(`${API_BASE}/api/scan`, {
         method: 'POST',
         headers: scanHeaders,
         body: JSON.stringify({ url })
@@ -404,7 +404,7 @@ export function Dashboard({ token, user, onLogout, initialTab }: DashboardProps)
         if (token) {
           headers['Authorization'] = `Bearer ${token}`;
         }
-        const diagRes = await fetch(`${API_BASE}/api/reports/diagnosis${DEV_DOMAIN_PARAM}`, {
+        const diagRes = await authFetch(`${API_BASE}/api/reports/diagnosis${DEV_DOMAIN_PARAM}`, {
           headers
         });
         if (diagRes.ok) {
@@ -433,7 +433,7 @@ export function Dashboard({ token, user, onLogout, initialTab }: DashboardProps)
       const cleanDomain = (() => {
         try { return new URL(scanUrl).hostname; } catch (e) { return scanUrl.replace(/^https?:\/\//, '').replace(/\/$/, ''); }
       })();
-      const res = await fetch(`${API_BASE}/api/reports/diagnosis?domain=${cleanDomain}`, { headers });
+      const res = await authFetch(`${API_BASE}/api/reports/diagnosis?domain=${cleanDomain}`, { headers });
       if (res.ok) {
         const data = await res.json();
         setDiagnosisData(data);
@@ -463,7 +463,7 @@ export function Dashboard({ token, user, onLogout, initialTab }: DashboardProps)
     }
     
     try {
-      const res = await fetch(`${API_BASE}/api/testing/reset-my-data`, {
+      const res = await authFetch(`${API_BASE}/api/testing/reset-my-data`, {
         method: 'DELETE'
       });
       
@@ -509,7 +509,7 @@ export function Dashboard({ token, user, onLogout, initialTab }: DashboardProps)
 
   const fetchLatestScan = async () => {
     try {
-      const res = await fetch(`${API_BASE}/api/scan/latest`);
+      const res = await authFetch(`${API_BASE}/api/scan/latest`);
       if (res.ok) {
         const data = await res.json();
         setLatestScan(data);
@@ -521,7 +521,7 @@ export function Dashboard({ token, user, onLogout, initialTab }: DashboardProps)
 
   const fetchConsentsStats = async () => {
     try {
-      const res = await fetch(`${API_BASE}/api/consents/stats`);
+      const res = await authFetch(`${API_BASE}/api/consents/stats`);
       if (res.ok) {
         const data = await res.json();
         setConsentsStats(data);
@@ -533,7 +533,7 @@ export function Dashboard({ token, user, onLogout, initialTab }: DashboardProps)
 
   const fetchConsentLogs = async () => {
     try {
-      const res = await fetch(`${API_BASE}/api/consents/logs`);
+      const res = await authFetch(`${API_BASE}/api/consents/logs`);
       if (res.ok) {
         const data = await res.json();
         setConsentLogs(data);
@@ -545,7 +545,7 @@ export function Dashboard({ token, user, onLogout, initialTab }: DashboardProps)
 
   const fetchArcoTickets = async () => {
     try {
-      const res = await fetch(`${API_BASE}/api/arco/tickets`);
+      const res = await authFetch(`${API_BASE}/api/arco/tickets`);
       if (res.ok) {
         const data = await res.json();
         setArcoTickets(data);
@@ -557,14 +557,14 @@ export function Dashboard({ token, user, onLogout, initialTab }: DashboardProps)
 
   const fetchConfig = async () => {
     try {
-      const configsRes = await fetch(`${API_BASE}/api/configs`);
+      const configsRes = await authFetch(`${API_BASE}/api/configs`);
       if (configsRes.ok) {
         const configsList = await configsRes.json();
         if (configsList.length > 0) {
           const dom = configsList[0].domain;
           setActiveDomain(dom);
 
-          const res = await fetch(`${API_BASE}/api/config/${encodeURIComponent(dom)}`);
+          const res = await authFetch(`${API_BASE}/api/config/${encodeURIComponent(dom)}`);
           if (res.ok) {
             const data = await res.json();
             setConfig(data);
@@ -587,7 +587,7 @@ export function Dashboard({ token, user, onLogout, initialTab }: DashboardProps)
 
   const fetchRopaList = async () => {
     try {
-      const response = await fetch(`${API_BASE}/api/ropa`);
+      const response = await authFetch(`${API_BASE}/api/ropa`);
       if (response.ok) {
         const data = await response.json();
         setRopaList(data);
@@ -600,7 +600,7 @@ export function Dashboard({ token, user, onLogout, initialTab }: DashboardProps)
   const fetchTransfers = async () => {
     if (!activeDomain) return;
     try {
-      const res = await fetch(`${API_BASE}/api/transfers?domain=${encodeURIComponent(activeDomain)}`);
+      const res = await authFetch(`${API_BASE}/api/transfers?domain=${encodeURIComponent(activeDomain)}`);
       if (res.ok) {
         const data = await res.json();
         setTransfers(data);
@@ -612,7 +612,7 @@ export function Dashboard({ token, user, onLogout, initialTab }: DashboardProps)
 
   const fetchCountries = async () => {
     try {
-      const res = await fetch(`${API_BASE}/api/transfers/countries`);
+      const res = await authFetch(`${API_BASE}/api/transfers/countries`);
       if (res.ok) {
         const data = await res.json();
         setCountries(data);
@@ -625,7 +625,7 @@ export function Dashboard({ token, user, onLogout, initialTab }: DashboardProps)
   const fetchIncidents = async () => {
     if (!activeDomain) return;
     try {
-      const res = await fetch(`${API_BASE}/api/incidents?domain=${encodeURIComponent(activeDomain)}`);
+      const res = await authFetch(`${API_BASE}/api/incidents?domain=${encodeURIComponent(activeDomain)}`);
       if (res.ok) {
         const data = await res.json();
         setIncidents(data);
@@ -649,7 +649,7 @@ export function Dashboard({ token, user, onLogout, initialTab }: DashboardProps)
     setIsScanning(true);
     showToast('Iniciando escaneo de cookies, formularios y políticas...', 'info');
     try {
-      const res = await fetch(`${API_BASE}/api/scan`, {
+      const res = await authFetch(`${API_BASE}/api/scan`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ url: scanUrl })
@@ -660,7 +660,8 @@ export function Dashboard({ token, user, onLogout, initialTab }: DashboardProps)
         showToast(`Escaneo finalizado con éxito. Score de cumplimiento: ${data.score}%`, 'success');
         handleFetchDiagnosis();
       } else {
-        showToast('Error al auditar el sitio web.', 'warning');
+        const error = await res.json().catch(() => null);
+        showToast(error?.error || 'Error al auditar el sitio web.', 'warning');
       }
     } catch (err) {
       console.error(err);
@@ -687,7 +688,7 @@ export function Dashboard({ token, user, onLogout, initialTab }: DashboardProps)
           channels: configChannels
         }
       };
-      const res = await fetch(`${API_BASE}/api/config/${encodeURIComponent(activeDomain || window.location.hostname)}`, {
+      const res = await authFetch(`${API_BASE}/api/config/${encodeURIComponent(activeDomain || window.location.hostname)}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)
@@ -720,7 +721,7 @@ export function Dashboard({ token, user, onLogout, initialTab }: DashboardProps)
         has_scc: signedScc,
         scc_url: sccUrl
       };
-      const res = await fetch(`${API_BASE}/api/transfers`, {
+      const res = await authFetch(`${API_BASE}/api/transfers`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)
@@ -741,7 +742,7 @@ export function Dashboard({ token, user, onLogout, initialTab }: DashboardProps)
 
   const handleUpdateTransfer = async (id: string, updatedFields: any) => {
     try {
-      const res = await fetch(`${API_BASE}/api/transfers/${id}`, {
+      const res = await authFetch(`${API_BASE}/api/transfers/${id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(updatedFields)
@@ -759,7 +760,7 @@ export function Dashboard({ token, user, onLogout, initialTab }: DashboardProps)
   const handleDeleteTransfer = async (id: string) => {
     if (!confirm('¿Seguro que deseas eliminar este proveedor?')) return;
     try {
-      const res = await fetch(`${API_BASE}/api/transfers/${id}`, {
+      const res = await authFetch(`${API_BASE}/api/transfers/${id}`, {
         method: 'DELETE'
       });
       if (res.ok) {
@@ -808,7 +809,7 @@ Firmas autorizadas:
 
   const handleResolveArco = async (id: string) => {
     try {
-      const res = await fetch(`${API_BASE}/api/arco/tickets/${id}/resolve`, {
+      const res = await authFetch(`${API_BASE}/api/arco/tickets/${id}/resolve`, {
         method: 'POST'
       });
       if (res.ok) {
@@ -835,7 +836,7 @@ Firmas autorizadas:
         status: incidentStatus
       };
 
-      const res = await fetch(`${API_BASE}/api/incidents`, {
+      const res = await authFetch(`${API_BASE}/api/incidents`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)
@@ -867,7 +868,7 @@ Firmas autorizadas:
         updateFields.agency_notified_at = new Date().toISOString();
         updateFields.titulars_notified_at = new Date().toISOString();
       }
-      const res = await fetch(`${API_BASE}/api/incidents/${id}`, {
+      const res = await authFetch(`${API_BASE}/api/incidents/${id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(updateFields)
@@ -887,7 +888,7 @@ Firmas autorizadas:
   const handleGenerateIncidentNotice = async (incident: any) => {
     setSelectedIncidentForNotice(incident);
     try {
-      const res = await fetch(`${API_BASE}/api/incidents/${incident.id}/generate-notice`, {
+      const res = await authFetch(`${API_BASE}/api/incidents/${incident.id}/generate-notice`, {
         method: 'POST'
       });
       if (res.ok) {
@@ -907,7 +908,7 @@ Firmas autorizadas:
   const handleScanVulnerabilities = async () => {
     setIsScanningVulnerabilities(true);
     try {
-      const res = await fetch(`${API_BASE}/api/incidents/scan-vulnerabilities`, {
+      const res = await authFetch(`${API_BASE}/api/incidents/scan-vulnerabilities`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ domain: scanUrl })
@@ -975,7 +976,7 @@ Firmas autorizadas:
           has_scc: false,
           scc_url: ''
         };
-        const res = await fetch(`${API_BASE}/api/transfers`, {
+        const res = await authFetch(`${API_BASE}/api/transfers`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(payload)
@@ -1921,7 +1922,7 @@ Firmas autorizadas:
                                             has_scc: displayScc,
                                             has_dpa: displayDpa
                                           };
-                                          const res = await fetch(`${API_BASE}/api/transfers`, {
+                                          const res = await authFetch(`${API_BASE}/api/transfers`, {
                                             method: 'POST',
                                             headers: { 'Content-Type': 'application/json' },
                                             body: JSON.stringify(payload)
