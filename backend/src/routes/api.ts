@@ -1,16 +1,14 @@
 import { Router } from 'express';
-import cors from 'cors';
 import { getDb } from '../database/db.js';
 import { runAudit } from '../services/crawlerService.js';
 import { analyzeScanResults } from '../services/ropaDraftService.js';
-import { authenticateToken } from '../middlewares/auth.js';
+import { authenticateToken, verifyAccessToken } from '../middlewares/auth.js';
+import { resolveActiveOrganization, requireOrganizationPermission } from '../tenancy/organizationContext.js';
 import { sendLeadAlert } from '../services/emailService.js';
 import rateLimit from 'express-rate-limit';
 import crypto from 'crypto';
-import jwt from 'jsonwebtoken';
 
 const router = Router();
-const JWT_SECRET: string = process.env.JWT_SECRET as string;
 
 // Rate limiters for public endpoints (P2-B)
 const publicScanLimiter = rateLimit({
@@ -23,41 +21,6 @@ const publicArcoLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
   max: 10,
   message: { error: 'Demasiados intentos de solicitudes ARCO+ desde esta IP. Intente nuevamente en 15 minutos.' }
-});
-
-// --- CORS CONFIGURATIONS ---
-// Public endpoints (Widget CMP and ARCO Form): accessible from anywhere
-const openCors = cors({
-  origin: '*',
-  methods: ['GET', 'POST', 'OPTIONS'],
-  allowedHeaders: ['Content-Type']
-});
-
-// Admin endpoints (Client Dashboard): restricted to dashboard origins
-const adminCors = cors((req: any, callback: any) => {
-  const origin = (req.headers?.origin || req.headers?.Origin || '') as string;
-  const host = (req.headers?.host || req.headers?.Host || '') as string;
-
-  const allowedOrigins = [
-    process.env.DASHBOARD_ORIGIN,
-    'http://localhost:5173',
-    'http://localhost:3000',
-    host
-  ].filter(Boolean) as string[];
-
-  const isAllowed = !origin || allowedOrigins.some(allowed => 
-    origin === allowed || 
-    origin === `https://${allowed}` || 
-    origin === `http://${allowed}`
-  );
-
-  let corsOptions;
-  if (isAllowed || process.env.NODE_ENV !== 'production') {
-    corsOptions = { origin: true, credentials: true };
-  } else {
-    corsOptions = { origin: false };
-  }
-  callback(null, corsOptions);
 });
 
 // Helper to parse JSON values safely
@@ -85,29 +48,26 @@ function addBusinessDays(date: Date, days: number): Date {
   return result;
 }
 
-// Enable OPTIONS pre-flight calls globally
-router.options('*', cors());
-
 // Dummy dashboard endpoint to resolve any ghost 404s
-router.get('/dashboard', adminCors, (req: any, res) => {
+router.get('/dashboard', authenticateToken, resolveActiveOrganization, requireOrganizationPermission('compliance.read'), (req: any, res) => {
   res.json({ success: true, message: "Dashboard API is active." });
 });
 
 // --- TESTING ENDPOINTS ---
 if (process.env.NODE_ENV !== 'production') {
-  router.delete('/testing/reset-my-data', adminCors, authenticateToken, async (req: any, res) => {
+  router.delete('/testing/reset-my-data', authenticateToken, resolveActiveOrganization, requireOrganizationPermission('compliance.write'), async (req: any, res) => {
     const db = getDb();
-    const userId = req.user.id;
+    const organizationId = req.organization.id;
     try {
-      await db.query("DELETE FROM ropa_inventory WHERE user_id = $1", [userId]);
-      await db.query("DELETE FROM audit_reports WHERE user_id = $1", [userId]);
-      await db.query("DELETE FROM privacy_policies WHERE user_id = $1", [userId]);
-      await db.query("DELETE FROM consent_logs WHERE user_id = $1", [userId]);
-      await db.query("DELETE FROM arco_requests WHERE user_id = $1", [userId]);
-      await db.query("DELETE FROM international_transfers WHERE user_id = $1", [userId]);
-      await db.query("DELETE FROM security_incidents WHERE user_id = $1", [userId]);
-      await db.query("DELETE FROM site_configs WHERE user_id = $1", [userId]);
-      await db.query("DELETE FROM document_downloads WHERE user_id = $1", [userId]);
+      await db.query("DELETE FROM ropa_inventory WHERE organization_id = $1", [organizationId]);
+      await db.query("DELETE FROM audit_reports WHERE organization_id = $1", [organizationId]);
+      await db.query("DELETE FROM privacy_policies WHERE organization_id = $1", [organizationId]);
+      await db.query("DELETE FROM consent_logs WHERE organization_id = $1", [organizationId]);
+      await db.query("DELETE FROM arco_requests WHERE organization_id = $1", [organizationId]);
+      await db.query("DELETE FROM international_transfers WHERE organization_id = $1", [organizationId]);
+      await db.query("DELETE FROM security_incidents WHERE organization_id = $1", [organizationId]);
+      await db.query("DELETE FROM site_configs WHERE organization_id = $1", [organizationId]);
+      await db.query("DELETE FROM document_downloads WHERE organization_id = $1", [organizationId]);
 
       res.json({ success: true, message: "Todos los datos de prueba han sido reseteados correctamente." });
     } catch (error: any) {
@@ -120,7 +80,7 @@ if (process.env.NODE_ENV !== 'production') {
 // --- ADMIN ENDPOINTS (Requires authenticateToken) ---
 
 // 1. Audit Scan Endpoint
-router.post('/scan', adminCors, authenticateToken, async (req: any, res) => {
+router.post('/scan', authenticateToken, resolveActiveOrganization, requireOrganizationPermission('compliance.write'), async (req: any, res) => {
   const { url } = req.body;
   if (!url) {
     return res.status(400).json({ error: 'Falta parámetro url' });
@@ -131,8 +91,8 @@ router.post('/scan', adminCors, authenticateToken, async (req: any, res) => {
     const db = getDb();
 
     const result = await db.query(`
-      INSERT INTO audit_reports (url, score, severity_counts, findings, pages_analyzed, pages_skipped, action_plan, user_id)
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+      INSERT INTO audit_reports (url, score, severity_counts, findings, pages_analyzed, pages_skipped, action_plan, user_id, organization_id)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
       RETURNING id
     `, [
       report.url,
@@ -142,7 +102,8 @@ router.post('/scan', adminCors, authenticateToken, async (req: any, res) => {
       JSON.stringify(report.pagesAnalyzed || []),
       JSON.stringify(report.pagesSkipped || []),
       JSON.stringify(report.actionPlan || []),
-      req.user.id
+      req.user.id,
+      req.organization.id
     ]);
 
     const reportId = result.rows[0].id;
@@ -152,8 +113,8 @@ router.post('/scan', adminCors, authenticateToken, async (req: any, res) => {
     try {
       await analyzeScanResults(req.user.id, report);
       const draftsRes = await db.query(
-        "SELECT * FROM ropa_inventory WHERE user_id = $1 AND status = 'draft' ORDER BY created_at DESC",
-        [req.user.id]
+        "SELECT * FROM ropa_inventory WHERE organization_id = $1 AND status = 'draft' ORDER BY created_at DESC",
+        [req.organization.id]
       );
       ropaDraftsGenerated = draftsRes.rows;
     } catch (err: any) {
@@ -168,14 +129,14 @@ router.post('/scan', adminCors, authenticateToken, async (req: any, res) => {
 });
 
 // 2. Get latest scan report for user
-router.get('/scan/latest', adminCors, authenticateToken, async (req: any, res) => {
+router.get('/scan/latest', authenticateToken, resolveActiveOrganization, requireOrganizationPermission('compliance.read'), async (req: any, res) => {
   try {
     const db = getDb();
     const result = await db.query(
       `SELECT * FROM audit_reports 
-       WHERE user_id = $1 AND pages_analyzed IS NOT NULL AND pages_analyzed::text != '[]' 
+       WHERE organization_id = $1 AND pages_analyzed IS NOT NULL AND pages_analyzed::text != '[]'
        ORDER BY id DESC LIMIT 1`, 
-      [req.user.id]
+      [req.organization.id]
     );
     const latest = result.rows[0];
     if (!latest) {
@@ -197,15 +158,15 @@ router.get('/scan/latest', adminCors, authenticateToken, async (req: any, res) =
 });
 
 // 3. Get history of scans for user
-router.get('/scan/history', adminCors, authenticateToken, async (req: any, res) => {
+router.get('/scan/history', authenticateToken, resolveActiveOrganization, requireOrganizationPermission('compliance.read'), async (req: any, res) => {
   try {
     const db = getDb();
     const result = await db.query(
       `SELECT id, url, score, severity_counts, created_at 
        FROM audit_reports 
-       WHERE user_id = $1 AND pages_analyzed IS NOT NULL AND pages_analyzed::text != '[]' 
+       WHERE organization_id = $1 AND pages_analyzed IS NOT NULL AND pages_analyzed::text != '[]'
        ORDER BY id DESC LIMIT 10`, 
-      [req.user.id]
+      [req.organization.id]
     );
     return res.json(result.rows.map((r: any) => ({
       id: r.id,
@@ -220,10 +181,13 @@ router.get('/scan/history', adminCors, authenticateToken, async (req: any, res) 
 });
 
 // 4. Consent Stats
-router.get('/consents/stats', adminCors, authenticateToken, async (req: any, res) => {
+router.get('/consents/stats', authenticateToken, resolveActiveOrganization, requireOrganizationPermission('compliance.read'), async (req: any, res) => {
   try {
     const db = getDb();
-    const result = await db.query('SELECT consent_types, timestamp FROM consent_logs WHERE domain IN (SELECT domain FROM site_configs WHERE user_id = $1) ORDER BY id DESC', [req.user.id]);
+    const result = await db.query(
+      'SELECT consent_types, timestamp FROM consent_logs WHERE organization_id = $1 OR domain IN (SELECT domain FROM site_configs WHERE organization_id = $1) ORDER BY id DESC',
+      [req.organization.id]
+    );
     const consents = result.rows;
     
     let essential = 0;
@@ -266,10 +230,13 @@ router.get('/consents/stats', adminCors, authenticateToken, async (req: any, res
 });
 
 // 5. Raw Consent Logs
-router.get('/consents/logs', adminCors, authenticateToken, async (req: any, res) => {
+router.get('/consents/logs', authenticateToken, resolveActiveOrganization, requireOrganizationPermission('compliance.read'), async (req: any, res) => {
   try {
     const db = getDb();
-    const result = await db.query('SELECT * FROM consent_logs WHERE domain IN (SELECT domain FROM site_configs WHERE user_id = $1) ORDER BY id DESC LIMIT 50', [req.user.id]);
+    const result = await db.query(
+      'SELECT * FROM consent_logs WHERE organization_id = $1 OR domain IN (SELECT domain FROM site_configs WHERE organization_id = $1) ORDER BY id DESC LIMIT 50',
+      [req.organization.id]
+    );
     return res.json(result.rows.map((r: any) => ({
       ...r,
       consent_types: safeParseJson(r.consent_types)
@@ -280,10 +247,13 @@ router.get('/consents/logs', adminCors, authenticateToken, async (req: any, res)
 });
 
 // 6. Get ARCO+ Tickets
-router.get('/arco/tickets', adminCors, authenticateToken, async (req: any, res) => {
+router.get('/arco/tickets', authenticateToken, resolveActiveOrganization, requireOrganizationPermission('compliance.read'), async (req: any, res) => {
   try {
     const db = getDb();
-    const result = await db.query('SELECT * FROM arco_requests WHERE domain IN (SELECT domain FROM site_configs WHERE user_id = $1) ORDER BY id DESC', [req.user.id]);
+    const result = await db.query(
+      'SELECT * FROM arco_requests WHERE organization_id = $1 OR domain IN (SELECT domain FROM site_configs WHERE organization_id = $1) ORDER BY id DESC',
+      [req.organization.id]
+    );
     return res.json(result.rows);
   } catch (error: any) {
     return res.status(500).json({ error: error.message });
@@ -291,7 +261,7 @@ router.get('/arco/tickets', adminCors, authenticateToken, async (req: any, res) 
 });
 
 // 7. Update ARCO+ Status
-router.patch('/arco/tickets/:id/status', adminCors, authenticateToken, async (req: any, res) => {
+router.patch('/arco/tickets/:id/status', authenticateToken, resolveActiveOrganization, requireOrganizationPermission('compliance.write'), async (req: any, res) => {
   const { id } = req.params;
   const { status } = req.body;
 
@@ -306,8 +276,8 @@ router.patch('/arco/tickets/:id/status', adminCors, authenticateToken, async (re
     await db.query(`
       UPDATE arco_requests
       SET status = $1, resolved_at = $2
-      WHERE id = $3 AND domain IN (SELECT domain FROM site_configs WHERE user_id = $4)
-    `, [status, resolvedAt, id, req.user.id]);
+      WHERE id = $3 AND (organization_id = $4 OR domain IN (SELECT domain FROM site_configs WHERE organization_id = $4))
+    `, [status, resolvedAt, id, req.organization.id]);
 
     return res.json({ success: true, resolvedAt });
   } catch (error: any) {
@@ -316,7 +286,7 @@ router.patch('/arco/tickets/:id/status', adminCors, authenticateToken, async (re
 });
 
 // 8. Update Site Config (written by Admin Dashboard) - Generates B2B api_key if missing
-router.put('/config/:domain', adminCors, authenticateToken, async (req: any, res) => {
+router.put('/config/:domain', authenticateToken, resolveActiveOrganization, requireOrganizationPermission('compliance.write'), async (req: any, res) => {
   const { domain } = req.params;
   const { company_name, policy_version, policy_content, banner_title, banner_description } = req.body;
 
@@ -328,15 +298,21 @@ router.put('/config/:domain', adminCors, authenticateToken, async (req: any, res
     const db = getDb();
     
     // Check if site config already has an api_key, otherwise generate one
-    const currentConfig = await db.query('SELECT api_key FROM site_configs WHERE domain = $1', [domain]);
+    const currentConfig = await db.query(
+      'SELECT api_key, organization_id FROM site_configs WHERE domain = $1',
+      [domain]
+    );
+    if (currentConfig.rowCount && String(currentConfig.rows[0].organization_id) !== String(req.organization.id)) {
+      return res.status(403).json({ error: 'El dominio está asociado a otra organización.' });
+    }
     let apiKey = currentConfig.rows[0]?.api_key;
     if (!apiKey) {
       apiKey = 'pt_live_' + crypto.randomBytes(16).toString('hex');
     }
 
     await db.query(`
-      INSERT INTO site_configs (domain, company_name, policy_version, policy_content, banner_title, banner_description, updated_at, user_id, api_key)
-      VALUES ($1, $2, $3, $4, $5, $6, CURRENT_TIMESTAMP, $7, $8)
+      INSERT INTO site_configs (domain, company_name, policy_version, policy_content, banner_title, banner_description, updated_at, user_id, organization_id, api_key)
+      VALUES ($1, $2, $3, $4, $5, $6, CURRENT_TIMESTAMP, $7, $8, $9)
       ON CONFLICT (domain) DO UPDATE SET
         company_name = EXCLUDED.company_name,
         policy_version = EXCLUDED.policy_version,
@@ -345,6 +321,7 @@ router.put('/config/:domain', adminCors, authenticateToken, async (req: any, res
         banner_description = EXCLUDED.banner_description,
         updated_at = CURRENT_TIMESTAMP,
         user_id = EXCLUDED.user_id,
+        organization_id = EXCLUDED.organization_id,
         api_key = COALESCE(site_configs.api_key, EXCLUDED.api_key)
     `, [
       domain,
@@ -354,6 +331,7 @@ router.put('/config/:domain', adminCors, authenticateToken, async (req: any, res
       banner_title,
       banner_description,
       req.user.id,
+      req.organization.id,
       apiKey
     ]);
 
@@ -364,12 +342,12 @@ router.put('/config/:domain', adminCors, authenticateToken, async (req: any, res
 });
 
 // GET /api/configs - List all configurations and B2B keys owned by the active tenant
-router.get('/configs', adminCors, authenticateToken, async (req: any, res) => {
+router.get('/configs', authenticateToken, resolveActiveOrganization, requireOrganizationPermission('compliance.read'), async (req: any, res) => {
   const db = getDb();
   try {
     let result = await db.query(
-      'SELECT domain, company_name, policy_version, banner_title, banner_description, api_key, updated_at FROM site_configs WHERE user_id = $1 ORDER BY updated_at DESC',
-      [req.user.id]
+      'SELECT domain, company_name, policy_version, banner_title, banner_description, api_key, updated_at FROM site_configs WHERE organization_id = $1 ORDER BY updated_at DESC',
+      [req.organization.id]
     );
 
     if (!result.rowCount || result.rowCount === 0) {
@@ -386,8 +364,8 @@ router.get('/configs', adminCors, authenticateToken, async (req: any, res) => {
       };
 
       await db.query(`
-        INSERT INTO site_configs (domain, company_name, policy_version, policy_content, banner_title, banner_description, updated_at, user_id, api_key)
-        VALUES ($1, $2, $3, $4, $5, $6, CURRENT_TIMESTAMP, $7, $8)
+        INSERT INTO site_configs (domain, company_name, policy_version, policy_content, banner_title, banner_description, updated_at, user_id, organization_id, api_key)
+        VALUES ($1, $2, $3, $4, $5, $6, CURRENT_TIMESTAMP, $7, $8, $9)
         ON CONFLICT (domain) DO NOTHING
       `, [
         cleanDomain,
@@ -397,13 +375,14 @@ router.get('/configs', adminCors, authenticateToken, async (req: any, res) => {
         'Control de Cookies',
         'Utilizamos cookies esenciales para el funcionamiento del sitio, y cookies analíticas/comerciales opcionales conforme a la Ley N° 21.719.',
         req.user.id,
+        req.organization.id,
         apiKey
       ]);
 
       // Refetch after insertion
       result = await db.query(
-        'SELECT domain, company_name, policy_version, banner_title, banner_description, api_key, updated_at FROM site_configs WHERE user_id = $1 ORDER BY updated_at DESC',
-        [req.user.id]
+        'SELECT domain, company_name, policy_version, banner_title, banner_description, api_key, updated_at FROM site_configs WHERE organization_id = $1 ORDER BY updated_at DESC',
+        [req.organization.id]
       );
     }
 
@@ -418,7 +397,7 @@ router.get('/configs', adminCors, authenticateToken, async (req: any, res) => {
 // --- PUBLIC WIDGET ENDPOINTS (No authenticateToken) ---
 
 // 9. Log Consent from Widget (Public) — identificador de visitante calculado en servidor
-router.post('/remediation/consent-log', openCors, async (req, res) => {
+router.post('/remediation/consent-log', async (req, res) => {
   const { url, action, userAgent, consentTypes } = req.body;
   const domain = url ? new URL(url).hostname : 'localhost';
 
@@ -465,7 +444,7 @@ router.post('/remediation/consent-log', openCors, async (req, res) => {
 });
 
 // 10. Submit ARCO+ Request from Widget (Public)
-router.post('/arco', openCors, publicArcoLimiter, async (req, res) => {
+router.post('/arco', publicArcoLimiter, async (req, res) => {
   const { domain, requesterName, requesterEmail, requestType, details } = req.body;
   if (!domain || !requesterName || !requesterEmail || !requestType || !details) {
     return res.status(400).json({ error: 'Faltan campos requeridos para la solicitud ARCO+' });
@@ -484,9 +463,15 @@ router.post('/arco', openCors, publicArcoLimiter, async (req, res) => {
     }
 
     const result = await db.query(`
-      INSERT INTO arco_requests (domain, requester_name, requester_email, request_type, details, status, due_date)
-      VALUES ($1, $2, $3, $4, $5, $6, $7)
-      RETURNING due_date
+      INSERT INTO arco_requests
+      (domain, requester_name, requester_email, request_type, details, status, due_date, organization_id, engagement_id)
+      SELECT $1, $2, $3, $4, $5, $6, $7, sc.organization_id,
+             (SELECT se.id FROM service_engagements se
+               WHERE se.organization_id = sc.organization_id
+               ORDER BY se.created_at DESC LIMIT 1)
+        FROM site_configs sc
+       WHERE sc.domain = $1
+      RETURNING id, due_date, organization_id, engagement_id
     `, [
       domain,
       requesterName,
@@ -497,6 +482,22 @@ router.post('/arco', openCors, publicArcoLimiter, async (req, res) => {
       dueDate
     ]);
 
+    if (!result.rowCount) {
+      return res.status(404).json({ error: 'El dominio no está configurado para recibir solicitudes ARCO+.' });
+    }
+    await db.query(
+      `INSERT INTO compliance_tasks
+       (organization_id, engagement_id, activity_code, title, description, cadence,
+        priority, due_date, evidence_required)
+       VALUES ($1, $2, 8, $3, $4, 'EVENT_DRIVEN', 'HIGH', $5, TRUE)`,
+      [
+        result.rows[0].organization_id,
+        result.rows[0].engagement_id,
+        `Gestionar solicitud ARCO+ ${requestType}`,
+        `Solicitud ARCO+ #${result.rows[0].id}`,
+        result.rows[0].due_date
+      ]
+    );
     return res.json({ success: true, dueDate: result.rows[0].due_date });
   } catch (error: any) {
     return res.status(500).json({ error: error.message });
@@ -504,7 +505,7 @@ router.post('/arco', openCors, publicArcoLimiter, async (req, res) => {
 });
 
 // 11. Read Site Config (Public - Widget reads this)
-router.get('/config/:domain', openCors, async (req, res) => {
+router.get('/config/:domain', async (req, res) => {
   const { domain } = req.params;
   try {
     const db = getDb();
@@ -537,7 +538,7 @@ router.get('/config/:domain', openCors, async (req, res) => {
 });
 
 // 12. Public free scanner endpoint for the Landing Page Lead Magnet (No Auth)
-router.post('/free-scan', openCors, publicScanLimiter, async (req, res) => {
+router.post('/free-scan', publicScanLimiter, async (req, res) => {
   const { domain, email } = req.body;
   if (!domain || !email) {
     return res.status(400).json({ error: 'Faltan parámetros obligatorios: domain y email.' });
@@ -567,7 +568,7 @@ router.post('/free-scan', openCors, publicScanLimiter, async (req, res) => {
 });
 
 // 13. Public B2B Consent Collection (CORS flexible)
-router.post('/consent/collect', cors({ origin: '*' }), async (req: any, res) => {
+router.post('/consent/collect', async (req: any, res) => {
   const { client_id, domain: reqDomain, consent_token, preferences, userAgent, policyVersion } = req.body;
   const domain = reqDomain || client_id || 'localhost';
 
@@ -626,7 +627,7 @@ router.post('/consent/collect', cors({ origin: '*' }), async (req: any, res) => 
 });
 
 // 14. Retrieve and Audit Consent Logs (Protected via authenticateToken or X-API-Key for B2B)
-router.get('/consent/logs', adminCors, async (req: any, res) => {
+router.get('/consent/logs', async (req: any, res) => {
   const { client_id } = req.query;
   if (!client_id) {
     return res.status(400).json({ error: 'El parámetro client_id (dominio) es obligatorio.' });
@@ -643,12 +644,13 @@ router.get('/consent/logs', adminCors, async (req: any, res) => {
     const token = authHeader.split(' ')[1];
     if (token) {
       try {
-        const decoded: any = jwt.verify(token, JWT_SECRET);
-        req.user = decoded;
+        req.user = await verifyAccessToken(token);
         
         // Verify tenant owns the requested domain
         const ownershipRes = await db.query(
-          'SELECT 1 FROM site_configs WHERE domain = $1 AND user_id = $2',
+          `SELECT 1 FROM site_configs sc
+            JOIN organization_memberships om ON om.organization_id = sc.organization_id
+           WHERE sc.domain = $1 AND om.user_id = $2 AND om.status = 'active'`,
           [targetDomain, req.user.id]
         );
         if (ownershipRes.rowCount && ownershipRes.rowCount > 0) {
@@ -698,7 +700,7 @@ router.get('/consent/logs', adminCors, async (req: any, res) => {
 });
 
 // 15. Public Form Consent Collection (CORS flexible)
-router.post('/consent/form-collect', cors({ origin: '*' }), async (req: any, res) => {
+router.post('/consent/form-collect', async (req: any, res) => {
   const { client_id, user_identifier, privacy_policy_accepted, privacy_policy_version, marketing_opt_in, form_id } = req.body;
   
   if (!client_id || !user_identifier || privacy_policy_accepted === undefined || marketing_opt_in === undefined) {
@@ -747,7 +749,7 @@ router.post('/consent/form-collect', cors({ origin: '*' }), async (req: any, res
 });
 
 // 16. Retrieve Form Consent Logs (Protected via JWT or X-API-Key for B2B)
-router.get('/consent/form-logs', adminCors, async (req: any, res) => {
+router.get('/consent/form-logs', async (req: any, res) => {
   const { client_id } = req.query;
   if (!client_id) {
     return res.status(400).json({ error: 'El parámetro client_id (dominio) es obligatorio.' });
@@ -764,12 +766,13 @@ router.get('/consent/form-logs', adminCors, async (req: any, res) => {
     const token = authHeader.split(' ')[1];
     if (token) {
       try {
-        const decoded: any = jwt.verify(token, JWT_SECRET);
-        req.user = decoded;
+        req.user = await verifyAccessToken(token);
         
         // Verify tenant owns the requested domain
         const ownershipRes = await db.query(
-          'SELECT 1 FROM site_configs WHERE domain = $1 AND user_id = $2',
+          `SELECT 1 FROM site_configs sc
+            JOIN organization_memberships om ON om.organization_id = sc.organization_id
+           WHERE sc.domain = $1 AND om.user_id = $2 AND om.status = 'active'`,
           [targetDomain, req.user.id]
         );
         if (ownershipRes.rowCount && ownershipRes.rowCount > 0) {
@@ -808,7 +811,7 @@ router.get('/consent/form-logs', adminCors, async (req: any, res) => {
 });
 
 // 17. Submit Employee Training Answers & Declaration (Public)
-router.post('/training/submit', cors({ origin: '*' }), async (req: any, res) => {
+router.post('/training/submit', async (req: any, res) => {
   const { client_id, employee_name, employee_email, declaration_accepted, answers } = req.body;
 
   if (!client_id || !employee_name || !employee_email || declaration_accepted === undefined || !answers) {
@@ -862,7 +865,7 @@ router.post('/training/submit', cors({ origin: '*' }), async (req: any, res) => 
 });
 
 // 18. Retrieve Employee Training Reports (Protected via JWT or X-API-Key for B2B)
-router.get('/training/reports', adminCors, async (req: any, res) => {
+router.get('/training/reports', async (req: any, res) => {
   const { client_id } = req.query;
   if (!client_id) {
     return res.status(400).json({ error: 'El parámetro client_id (dominio) es obligatorio.' });
@@ -879,12 +882,13 @@ router.get('/training/reports', adminCors, async (req: any, res) => {
     const token = authHeader.split(' ')[1];
     if (token) {
       try {
-        const decoded: any = jwt.verify(token, JWT_SECRET);
-        req.user = decoded;
+        req.user = await verifyAccessToken(token);
         
         // Verify tenant owns the requested domain
         const ownershipRes = await db.query(
-          'SELECT 1 FROM site_configs WHERE domain = $1 AND user_id = $2',
+          `SELECT 1 FROM site_configs sc
+            JOIN organization_memberships om ON om.organization_id = sc.organization_id
+           WHERE sc.domain = $1 AND om.user_id = $2 AND om.status = 'active'`,
           [targetDomain, req.user.id]
         );
         if (ownershipRes.rowCount && ownershipRes.rowCount > 0) {
@@ -923,7 +927,7 @@ router.get('/training/reports', adminCors, async (req: any, res) => {
 });
 
 // 19. Retrieve Training Materials for client (Public)
-router.get('/training/materials/:client_id', openCors, async (req: any, res) => {
+router.get('/training/materials/:client_id', async (req: any, res) => {
   const { client_id } = req.params;
   try {
     const db = getDb();
@@ -948,7 +952,7 @@ router.get('/training/materials/:client_id', openCors, async (req: any, res) => 
 });
 
 // 20. Update Training Materials (Protected by JWT)
-router.put('/training/materials/:client_id', adminCors, authenticateToken, async (req: any, res) => {
+router.put('/training/materials/:client_id', authenticateToken, resolveActiveOrganization, requireOrganizationPermission('compliance.write'), async (req: any, res) => {
   const { client_id } = req.params;
   const { presentation_url, policy_text } = req.body;
 
@@ -961,21 +965,22 @@ router.put('/training/materials/:client_id', adminCors, authenticateToken, async
     
     // Verify tenant owns the requested domain
     const ownershipRes = await db.query(
-      'SELECT 1 FROM site_configs WHERE domain = $1 AND user_id = $2',
-      [client_id, req.user.id]
+      'SELECT 1 FROM site_configs WHERE domain = $1 AND organization_id = $2',
+      [client_id, req.organization.id]
     );
     if (!ownershipRes.rowCount || ownershipRes.rowCount === 0) {
       return res.status(403).json({ error: 'No está autorizado para modificar este dominio.' });
     }
 
     await db.query(`
-      INSERT INTO training_materials (client_id, presentation_url, policy_text, updated_at)
-      VALUES ($1, $2, $3, CURRENT_TIMESTAMP)
+      INSERT INTO training_materials (client_id, presentation_url, policy_text, updated_at, organization_id)
+      VALUES ($1, $2, $3, CURRENT_TIMESTAMP, $4)
       ON CONFLICT (client_id) DO UPDATE SET
         presentation_url = EXCLUDED.presentation_url,
         policy_text = EXCLUDED.policy_text,
-        updated_at = CURRENT_TIMESTAMP
-    `, [client_id, presentation_url, policy_text]);
+        updated_at = CURRENT_TIMESTAMP,
+        organization_id = EXCLUDED.organization_id
+    `, [client_id, presentation_url, policy_text, req.organization.id]);
 
     return res.json({ success: true });
   } catch (error: any) {
@@ -986,12 +991,12 @@ router.put('/training/materials/:client_id', adminCors, authenticateToken, async
 // --- DOCUMENT VERSIONING ENDPOINTS ---
 
 // 21. List all active documents for the tenant
-router.get('/documents', adminCors, authenticateToken, async (req: any, res) => {
+router.get('/documents', authenticateToken, resolveActiveOrganization, requireOrganizationPermission('compliance.read'), async (req: any, res) => {
   try {
     const db = getDb();
     const result = await db.query(
-      'SELECT * FROM documents WHERE client_id = $1 AND is_active = TRUE ORDER BY created_at DESC',
-      [req.user.id]
+      'SELECT * FROM documents WHERE organization_id = $1 AND is_active = TRUE ORDER BY created_at DESC',
+      [req.organization.id]
     );
     return res.json(result.rows);
   } catch (error: any) {
@@ -1000,12 +1005,12 @@ router.get('/documents', adminCors, authenticateToken, async (req: any, res) => 
 });
 
 // 22. Get history (versions) for a specific document
-router.get('/documents/:document_id/history', adminCors, authenticateToken, async (req: any, res) => {
+router.get('/documents/:document_id/history', authenticateToken, resolveActiveOrganization, requireOrganizationPermission('compliance.read'), async (req: any, res) => {
   const { document_id } = req.params;
   try {
     const db = getDb();
     // Validate ownership
-    const docRes = await db.query('SELECT 1 FROM documents WHERE id = $1 AND client_id = $2', [document_id, req.user.id]);
+    const docRes = await db.query('SELECT 1 FROM documents WHERE id = $1 AND organization_id = $2', [document_id, req.organization.id]);
     if (docRes.rowCount === 0) {
       return res.status(403).json({ error: 'No autorizado o el documento no existe.' });
     }
@@ -1021,12 +1026,12 @@ router.get('/documents/:document_id/history', adminCors, authenticateToken, asyn
 });
 
 // 23. Get specific version content
-router.get('/documents/:document_id/version/:version_number', adminCors, authenticateToken, async (req: any, res) => {
+router.get('/documents/:document_id/version/:version_number', authenticateToken, resolveActiveOrganization, requireOrganizationPermission('compliance.read'), async (req: any, res) => {
   const { document_id, version_number } = req.params;
   try {
     const db = getDb();
     // Validate ownership
-    const docRes = await db.query('SELECT title, document_type FROM documents WHERE id = $1 AND client_id = $2', [document_id, req.user.id]);
+    const docRes = await db.query('SELECT title, document_type FROM documents WHERE id = $1 AND organization_id = $2', [document_id, req.organization.id]);
     if (docRes.rowCount === 0) {
       return res.status(403).json({ error: 'No autorizado o el documento no existe.' });
     }
@@ -1050,7 +1055,7 @@ router.get('/documents/:document_id/version/:version_number', adminCors, authent
 });
 
 // 24. Create or update a document (create new version)
-router.post('/documents/update', adminCors, authenticateToken, async (req: any, res) => {
+router.post('/documents/update', authenticateToken, resolveActiveOrganization, requireOrganizationPermission('compliance.write'), async (req: any, res) => {
   // If document_id is not provided, it creates a new document.
   const { document_id, title, document_type, content, change_summary } = req.body;
   
@@ -1065,7 +1070,7 @@ router.post('/documents/update', adminCors, authenticateToken, async (req: any, 
 
     if (docId) {
       // Validate ownership
-      const docRes = await db.query('SELECT 1 FROM documents WHERE id = $1 AND client_id = $2', [docId, req.user.id]);
+      const docRes = await db.query('SELECT 1 FROM documents WHERE id = $1 AND organization_id = $2', [docId, req.organization.id]);
       if (docRes.rowCount === 0) {
         return res.status(403).json({ error: 'No autorizado o el documento no existe.' });
       }
@@ -1081,9 +1086,9 @@ router.post('/documents/update', adminCors, authenticateToken, async (req: any, 
       }
       // Create document
       const insertDocRes = await db.query(`
-        INSERT INTO documents (client_id, title, document_type)
-        VALUES ($1, $2, $3) RETURNING id
-      `, [req.user.id, title, document_type]);
+        INSERT INTO documents (client_id, organization_id, title, document_type)
+        VALUES ($1, $2, $3, $4) RETURNING id
+      `, [req.user.id, req.organization.id, title, document_type]);
       docId = insertDocRes.rows[0].id;
     }
 

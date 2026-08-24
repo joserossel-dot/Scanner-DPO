@@ -4,21 +4,63 @@ import jwt from 'jsonwebtoken';
 import { getDb } from '../database/db.js';
 import crypto from 'crypto';
 import { sendPasswordResetEmail } from '../services/emailService.js';
+import rateLimit from 'express-rate-limit';
+import { createRateLimitStore } from '../security/rateLimitStore.js';
+import { deriveSessionVersion } from '../security/sessionVersion.js';
+import { provisionOrganizationForUser } from '../tenancy/provisionOrganization.js';
 
 const router = Router();
 
+const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const GENERIC_AUTH_ERROR = 'Credenciales inválidas.';
+const GENERIC_RESET_MESSAGE = 'Si el correo está registrado, recibirá instrucciones para restablecer su contraseña.';
+const DUMMY_PASSWORD_HASH = '$2b$10$/7Orwsesf5IzSqCroSWn0ePbOVmkQyj7yDZDMHtLID1TyEcI0W/R2';
+
+export const authRateLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 20,
+  standardHeaders: 'draft-8',
+  legacyHeaders: false,
+  store: createRateLimitStore('auth'),
+  skipSuccessfulRequests: true,
+  message: { error: 'Demasiados intentos. Intente nuevamente en 15 minutos.' }
+});
+
+export const passwordResetRateLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  limit: 5,
+  standardHeaders: 'draft-8',
+  legacyHeaders: false,
+  store: createRateLimitStore('password-reset'),
+  message: { error: 'Demasiadas solicitudes. Intente nuevamente más tarde.' }
+});
+
+export function normalizeEmail(value: unknown): string | null {
+  if (typeof value !== 'string') return null;
+  const email = value.trim().toLowerCase();
+  return email.length <= 254 && EMAIL_PATTERN.test(email) ? email : null;
+}
+
+export function validatePassword(value: unknown): string | null {
+  if (typeof value !== 'string' || value.length < 12 || value.length > 128) return null;
+  if (!/[a-z]/.test(value) || !/[A-Z]/.test(value) || !/\d/.test(value)) return null;
+  return value;
+}
+
 const JWT_SECRET: string = process.env.JWT_SECRET as string;
-if (!JWT_SECRET) {
-  console.error('FATAL ERROR: JWT_SECRET environment variable is missing.');
+if (!JWT_SECRET || JWT_SECRET.length < 32) {
+  console.error('FATAL ERROR: JWT_SECRET must contain at least 32 characters.');
   process.exit(1);
 }
 
 // POST /api/auth/register
-router.post('/register', async (req, res) => {
-  const { email, password, company_name } = req.body;
+router.post('/register', authRateLimiter, async (req, res) => {
+  const email = normalizeEmail(req.body?.email);
+  const password = validatePassword(req.body?.password);
+  const companyName = typeof req.body?.company_name === 'string' ? req.body.company_name.trim() : '';
 
-  if (!email || !password || !company_name) {
-    return res.status(400).json({ error: 'Todos los campos son obligatorios: email, password, company_name.' });
+  if (!email || !password || !companyName || companyName.length > 200) {
+    return res.status(400).json({ error: 'Email, empresa y contraseña válidos son obligatorios. La contraseña debe tener entre 12 y 128 caracteres, mayúsculas, minúsculas y números.' });
   }
 
   try {
@@ -27,26 +69,37 @@ router.post('/register', async (req, res) => {
     // Check if user already exists
     const userCheck = await db.query('SELECT 1 FROM users WHERE email = $1', [email]);
     if (userCheck.rowCount && userCheck.rowCount > 0) {
-      return res.status(400).json({ error: 'El correo electrónico ingresado ya está registrado.' });
+      await bcrypt.compare(password, DUMMY_PASSWORD_HASH);
+      return res.status(202).json({ success: true, message: 'La solicitud de registro fue procesada. Si ya existe una cuenta, puede iniciar sesión o recuperar su contraseña.' });
     }
 
     // Hash the password
     const salt = await bcrypt.genSalt(10);
     const passwordHash = await bcrypt.hash(password, salt);
 
-    // Save user to DB (default role: 'tenant')
-    const insertRes = await db.query(
-      'INSERT INTO users (email, password_hash, company_name, role) VALUES ($1, $2, $3, $4) RETURNING id, email, company_name, role',
-      [email, passwordHash, company_name, 'tenant']
-    );
-
-    const user = insertRes.rows[0];
+    const client = await db.connect();
+    let user;
+    try {
+      await client.query('BEGIN');
+      const insertRes = await client.query(
+        'INSERT INTO users (email, password_hash, company_name, role) VALUES ($1, $2, $3, $4) RETURNING id, email, company_name, role',
+        [email, passwordHash, companyName, 'tenant']
+      );
+      user = insertRes.rows[0];
+      await provisionOrganizationForUser(client, String(user.id), companyName);
+      await client.query('COMMIT');
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
+    }
 
     // Generate JWT
     const token = jwt.sign(
-      { id: user.id, email: user.email, company_name: user.company_name, role: user.role },
+      { id: user.id, email: user.email, company_name: user.company_name, role: user.role, sv: deriveSessionVersion(user.id, passwordHash, JWT_SECRET) },
       JWT_SECRET,
-      { expiresIn: '24h' }
+      { expiresIn: '8h', algorithm: 'HS256', issuer: 'scanner-dpo', audience: 'scanner-dpo-api' }
     );
 
     res.status(201).json({
@@ -61,16 +114,23 @@ router.post('/register', async (req, res) => {
     });
   } catch (error: any) {
     console.error('Error during registration:', error.message);
-    res.status(500).json({ error: 'Error interno en el registro: ' + error.message });
+    if (error?.code === '23505') {
+      await bcrypt.compare(password, DUMMY_PASSWORD_HASH);
+      return res.status(202).json({ success: true, message: 'La solicitud de registro fue procesada. Si ya existe una cuenta, puede iniciar sesión o recuperar su contraseña.' });
+    }
+    res.status(500).json({ error: 'Error interno en el registro.' });
   }
 });
 
 // POST /api/auth/login
-router.post('/login', async (req, res) => {
-  const { email, password } = req.body;
+router.post('/login', authRateLimiter, async (req, res) => {
+  const email = normalizeEmail(req.body?.email);
+  const password = typeof req.body?.password === 'string' && req.body.password.length <= 128
+    ? req.body.password
+    : null;
 
   if (!email || !password) {
-    return res.status(400).json({ error: 'Email y contraseña obligatorios.' });
+    return res.status(400).json({ error: 'Email y contraseña válidos son obligatorios.' });
   }
 
   try {
@@ -78,34 +138,19 @@ router.post('/login', async (req, res) => {
 
     // Find user
     const userRes = await db.query('SELECT * FROM users WHERE email = $1', [email]);
-    if (!userRes.rowCount || userRes.rowCount === 0) {
-      return res.status(400).json({ error: 'Credenciales inválidas. Usuario no registrado.' });
-    }
-
     const user = userRes.rows[0];
 
-    // Verify password
-    const isMatch = await bcrypt.compare(password, user.password_hash);
-    if (!isMatch) {
-      return res.status(400).json({ error: 'Credenciales inválidas. Contraseña incorrecta.' });
-    }
-
-    // =========================================================
-    // // TODO: REEMPLAZAR POR EL CORREO DEL CEO
-    // =========================================================
-    const CEO_EMAIL = 'admin@privacytech.cl'; // Escriba aquí el correo de pruebas de administración
-    
-    if (user.email.toLowerCase() === CEO_EMAIL.toLowerCase() && user.role !== 'superadmin') {
-      user.role = 'superadmin';
-      await db.query('UPDATE users SET role = $1 WHERE id = $2', ['superadmin', user.id]);
-      console.log(`[AUTH BYPASS] Rol actualizado automáticamente a superadmin para: ${user.email}`);
+    // Always execute a bcrypt comparison to reduce account enumeration by timing.
+    const isMatch = await bcrypt.compare(password, user?.password_hash || DUMMY_PASSWORD_HASH);
+    if (!user || !isMatch) {
+      return res.status(401).json({ error: GENERIC_AUTH_ERROR });
     }
 
     // Generate JWT
     const token = jwt.sign(
-      { id: user.id, email: user.email, company_name: user.company_name, role: user.role },
+      { id: user.id, email: user.email, company_name: user.company_name, role: user.role, sv: deriveSessionVersion(user.id, user.password_hash, JWT_SECRET) },
       JWT_SECRET,
-      { expiresIn: '24h' }
+      { expiresIn: '8h', algorithm: 'HS256', issuer: 'scanner-dpo', audience: 'scanner-dpo-api' }
     );
 
     res.json({
@@ -120,13 +165,13 @@ router.post('/login', async (req, res) => {
     });
   } catch (error: any) {
     console.error('Error during login:', error.message);
-    res.status(500).json({ error: 'Error interno en el inicio de sesión: ' + error.message });
+    res.status(500).json({ error: 'Error interno en el inicio de sesión.' });
   }
 });
 
 // POST /api/auth/forgot-password
-router.post('/forgot-password', async (req, res) => {
-  const { email } = req.body;
+router.post('/forgot-password', passwordResetRateLimiter, async (req, res) => {
+  const email = normalizeEmail(req.body?.email);
 
   if (!email) {
     return res.status(400).json({ error: 'El correo electrónico es requerido.' });
@@ -138,7 +183,7 @@ router.post('/forgot-password', async (req, res) => {
     // Find user
     const userRes = await db.query('SELECT id FROM users WHERE email = $1', [email]);
     if (!userRes.rowCount || userRes.rowCount === 0) {
-      return res.status(400).json({ error: 'No existe ningún usuario registrado con ese correo.' });
+      return res.json({ success: true, message: GENERIC_RESET_MESSAGE });
     }
 
     const userId = userRes.rows[0].id;
@@ -154,24 +199,30 @@ router.post('/forgot-password', async (req, res) => {
     );
 
     // Enviar correo de recuperación real o simulación
-    await sendPasswordResetEmail(email, token);
+    try {
+      await sendPasswordResetEmail(email, token);
+    } catch (emailError: any) {
+      // Do not expose delivery failures because they would reveal registered accounts.
+      console.error('Password reset email delivery failed:', emailError.message);
+    }
 
     res.json({
       success: true,
-      message: 'Se ha enviado un correo con instrucciones para restablecer su contraseña.'
+      message: GENERIC_RESET_MESSAGE
     });
   } catch (error: any) {
     console.error('Error in forgot-password:', error.message);
-    res.status(500).json({ error: 'Error interno al procesar la solicitud: ' + error.message });
+    res.status(500).json({ error: 'Error interno al procesar la solicitud.' });
   }
 });
 
 // POST /api/auth/reset-password
-router.post('/reset-password', async (req, res) => {
-  const { token, password } = req.body;
+router.post('/reset-password', passwordResetRateLimiter, async (req, res) => {
+  const token = typeof req.body?.token === 'string' && /^[a-f0-9]{64}$/.test(req.body.token) ? req.body.token : null;
+  const password = validatePassword(req.body?.password);
 
   if (!token || !password) {
-    return res.status(400).json({ error: 'Token y contraseña requeridos.' });
+    return res.status(400).json({ error: 'Token válido y contraseña segura requeridos.' });
   }
 
   try {
@@ -205,7 +256,7 @@ router.post('/reset-password', async (req, res) => {
     });
   } catch (error: any) {
     console.error('Error in reset-password:', error.message);
-    res.status(500).json({ error: 'Error interno al restablecer la contraseña: ' + error.message });
+    res.status(500).json({ error: 'Error interno al restablecer la contraseña.' });
   }
 });
 

@@ -1,5 +1,7 @@
 import pg from 'pg';
 import dotenv from 'dotenv';
+import { runMigrations } from './migrationRunner.js';
+import { databaseSslConfig } from './sslConfig.js';
 
 // Load environment variables
 dotenv.config();
@@ -13,13 +15,13 @@ if (!connectionString) {
 
 const pool = new Pool({
   connectionString,
-  ssl: { rejectUnauthorized: false }
+  ssl: databaseSslConfig(connectionString)
 });
 
 export async function initDb() {
   // Test the connection
   const client = await pool.connect();
-  console.log('🛡️ Conexión establecida con éxito con PostgreSQL (Neon)');
+  console.log('🛡️ Conexión establecida con éxito con PostgreSQL');
   client.release();
 
   // Create tables dynamically on startup if they do not exist
@@ -433,6 +435,11 @@ export async function initDb() {
     console.log(`🧹 Limpieza de hallazgos legacy FIND_ROPA_ realizada. Filas procesadas: ${reportsToClean.rowCount}`);
   } catch (err: any) {
     console.error('⚠️ Error ejecutando la limpieza de FIND_ROPA_:', err.message);
+  }
+
+  const appliedMigrations = await runMigrations(pool);
+  if (appliedMigrations.length > 0) {
+    console.log(`✅ Migraciones aplicadas: ${appliedMigrations.map((migration) => migration.version).join(', ')}`);
   }
 
   console.log('✅ Tablas y esquema de PostgreSQL validados/creados.');

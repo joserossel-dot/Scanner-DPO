@@ -1,4 +1,5 @@
 import { authFetch } from '../../../lib/authFetch';
+import { API_BASE, getApiError } from '../../../lib/api';
 import React, { useState, useEffect } from 'react';
 import { 
   FolderLock, 
@@ -29,6 +30,19 @@ interface RopaRecord {
   cross_border_transfer: boolean;
   source?: string;
   status?: string;
+  systems?: string[];
+  data_sources?: string[];
+  data_subject_categories?: string[];
+  recipients?: string[];
+  deletion_method?: string;
+  contains_sensitive_data?: boolean;
+  sensitive_data_categories?: string[];
+  legal_basis_rationale?: string;
+  retention_legal_basis?: string;
+  security_measures?: string[];
+  review_due_at?: string;
+  automated_decisions?: boolean;
+  automated_decision_details?: string;
   created_at: string;
 }
 
@@ -36,25 +50,6 @@ interface RopaInventoryViewProps {
   token: string | null;
   onRopaUpdated?: () => void;
 }
-
-const API_BASE = (() => {
-  const url = (import.meta as any).env.VITE_API_URL || '';
-  if (typeof window !== 'undefined') {
-    const hostname = window.location.hostname;
-    if (hostname.includes('onrender.com')) {
-      const parts = hostname.split('.');
-      const sub = parts[0];
-      if (sub.endsWith('-dashboard')) {
-        const baseSub = sub.replace('-dashboard', '-api');
-        return `https://${baseSub}.onrender.com`;
-      }
-    }
-  }
-  if (url && !url.startsWith('http://') && !url.startsWith('https://')) {
-    return 'https://' + url;
-  }
-  return url;
-})();
 
 export default function RopaInventoryView({ token, onRopaUpdated }: RopaInventoryViewProps) {
   const [ropaList, setRopaList] = useState<RopaRecord[]>([]);
@@ -72,6 +67,17 @@ export default function RopaInventoryView({ token, onRopaUpdated }: RopaInventor
   const [dataCategories, setDataCategories] = useState<string[]>([]);
   const [retentionPeriod, setRetentionPeriod] = useState('');
   const [crossBorderTransfer, setCrossBorderTransfer] = useState(false);
+  const [systems, setSystems] = useState('');
+  const [dataSources, setDataSources] = useState('');
+  const [dataSubjects, setDataSubjects] = useState('');
+  const [recipients, setRecipients] = useState('');
+  const [deletionMethod, setDeletionMethod] = useState('');
+  const [legalBasisRationale, setLegalBasisRationale] = useState('');
+  const [retentionLegalBasis, setRetentionLegalBasis] = useState('');
+  const [securityMeasures, setSecurityMeasures] = useState('');
+  const [reviewDueAt, setReviewDueAt] = useState('');
+  const [automatedDecisions, setAutomatedDecisions] = useState(false);
+  const [automatedDecisionDetails, setAutomatedDecisionDetails] = useState('');
 
   // Evidence AI states
   const [evidenceFile, setEvidenceFile] = useState<File | null>(null);
@@ -92,7 +98,7 @@ export default function RopaInventoryView({ token, onRopaUpdated }: RopaInventor
         const data = await response.json();
         setRopaList(data);
       } else {
-        setErrorMsg('Error al consultar el inventario de actividades (RoPA).');
+        setErrorMsg(await getApiError(response, 'Error al consultar el inventario de actividades (RoPA).'));
       }
     } catch (e) {
       console.error(e);
@@ -116,6 +122,9 @@ export default function RopaInventoryView({ token, onRopaUpdated }: RopaInventor
     setDataCategories([]);
     setRetentionPeriod('');
     setCrossBorderTransfer(false);
+    setSystems(''); setDataSources(''); setDataSubjects(''); setRecipients(''); setDeletionMethod('');
+    setLegalBasisRationale(''); setRetentionLegalBasis(''); setSecurityMeasures(''); setReviewDueAt('');
+    setAutomatedDecisions(false); setAutomatedDecisionDetails('');
     setEvidenceFile(null);
     setAnalysisResultMsg('');
     setEditingRecord(null);
@@ -136,6 +145,17 @@ export default function RopaInventoryView({ token, onRopaUpdated }: RopaInventor
     setDataCategories(record.data_categories);
     setRetentionPeriod(record.retention_period);
     setCrossBorderTransfer(record.cross_border_transfer);
+    setSystems((record.systems || []).join(', '));
+    setDataSources((record.data_sources || []).join(', '));
+    setDataSubjects((record.data_subject_categories || []).join(', '));
+    setRecipients((record.recipients || []).join(', '));
+    setDeletionMethod(record.deletion_method || '');
+    setLegalBasisRationale(record.legal_basis_rationale || '');
+    setRetentionLegalBasis(record.retention_legal_basis || '');
+    setSecurityMeasures((record.security_measures || []).join(', '));
+    setReviewDueAt(record.review_due_at ? record.review_due_at.slice(0, 10) : '');
+    setAutomatedDecisions(record.automated_decisions === true);
+    setAutomatedDecisionDetails(record.automated_decision_details || '');
     setEvidenceFile(null);
     setAnalysisResultMsg('');
     setIsModalOpen(true);
@@ -149,6 +169,7 @@ export default function RopaInventoryView({ token, onRopaUpdated }: RopaInventor
       return;
     }
 
+    const list = (value: string) => value.split(',').map(item => item.trim()).filter(Boolean);
     const payload = {
       process_name: processName,
       purpose,
@@ -156,6 +177,17 @@ export default function RopaInventoryView({ token, onRopaUpdated }: RopaInventor
       data_categories: dataCategories,
       retention_period: retentionPeriod,
       cross_border_transfer: crossBorderTransfer,
+      systems: list(systems), data_sources: list(dataSources),
+      data_subject_categories: list(dataSubjects), recipients: list(recipients),
+      deletion_method: deletionMethod,
+      contains_sensitive_data: dataCategories.some(category => ['Salud/Sensibles', 'Biométricos', 'Menores de Edad (NNA)'].includes(category)),
+      sensitive_data_categories: dataCategories.filter(category => ['Salud/Sensibles', 'Biométricos', 'Menores de Edad (NNA)'].includes(category)),
+      legal_basis_rationale: legalBasisRationale,
+      retention_legal_basis: retentionLegalBasis,
+      security_measures: list(securityMeasures),
+      review_due_at: reviewDueAt || null,
+      automated_decisions: automatedDecisions,
+      automated_decision_details: automatedDecisions ? automatedDecisionDetails : null,
       source: editingRecord?.source || 'manual',
       status: 'confirmed' // Submitting changes always transitions the process to confirmed status
     };
@@ -166,7 +198,7 @@ export default function RopaInventoryView({ token, onRopaUpdated }: RopaInventor
         ? `${API_BASE}/api/ropa/${editingRecord.id}` 
         : `${API_BASE}/api/ropa`;
 
-      const response = await fetch(url, {
+      const response = await authFetch(url, {
         method,
         headers: {
           'Content-Type': 'application/json',
@@ -181,8 +213,7 @@ export default function RopaInventoryView({ token, onRopaUpdated }: RopaInventor
         fetchRopa();
         onRopaUpdated?.();
       } else {
-        const data = await response.json();
-        alert(data.error || 'Error al guardar la actividad de tratamiento.');
+        alert(await getApiError(response, 'Error al guardar la actividad de tratamiento.'));
       }
     } catch (err) {
       console.error(err);
@@ -204,7 +235,7 @@ export default function RopaInventoryView({ token, onRopaUpdated }: RopaInventor
         fetchRopa();
         onRopaUpdated?.();
       } else {
-        alert('Error al intentar eliminar la actividad de tratamiento.');
+        alert(await getApiError(response, 'Error al intentar eliminar la actividad de tratamiento.'));
       }
     } catch (e) {
       console.error(e);
@@ -230,6 +261,19 @@ export default function RopaInventoryView({ token, onRopaUpdated }: RopaInventor
           data_categories: record.data_categories,
           retention_period: record.retention_period,
           cross_border_transfer: record.cross_border_transfer,
+          systems: record.systems || [],
+          data_sources: record.data_sources || [],
+          data_subject_categories: record.data_subject_categories || [],
+          recipients: record.recipients || [],
+          deletion_method: record.deletion_method || null,
+          contains_sensitive_data: record.contains_sensitive_data === true,
+          sensitive_data_categories: record.sensitive_data_categories || [],
+          legal_basis_rationale: record.legal_basis_rationale || null,
+          retention_legal_basis: record.retention_legal_basis || null,
+          security_measures: record.security_measures || [],
+          review_due_at: record.review_due_at || null,
+          automated_decisions: record.automated_decisions === true,
+          automated_decision_details: record.automated_decision_details || null,
           source: record.source,
           status: 'rejected'
         })
@@ -312,8 +356,15 @@ export default function RopaInventoryView({ token, onRopaUpdated }: RopaInventor
       'Finalidad del Tratamiento',
       'Base Lícita de Licitud',
       'Categorías de Datos Personales',
+      'Categorías de Titulares',
+      'Sistemas',
+      'Destinatarios',
       'Plazo de Conservación',
+      'Fundamento de Conservación',
+      'Método de Eliminación',
+      'Medidas de Seguridad',
       'Transferencia Internacional',
+      'Próxima Revisión',
       'Fecha de Registro'
     ];
 
@@ -323,8 +374,15 @@ export default function RopaInventoryView({ token, onRopaUpdated }: RopaInventor
       `"${item.purpose.replace(/"/g, '""')}"`,
       item.legal_basis,
       `"${item.data_categories.join(', ')}"`,
+      `"${(item.data_subject_categories || []).join(', ')}"`,
+      `"${(item.systems || []).join(', ')}"`,
+      `"${(item.recipients || []).join(', ')}"`,
       `"${item.retention_period.replace(/"/g, '""')}"`,
+      `"${(item.retention_legal_basis || '').replace(/"/g, '""')}"`,
+      `"${(item.deletion_method || '').replace(/"/g, '""')}"`,
+      `"${(item.security_measures || []).join(', ')}"`,
       item.cross_border_transfer ? 'SÍ' : 'NO',
+      item.review_due_at || '',
       item.created_at
     ]);
 
@@ -355,7 +413,7 @@ export default function RopaInventoryView({ token, onRopaUpdated }: RopaInventor
       {/* Header */}
       <header className="flex flex-col sm:flex-row justify-between sm:items-center gap-4 text-left">
         <div>
-          <h1 className="text-xl font-bold text-white tracking-wide">📓 Registro de Actividades de Tratamiento (RoPA - Art. 12)</h1>
+          <h1 className="text-xl font-bold text-white tracking-wide">📓 Inventario de Actividades de Tratamiento (RoPA)</h1>
           <p className="text-xs text-slate-400 mt-0.5">Inventario formalizado de actividades de datos personales de la empresa.</p>
         </div>
 
@@ -386,7 +444,7 @@ export default function RopaInventoryView({ token, onRopaUpdated }: RopaInventor
         <div className="space-y-1">
           <h3 className="text-xs font-bold text-indigo-300 uppercase tracking-wider">¿Qué es el inventario RoPA?</h3>
           <p className="text-xs text-slate-355 leading-relaxed">
-            El RoPA es la columna vertebral de su cumplimiento (Art. 12, Ley N° 21.719). Es un inventario obligatorio donde usted declara qué datos personales recopila su empresa, para qué los usa, dónde los guarda y con quién los comparte. Sin este mapa, es imposible demostrar cumplimiento ante una fiscalización.
+            Este inventario documenta qué datos personales utiliza la empresa, para qué finalidades, en qué sistemas, por cuánto tiempo y con quién los comparte. Cada actividad debe ser confirmada por su responsable y respaldada con evidencia.
           </p>
         </div>
       </div>
@@ -623,7 +681,7 @@ export default function RopaInventoryView({ token, onRopaUpdated }: RopaInventor
       {/* Creation/Edit Modal Wizard */}
       {isModalOpen && (
         <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-lg overflow-hidden shadow-2xl animate-in fade-in zoom-in-95 duration-200">
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-2xl max-h-[92vh] overflow-y-auto shadow-2xl animate-in fade-in zoom-in-95 duration-200">
             
             <div className="p-5 border-b border-slate-800 bg-slate-950/50 flex justify-between items-center text-left">
               <div>
@@ -740,6 +798,41 @@ export default function RopaInventoryView({ token, onRopaUpdated }: RopaInventor
                 </div>
               </div>
 
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <label className="text-xs font-semibold text-slate-300">Justificación de la base de licitud
+                  <textarea value={legalBasisRationale} onChange={e => setLegalBasisRationale(e.target.value)} rows={2} placeholder="Hecho, contrato o norma que sustenta la selección; pendiente de revisión profesional" className="mt-1 w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-xs" />
+                </label>
+                <label className="text-xs font-semibold text-slate-300">Fundamento del plazo de conservación
+                  <textarea value={retentionLegalBasis} onChange={e => setRetentionLegalBasis(e.target.value)} rows={2} placeholder="Obligación, necesidad operativa o criterio documentado" className="mt-1 w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-xs" />
+                </label>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <label className="text-xs font-semibold text-slate-300">Sistemas o bases
+                  <input value={systems} onChange={e => setSystems(e.target.value)} placeholder="CRM, ERP, planilla de remuneraciones" className="mt-1 w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-xs" />
+                </label>
+                <label className="text-xs font-semibold text-slate-300">Origen de los datos
+                  <input value={dataSources} onChange={e => setDataSources(e.target.value)} placeholder="Titular, formulario web, empleador" className="mt-1 w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-xs" />
+                </label>
+                <label className="text-xs font-semibold text-slate-300">Categorías de titulares
+                  <input value={dataSubjects} onChange={e => setDataSubjects(e.target.value)} placeholder="Clientes, trabajadores, postulantes" className="mt-1 w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-xs" />
+                </label>
+                <label className="text-xs font-semibold text-slate-300">Destinatarios o proveedores
+                  <input value={recipients} onChange={e => setRecipients(e.target.value)} placeholder="Contabilidad, proveedor de nube" className="mt-1 w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-xs" />
+                </label>
+              </div>
+              <label className="text-xs font-semibold text-slate-300 block">Método de eliminación o anonimización
+                <input value={deletionMethod} onChange={e => setDeletionMethod(e.target.value)} placeholder="Borrado seguro, anonimización o devolución" className="mt-1 w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-xs" />
+              </label>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <label className="text-xs font-semibold text-slate-300">Medidas de seguridad
+                  <input value={securityMeasures} onChange={e => setSecurityMeasures(e.target.value)} placeholder="Control de acceso, respaldo, cifrado" className="mt-1 w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-xs" />
+                </label>
+                <label className="text-xs font-semibold text-slate-300">Próxima revisión
+                  <input type="date" value={reviewDueAt} onChange={e => setReviewDueAt(e.target.value)} className="mt-1 w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-xs" />
+                </label>
+              </div>
+
               <div>
                 <label className="text-xs font-semibold text-slate-300 block mb-2">Categorías de Datos Personales Tratados *</label>
                 <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5 bg-slate-950/40 p-3 rounded-lg border border-slate-850">
@@ -772,7 +865,7 @@ export default function RopaInventoryView({ token, onRopaUpdated }: RopaInventor
                 <div className="p-3 bg-amber-950/20 border border-amber-900/40 text-amber-500 text-[10px] rounded-lg flex items-start gap-2 leading-relaxed">
                   <AlertTriangle size={16} className="flex-shrink-0 mt-0.5 text-amber-500" />
                   <span>
-                    <strong>Atención (Art. 16 bis - Ley N° 21.719):</strong> El tratamiento de datos de salud o biometría exige la aplicación forzosa de medidas de cifrado técnico tanto en reposo como en tránsito, junto con el consentimiento explícito firmado del titular.
+                    <strong>Revisión reforzada:</strong> Esta actividad incluye categorías que pueden requerir condiciones de licitud y medidas de seguridad específicas. La selección debe ser revisada y respaldada con evidencia; no implica por sí sola que el consentimiento sea la base aplicable.
                   </span>
                 </div>
               )}
@@ -794,6 +887,16 @@ export default function RopaInventoryView({ token, onRopaUpdated }: RopaInventor
                     <ToggleLeft className="w-8 h-8 text-slate-650" />
                   )}
                 </button>
+              </div>
+
+              <div className="space-y-2 bg-slate-950/30 p-3 rounded-lg border border-slate-855">
+                <label className="flex items-center gap-2 text-xs font-bold text-slate-300">
+                  <input type="checkbox" checked={automatedDecisions} onChange={e => setAutomatedDecisions(e.target.checked)} />
+                  Incluye decisiones automatizadas o elaboración de perfiles
+                </label>
+                {automatedDecisions && (
+                  <textarea required value={automatedDecisionDetails} onChange={e => setAutomatedDecisionDetails(e.target.value)} rows={2} placeholder="Describa la lógica general, uso y posibles efectos sobre el titular" className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-xs" />
+                )}
               </div>
 
               <div className="pt-2 flex justify-end gap-3">

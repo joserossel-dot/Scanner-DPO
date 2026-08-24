@@ -1,41 +1,15 @@
 import { Router } from 'express';
-import cors from 'cors';
 import { authenticateToken } from '../middlewares/auth.js';
+import { resolveActiveOrganization, requireOrganizationPermission } from '../tenancy/organizationContext.js';
 
 const router = Router();
 
-// CORS setup matching dashboard origins
-const adminCors = cors((req: any, callback: any) => {
-  const origin = req.header('Origin');
-  const host = req.header('Host');
-  const allowedOrigins = [
-    process.env.DASHBOARD_ORIGIN,
-    'http://localhost:5173',
-    'http://localhost:3000',
-    host
-  ].filter(Boolean);
-
-  const isAllowed = !origin || allowedOrigins.some(allowed => 
-    origin === allowed || 
-    origin === `https://${allowed}` || 
-    origin === `http://${allowed}`
-  );
-
-  let corsOptions;
-  if (isAllowed || process.env.NODE_ENV !== 'production') {
-    corsOptions = { origin: true, credentials: true };
-  } else {
-    corsOptions = { origin: false };
-  }
-  callback(null, corsOptions);
-});
-
 // Protect routes
 router.use(authenticateToken);
-router.options('*', adminCors);
+router.use(resolveActiveOrganization);
 
 // POST /api/ai/ask - Ask DPO Copilot about Ley N° 21.719
-router.post('/ask', adminCors, async (req, res) => {
+router.post('/ask', requireOrganizationPermission('compliance.read'), async (req, res) => {
   const { prompt } = req.body;
 
   if (!prompt || typeof prompt !== 'string') {

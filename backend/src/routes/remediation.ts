@@ -1,49 +1,24 @@
 import { Router } from 'express';
-import cors from 'cors';
 import { generateContractText } from '../services/contractBuilder.js';
 import { generatePrivacyPolicy } from '../services/policyBuilder.js';
 import { authenticateToken } from '../middlewares/auth.js';
 import { getDb } from '../database/db.js';
 import { sendImplementationRequestAlert } from '../services/emailService.js';
+import { resolveActiveOrganization, requireOrganizationPermission } from '../tenancy/organizationContext.js';
 
 const router = Router();
 
-// CORS setup matching dashboard origins
-const adminCors = cors((req: any, callback: any) => {
-  const origin = req.header('Origin');
-  const host = req.header('Host');
-  const allowedOrigins = [
-    process.env.DASHBOARD_ORIGIN,
-    'http://localhost:5173',
-    'http://localhost:3000',
-    host
-  ].filter(Boolean);
-
-  const isAllowed = !origin || allowedOrigins.some(allowed => 
-    origin === allowed || 
-    origin === `https://${allowed}` || 
-    origin === `http://${allowed}`
-  );
-
-  let corsOptions;
-  if (isAllowed || process.env.NODE_ENV !== 'production') {
-    corsOptions = { origin: true, credentials: true };
-  } else {
-    corsOptions = { origin: false };
-  }
-  callback(null, corsOptions);
-});
-
 // Protect all routes
 router.use(authenticateToken);
+router.use(resolveActiveOrganization);
 
 // GET /api/remediation/policies - Get the saved policy for active user
-router.get('/policies', adminCors, async (req: any, res) => {
+router.get('/policies', requireOrganizationPermission('compliance.read'), async (req: any, res) => {
   const db = getDb();
   try {
     const result = await db.query(
-      'SELECT * FROM privacy_policies WHERE user_id = $1',
-      [req.user.id]
+      'SELECT * FROM privacy_policies WHERE organization_id = $1',
+      [req.organization.id]
     );
     if (result.rowCount === 0) {
       return res.json(null);
@@ -56,7 +31,7 @@ router.get('/policies', adminCors, async (req: any, res) => {
 });
 
 // POST /api/remediation/policies - Generate and save/update policy
-router.post('/policies', adminCors, async (req: any, res) => {
+router.post('/policies', requireOrganizationPermission('compliance.write'), async (req: any, res) => {
   const { companyRut, address, contactEmail, dataCategories, purposes, retentionRules } = req.body;
 
   if (!companyRut || !address || !contactEmail || !Array.isArray(dataCategories) || !Array.isArray(purposes) || !retentionRules) {
@@ -69,15 +44,15 @@ router.post('/policies', adminCors, async (req: any, res) => {
     const ropaRes = await db.query(
       `SELECT process_name, purpose, legal_basis, retention_period, cross_border_transfer
        FROM ropa_inventory 
-       WHERE user_id = $1 AND status = 'confirmed'
+       WHERE organization_id = $1 AND status = 'confirmed'
        ORDER BY created_at ASC`,
-      [req.user.id]
+      [req.organization.id]
     );
 
     // 2. Registered international transfers (vendor names for encargados section)
     const transfersRes = await db.query(
-      `SELECT DISTINCT vendor_name FROM international_transfers WHERE user_id = $1`,
-      [req.user.id]
+      `SELECT DISTINCT vendor_name FROM international_transfers WHERE organization_id = $1`,
+      [req.organization.id]
     );
 
     // 3. Build deduplicated provider/encargado list
@@ -162,8 +137,8 @@ router.post('/policies', adminCors, async (req: any, res) => {
     });
 
     const result = await db.query(
-      `INSERT INTO privacy_policies (user_id, company_rut, address, contact_email, data_categories, purposes, retention_rules, policy_html)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+      `INSERT INTO privacy_policies (user_id, organization_id, company_rut, address, contact_email, data_categories, purposes, retention_rules, policy_html)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
        ON CONFLICT (user_id) DO UPDATE SET
          company_rut = EXCLUDED.company_rut,
          address = EXCLUDED.address,
@@ -176,6 +151,7 @@ router.post('/policies', adminCors, async (req: any, res) => {
        RETURNING *`,
       [
         req.user.id,
+        req.organization.id,
         companyRut,
         address,
         contactEmail,
@@ -194,7 +170,7 @@ router.post('/policies', adminCors, async (req: any, res) => {
 });
 
 // POST /api/remediation/generate-contract
-router.post('/generate-contract', adminCors, async (req: any, res) => {
+router.post('/generate-contract', requireOrganizationPermission('compliance.read'), async (req: any, res) => {
   try {
     const data = req.body;
     
@@ -216,7 +192,7 @@ router.post('/generate-contract', adminCors, async (req: any, res) => {
 });
 
 // POST /api/remediation/log-download - Audit log download of documents (P1 - Punto 8)
-router.post('/log-download', adminCors, async (req: any, res) => {
+router.post('/log-download', requireOrganizationPermission('evidence.write'), async (req: any, res) => {
   const { document_type, content_hash, disclaimer_version } = req.body;
 
   if (!document_type || !content_hash || !disclaimer_version) {
@@ -231,11 +207,12 @@ router.post('/log-download', adminCors, async (req: any, res) => {
   try {
     const db = getDb();
     const result = await db.query(
-      `INSERT INTO document_downloads (user_id, document_type, content_hash, disclaimer_version)
-       VALUES ($1, $2, $3, $4)
+      `INSERT INTO document_downloads (user_id, organization_id, document_type, content_hash, disclaimer_version)
+       VALUES ($1, $2, $3, $4, $5)
        RETURNING *`,
       [
         req.user.id,
+        req.organization.id,
         document_type,
         content_hash,
         disclaimer_version
@@ -253,7 +230,7 @@ router.post('/log-download', adminCors, async (req: any, res) => {
 });
 
 // POST /api/remediation/request-help - Request implementation help for a finding (P0-A)
-router.post('/request-help', adminCors, async (req: any, res) => {
+router.post('/request-help', requireOrganizationPermission('compliance.write'), async (req: any, res) => {
   const { findingId, description, effort } = req.body;
   if (!findingId || !description || !effort) {
     return res.status(400).json({ error: 'Faltan campos obligatorios: findingId, description, effort.' });
@@ -265,9 +242,9 @@ router.post('/request-help', adminCors, async (req: any, res) => {
   try {
     // 1. Insert into database
     await db.query(
-      `INSERT INTO implementation_requests (user_id, finding_id, finding_description, effort)
-       VALUES ($1, $2, $3, $4)`,
-      [userId, findingId, description, effort]
+      `INSERT INTO implementation_requests (user_id, organization_id, finding_id, finding_description, effort)
+       VALUES ($1, $2, $3, $4, $5)`,
+      [userId, req.organization.id, findingId, description, effort]
     );
 
     // 2. Fetch tenant email and company name to send alert

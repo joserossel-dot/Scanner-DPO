@@ -1,0 +1,26 @@
+-- REVIEW BEFORE EXECUTION. This file is an example and is not run automatically.
+-- The application must run each tenant transaction as follows:
+--   BEGIN;
+--   SET LOCAL app.organization_id = '00000000-0000-0000-0000-000000000000';
+--   ... tenant queries ...
+--   COMMIT;
+--
+-- Use a non-owner application DB role. PostgreSQL table owners bypass RLS unless
+-- FORCE ROW LEVEL SECURITY is enabled. Keep a separate administrative/migration role.
+
+ALTER TABLE site_configs ENABLE ROW LEVEL SECURITY;
+ALTER TABLE audit_reports ENABLE ROW LEVEL SECURITY;
+ALTER TABLE consent_logs ENABLE ROW LEVEL SECURITY;
+ALTER TABLE arco_requests ENABLE ROW LEVEL SECURITY;
+ALTER TABLE international_transfers ENABLE ROW LEVEL SECURITY;
+ALTER TABLE security_incidents ENABLE ROW LEVEL SECURITY;
+ALTER TABLE privacy_policies ENABLE ROW LEVEL SECURITY;
+ALTER TABLE risk_matrix ENABLE ROW LEVEL SECURITY;
+ALTER TABLE whistleblower_reports ENABLE ROW LEVEL SECURITY;
+ALTER TABLE ropa_inventory ENABLE ROW LEVEL SECURITY;
+ALTER TABLE document_downloads ENABLE ROW LEVEL SECURITY;
+ALTER TABLE implementation_requests ENABLE ROW LEVEL SECURITY;
+ALTER TABLE documents ENABLE ROW LEVEL SECURITY;
+ALTER TABLE form_consent_logs ENABLE ROW LEVEL SECURITY;
+ALTER TABLE employee_trainings ENABLE ROW LEVEL SECURITY;
+ALTER TABLE training_materials ENABLE ROW LEVEL SECURITY;

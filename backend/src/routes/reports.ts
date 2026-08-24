@@ -1,44 +1,19 @@
 import { Router } from 'express';
-import cors from 'cors';
 import { getDb } from '../database/db.js';
 import { evaluateQuestionnaire } from '../services/diagnosisEngine.js';
 import { analyzeQuestionnaireAnswers } from '../services/ropaDraftService.js';
 import { authenticateToken } from '../middlewares/auth.js';
 import { sendTenantActivationAlert } from '../services/emailService.js';
+import { resolveActiveOrganization, requireOrganizationPermission } from '../tenancy/organizationContext.js';
 
 const router = Router();
 
-// CORS setup matching dashboard origins
-const adminCors = cors((req: any, callback: any) => {
-  const origin = req.header('Origin');
-  const host = req.header('Host');
-  const allowedOrigins = [
-    process.env.DASHBOARD_ORIGIN,
-    'http://localhost:5173',
-    'http://localhost:3000',
-    host
-  ].filter(Boolean);
-
-  const isAllowed = !origin || allowedOrigins.some(allowed => 
-    origin === allowed || 
-    origin === `https://${allowed}` || 
-    origin === `http://${allowed}`
-  );
-
-  let corsOptions;
-  if (isAllowed || process.env.NODE_ENV !== 'production') {
-    corsOptions = { origin: true, credentials: true };
-  } else {
-    corsOptions = { origin: false };
-  }
-  callback(null, corsOptions);
-});
-
 // Protect all routes
 router.use(authenticateToken);
+router.use(resolveActiveOrganization);
 
 // GET /api/reports/diagnosis - Unified Compliance Center Report
-router.get('/diagnosis', adminCors, async (req: any, res) => {
+router.get('/diagnosis', requireOrganizationPermission('compliance.read'), async (req: any, res) => {
   let domain = req.query.domain as string;
   if (!domain) {
     const referer = req.headers.referer;
@@ -60,9 +35,9 @@ router.get('/diagnosis', adminCors, async (req: any, res) => {
     // 1a. Fetch latest actual web scan (where pages_analyzed is not empty)
     const scanRes = await db.query(
       `SELECT * FROM audit_reports 
-       WHERE user_id = $1 AND pages_analyzed IS NOT NULL AND pages_analyzed::text != '[]' 
+       WHERE organization_id = $1 AND pages_analyzed IS NOT NULL AND pages_analyzed::text != '[]'
        ORDER BY created_at DESC LIMIT 1`,
-      [req.user.id]
+      [req.organization.id]
     );
     
     let crawlScore = 100;
@@ -91,9 +66,9 @@ router.get('/diagnosis', adminCors, async (req: any, res) => {
     // 1b. Fetch latest questionnaire evaluation report (where pages_analyzed is empty)
     const evalRes = await db.query(
       `SELECT * FROM audit_reports 
-       WHERE user_id = $1 AND (pages_analyzed IS NULL OR pages_analyzed::text = '[]') 
+       WHERE organization_id = $1 AND (pages_analyzed IS NULL OR pages_analyzed::text = '[]')
        ORDER BY created_at DESC LIMIT 1`,
-      [req.user.id]
+      [req.organization.id]
     );
     
     let evalFindings: any[] = [];
@@ -124,14 +99,14 @@ router.get('/diagnosis', adminCors, async (req: any, res) => {
 
     // 2. Get registered international transfers
     const transfersRes = await db.query(
-      `SELECT * FROM international_transfers WHERE user_id = $1`,
-      [req.user.id]
+      `SELECT * FROM international_transfers WHERE organization_id = $1`,
+      [req.organization.id]
     );
 
     // 3. Get security incidents
     const incidentsRes = await db.query(
-      `SELECT * FROM security_incidents WHERE user_id = $1`,
-      [req.user.id]
+      `SELECT * FROM security_incidents WHERE organization_id = $1`,
+      [req.organization.id]
     );
 
 
@@ -182,8 +157,8 @@ router.get('/diagnosis', adminCors, async (req: any, res) => {
       `SELECT 
         COUNT(CASE WHEN status = 'confirmed' THEN 1 END)::int as confirmed_count,
         COUNT(CASE WHEN status = 'draft' THEN 1 END)::int as draft_count
-       FROM ropa_inventory WHERE user_id = $1`,
-      [req.user.id]
+       FROM ropa_inventory WHERE organization_id = $1`,
+      [req.organization.id]
     );
     const confirmedRopaCount = ropaRes.rows[0]?.confirmed_count || 0;
     const draftRopaCount = ropaRes.rows[0]?.draft_count || 0;
@@ -250,7 +225,7 @@ router.get('/diagnosis', adminCors, async (req: any, res) => {
     // Fetch tenant subscription status for gating/paywall
     const userRes = await db.query(
       `SELECT subscription_plan, subscription_status FROM users WHERE id = $1`,
-      [req.user.id]
+      [req.organization.id]
     );
     const plan = userRes.rows[0]?.subscription_plan || 'Pro';
     const status = userRes.rows[0]?.subscription_status || 'Active';
@@ -302,7 +277,7 @@ router.get('/diagnosis', adminCors, async (req: any, res) => {
 });
 
 // POST /api/reports/evaluate - Evaluate diagnostic questionnaire and save report
-router.post('/evaluate', adminCors, async (req: any, res) => {
+router.post('/evaluate', requireOrganizationPermission('compliance.write'), async (req: any, res) => {
   try {
     const db = getDb();
 
@@ -311,8 +286,8 @@ router.post('/evaluate', adminCors, async (req: any, res) => {
       `SELECT 
         COUNT(CASE WHEN status = 'confirmed' THEN 1 END)::int as confirmed_count,
         COUNT(CASE WHEN status = 'draft' THEN 1 END)::int as draft_count
-       FROM ropa_inventory WHERE user_id = $1`,
-      [req.user.id]
+       FROM ropa_inventory WHERE organization_id = $1`,
+      [req.organization.id]
     );
     const confirmed_ropa_count = ropaRes.rows[0]?.confirmed_count || 0;
     const draft_ropa_count = ropaRes.rows[0]?.draft_count || 0;
@@ -330,8 +305,8 @@ router.post('/evaluate', adminCors, async (req: any, res) => {
     };
 
     const result = await db.query(
-      `INSERT INTO audit_reports (url, score, severity_counts, findings, pages_analyzed, pages_skipped, action_plan, user_id)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id`,
+      `INSERT INTO audit_reports (url, score, severity_counts, findings, pages_analyzed, pages_skipped, action_plan, user_id, organization_id)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING id`,
       [
         domain,
         evaluation.scoreTotal,
@@ -340,7 +315,8 @@ router.post('/evaluate', adminCors, async (req: any, res) => {
         JSON.stringify([]),
         JSON.stringify([]),
         JSON.stringify(evaluation.actionPlan || []),
-        req.user.id
+        req.user.id,
+        req.organization.id
       ]
     );
 
@@ -349,8 +325,8 @@ router.post('/evaluate', adminCors, async (req: any, res) => {
     try {
         await analyzeQuestionnaireAnswers(req.user.id, answers);
         const draftsRes = await db.query(
-          "SELECT * FROM ropa_inventory WHERE user_id = $1 AND status = 'draft' ORDER BY created_at DESC",
-          [req.user.id]
+          "SELECT * FROM ropa_inventory WHERE organization_id = $1 AND status = 'draft' ORDER BY created_at DESC",
+          [req.organization.id]
         );
         ropaDraftsGenerated = draftsRes.rows;
     } catch (err) {
@@ -361,8 +337,8 @@ router.post('/evaluate', adminCors, async (req: any, res) => {
     // Check if this is the first successful evaluation (confirmed ROPA > 0, and no previous successful audit_reports)
     try {
       const prevReports = await db.query(
-        `SELECT COUNT(*)::int as count FROM audit_reports WHERE user_id = $1 AND score > 0`,
-        [req.user.id]
+        `SELECT COUNT(*)::int as count FROM audit_reports WHERE organization_id = $1 AND score > 0`,
+        [req.organization.id]
       );
       const hasPreviousSuccess = (prevReports.rows[0]?.count || 0) > 0;
 
@@ -388,7 +364,7 @@ router.post('/evaluate', adminCors, async (req: any, res) => {
 });
 
 // GET /api/reports/dossier - Aggregated Compliance Dossier for Fiscalization
-router.get('/dossier', adminCors, async (req: any, res) => {
+router.get('/dossier', requireOrganizationPermission('compliance.read'), async (req: any, res) => {
   const db = getDb();
   try {
     // 1. Get user/company info
@@ -404,38 +380,38 @@ router.get('/dossier', adminCors, async (req: any, res) => {
 
     // 2. Get latest score
     const reportRes = await db.query(
-      'SELECT score, severity_counts, findings, action_plan, created_at FROM audit_reports WHERE user_id = $1 ORDER BY created_at DESC LIMIT 1',
-      [req.user.id]
+      'SELECT score, severity_counts, findings, action_plan, created_at FROM audit_reports WHERE organization_id = $1 ORDER BY created_at DESC LIMIT 1',
+      [req.organization.id]
     );
     const latestReport = reportRes.rows[0] || { score: 100, severity_counts: { leve: 0, grave: 0, gravisima: 0 }, findings: [], action_plan: [] };
 
     // 3. Get latest privacy policy timestamp
     const policyRes = await db.query(
-      'SELECT updated_at FROM privacy_policies WHERE user_id = $1 ORDER BY updated_at DESC LIMIT 1',
-      [req.user.id]
+      'SELECT updated_at FROM privacy_policies WHERE organization_id = $1 ORDER BY updated_at DESC LIMIT 1',
+      [req.organization.id]
     );
     const latestPolicy = policyRes.rows[0] || null;
 
     // 4. Count international transfers and SCC status
     const transfersRes = await db.query(
-      'SELECT * FROM international_transfers WHERE user_id = $1',
-      [req.user.id]
+      'SELECT * FROM international_transfers WHERE organization_id = $1',
+      [req.organization.id]
     );
     const totalTransfers = transfersRes.rowCount;
     const transfersWithScc = transfersRes.rows.filter((t: any) => t.has_scc).length;
 
     // 4.5 Get confirmed RoPA processes
     const ropaRes = await db.query(
-      "SELECT * FROM ropa_inventory WHERE user_id = $1 AND status = 'confirmed'",
-      [req.user.id]
+      "SELECT * FROM ropa_inventory WHERE organization_id = $1 AND status = 'confirmed'",
+      [req.organization.id]
     );
     const confirmedRopaCount = ropaRes.rowCount;
     const ropaProcesses = ropaRes.rows;
 
     // 5. Count risk matrix entries
     const risksRes = await db.query(
-      'SELECT * FROM risk_matrix WHERE user_id = $1',
-      [req.user.id]
+      'SELECT * FROM risk_matrix WHERE organization_id = $1',
+      [req.organization.id]
     );
     const totalRisks = risksRes.rowCount;
     const mitigatedRisks = risksRes.rows.filter((r: any) => r.status === 'IMPLEMENTED').length;

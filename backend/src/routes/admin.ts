@@ -1,37 +1,8 @@
 import { Router } from 'express';
-import cors from 'cors';
 import { getDb } from '../database/db.js';
 import { authenticateToken } from '../middlewares/auth.js';
 
 const router = Router();
-
-const adminCors = cors((req: any, callback: any) => {
-  const origin = req.header('Origin');
-  const host = req.header('Host');
-  const allowedOrigins = [
-    process.env.DASHBOARD_ORIGIN,
-    'http://localhost:5173',
-    'http://localhost:3000',
-    host
-  ].filter(Boolean);
-
-  const isAllowed = !origin || allowedOrigins.some(allowed => 
-    origin === allowed || 
-    origin === `https://${allowed}` || 
-    origin === `http://${allowed}`
-  );
-
-  let corsOptions;
-  if (isAllowed || process.env.NODE_ENV !== 'production') {
-    corsOptions = { origin: true, credentials: true };
-  } else {
-    corsOptions = { origin: false };
-  }
-  callback(null, corsOptions);
-});
-
-// OPTIONS pre-flight handler
-router.options('*', adminCors);
 
 // Middleware to check superadmin privileges
 const requireSuperAdmin = (req: any, res: any, next: any) => {
@@ -42,7 +13,7 @@ const requireSuperAdmin = (req: any, res: any, next: any) => {
 };
 
 // GET /api/admin/tenants - Get all tenant organizations with CRM details (only superadmin)
-router.get('/tenants', adminCors, authenticateToken, requireSuperAdmin, async (req: any, res) => {
+router.get('/tenants', authenticateToken, requireSuperAdmin, async (req: any, res) => {
   const db = getDb();
   try {
     const result = await db.query(`
@@ -56,6 +27,7 @@ router.get('/tenants', adminCors, authenticateToken, requireSuperAdmin, async (r
         u.created_at,
         u.sales_notes,
         u.sales_status,
+        u.default_organization_id,
         (SELECT COUNT(*)::int FROM ropa_inventory r WHERE r.user_id = u.id AND r.status = 'confirmed') as confirmed_ropa_count,
         (SELECT score FROM audit_reports a WHERE a.user_id = u.id ORDER BY a.created_at DESC LIMIT 1) as last_diagnostic_score
       FROM users u
@@ -68,8 +40,71 @@ router.get('/tenants', adminCors, authenticateToken, requireSuperAdmin, async (r
   }
 });
 
+router.get('/tenants/:id/service-members', authenticateToken, requireSuperAdmin, async (req: any, res) => {
+  try {
+    const result = await getDb().query(
+      `SELECT u.id, u.email, u.company_name, om.status, r.code AS role_code, r.name AS role_name
+         FROM users owner
+         JOIN organization_memberships om_owner ON om_owner.organization_id = owner.default_organization_id
+         JOIN organization_memberships om ON om.organization_id = om_owner.organization_id AND om.status = 'active'
+         JOIN users u ON u.id = om.user_id
+         LEFT JOIN membership_roles mr ON mr.membership_id = om.id
+         LEFT JOIN roles r ON r.id = mr.role_id
+        WHERE owner.id = $1 AND om_owner.user_id = owner.id
+          AND r.code IN ('service_consultant', 'legal_reviewer', 'arco_operator')
+        ORDER BY r.code, u.email`,
+      [req.params.id]
+    );
+    res.json(result.rows);
+  } catch (error: any) {
+    res.status(500).json({ error: 'No fue posible cargar el equipo del servicio.' });
+  }
+});
+
+router.post('/tenants/:id/service-members', authenticateToken, requireSuperAdmin, async (req: any, res) => {
+  const email = String(req.body.email || '').trim().toLowerCase();
+  const roleCode = String(req.body.role_code || '');
+  if (!email || !['service_consultant', 'legal_reviewer', 'arco_operator'].includes(roleCode)) {
+    return res.status(400).json({ error: 'Correo o rol de servicio inválido.' });
+  }
+  const client = await getDb().connect();
+  try {
+    await client.query('BEGIN');
+    const target = await client.query(`SELECT id FROM users WHERE LOWER(email) = $1`, [email]);
+    const tenant = await client.query(`SELECT default_organization_id FROM users WHERE id = $1`, [req.params.id]);
+    const role = await client.query(`SELECT id FROM roles WHERE code = $1`, [roleCode]);
+    if (!target.rowCount || !tenant.rows[0]?.default_organization_id || !role.rowCount) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ error: 'Usuario, organización o rol no encontrado.' });
+    }
+    const membership = await client.query(
+      `INSERT INTO organization_memberships (organization_id, user_id, status, joined_at)
+       VALUES ($1, $2, 'active', CURRENT_TIMESTAMP)
+       ON CONFLICT (organization_id, user_id) DO UPDATE SET joined_at = organization_memberships.joined_at
+       RETURNING id`,
+      [tenant.rows[0].default_organization_id, target.rows[0].id]
+    );
+    const membershipStatus = await client.query(`SELECT status FROM organization_memberships WHERE id = $1`, [membership.rows[0].id]);
+    if (membershipStatus.rows[0]?.status !== 'active') {
+      await client.query('ROLLBACK');
+      return res.status(409).json({ error: 'La membresía existe pero no está activa; requiere una reactivación explícita.' });
+    }
+    await client.query(
+      `INSERT INTO membership_roles (membership_id, role_id) VALUES ($1, $2) ON CONFLICT DO NOTHING`,
+      [membership.rows[0].id, role.rows[0].id]
+    );
+    await client.query('COMMIT');
+    res.status(201).json({ success: true, user_id: target.rows[0].id, role_code: roleCode });
+  } catch (error: any) {
+    await client.query('ROLLBACK');
+    res.status(500).json({ error: 'No fue posible asignar el miembro del servicio.' });
+  } finally {
+    client.release();
+  }
+});
+
 // GET /api/admin/leads - Get all leads from free scan (only superadmin)
-router.get('/leads', adminCors, authenticateToken, requireSuperAdmin, async (req: any, res) => {
+router.get('/leads', authenticateToken, requireSuperAdmin, async (req: any, res) => {
   const db = getDb();
   try {
     const result = await db.query(
@@ -83,7 +118,7 @@ router.get('/leads', adminCors, authenticateToken, requireSuperAdmin, async (req
 });
 
 // PUT /api/admin/leads/:id - Update lead sales status & notes (only superadmin)
-router.put('/leads/:id', adminCors, authenticateToken, requireSuperAdmin, async (req: any, res) => {
+router.put('/leads/:id', authenticateToken, requireSuperAdmin, async (req: any, res) => {
   const db = getDb();
   const { id } = req.params;
   const { status, sales_notes } = req.body;
@@ -103,7 +138,7 @@ router.put('/leads/:id', adminCors, authenticateToken, requireSuperAdmin, async 
 });
 
 // PUT /api/admin/tenants/:id - Update tenant sales status, notes & subscription (only superadmin)
-router.put('/tenants/:id', adminCors, authenticateToken, requireSuperAdmin, async (req: any, res) => {
+router.put('/tenants/:id', authenticateToken, requireSuperAdmin, async (req: any, res) => {
   const db = getDb();
   const { id } = req.params;
   const { sales_status, sales_notes, subscription_plan, subscription_status } = req.body;

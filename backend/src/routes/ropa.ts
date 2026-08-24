@@ -1,7 +1,7 @@
 import { Router } from 'express';
-import cors from 'cors';
 import { getDb } from '../database/db.js';
 import { authenticateToken } from '../middlewares/auth.js';
+import { resolveActiveOrganization, requireOrganizationPermission } from '../tenancy/organizationContext.js';
 import multer from 'multer';
 import { OpenAI } from 'openai';
 
@@ -9,46 +9,21 @@ const storage = multer.memoryStorage();
 const upload = multer({ storage: storage });
 
 const router = Router();
-
-// CORS setup matching dashboard origins
-const adminCors = cors((req: any, callback: any) => {
-  const origin = req.header('Origin');
-  const host = req.header('Host');
-  const allowedOrigins = [
-    process.env.DASHBOARD_ORIGIN,
-    'http://localhost:5173',
-    'http://localhost:3000',
-    host
-  ].filter(Boolean);
-
-  const isAllowed = !origin || allowedOrigins.some(allowed => 
-    origin === allowed || 
-    origin === `https://${allowed}` || 
-    origin === `http://${allowed}`
-  );
-
-  let corsOptions;
-  if (isAllowed || process.env.NODE_ENV !== 'production') {
-    corsOptions = { origin: true, credentials: true };
-  } else {
-    corsOptions = { origin: false };
-  }
-  callback(null, corsOptions);
-});
+const stringArray = (value: unknown): string[] => Array.isArray(value)
+  ? value.map(item => String(item).trim()).filter(Boolean)
+  : [];
 
 // Protect all routes
 router.use(authenticateToken);
-
-// OPTIONS pre-flight handler
-router.options('*', adminCors);
+router.use(resolveActiveOrganization);
 
 // GET /api/ropa - Get all processes in the RoPA inventory
-router.get('/', adminCors, async (req: any, res) => {
+router.get('/', requireOrganizationPermission('compliance.read'), async (req: any, res) => {
   const db = getDb();
   try {
     const result = await db.query(
-      'SELECT * FROM ropa_inventory WHERE user_id = $1 ORDER BY created_at DESC',
-      [req.user.id]
+      'SELECT * FROM ropa_inventory WHERE organization_id = $1 ORDER BY created_at DESC',
+      [req.organization.id]
     );
     res.json(result.rows);
   } catch (error: any) {
@@ -58,8 +33,11 @@ router.get('/', adminCors, async (req: any, res) => {
 });
 
 // POST /api/ropa - Add a new process to the RoPA inventory
-router.post('/', adminCors, async (req: any, res) => {
-  const { process_name, purpose, legal_basis, data_categories, retention_period, cross_border_transfer, source, status } = req.body;
+router.post('/', requireOrganizationPermission('compliance.write'), async (req: any, res) => {
+  const { process_name, purpose, legal_basis, data_categories, retention_period, cross_border_transfer, source, status,
+    systems, data_sources, data_subject_categories, recipients, deletion_method, process_owner_contact_id,
+    contains_sensitive_data, sensitive_data_categories, legal_basis_rationale, retention_legal_basis,
+    security_measures, review_due_at, automated_decisions, automated_decision_details } = req.body;
 
   if (!process_name || !purpose || !legal_basis || !data_categories || !retention_period) {
     return res.status(400).json({ error: 'Faltan parámetros requeridos para registrar la actividad.' });
@@ -67,15 +45,27 @@ router.post('/', adminCors, async (req: any, res) => {
 
   const db = getDb();
   try {
+    if (process_owner_contact_id) {
+      const owner = await db.query('SELECT 1 FROM organization_contacts WHERE id = $1 AND organization_id = $2', [process_owner_contact_id, req.organization.id]);
+      if (!owner.rowCount) return res.status(400).json({ error: 'El responsable indicado no pertenece a la organización.' });
+    }
     const sourceVal = source || 'manual';
     const statusVal = status || 'confirmed';
 
     const result = await db.query(`
-      INSERT INTO ropa_inventory (user_id, process_name, purpose, legal_basis, data_categories, retention_period, cross_border_transfer, source, status)
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+      INSERT INTO ropa_inventory
+      (user_id, organization_id, engagement_id, process_name, purpose, legal_basis,
+       data_categories, retention_period, cross_border_transfer, source, status,
+       systems, data_sources, data_subject_categories, recipients, deletion_method, process_owner_contact_id,
+       contains_sensitive_data, sensitive_data_categories, legal_basis_rationale, retention_legal_basis,
+       security_measures, review_due_at, automated_decisions, automated_decision_details)
+      VALUES ($1, $2, (SELECT id FROM service_engagements WHERE organization_id = $2 ORDER BY created_at DESC LIMIT 1),
+       $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16,
+       $17, $18, $19, $20, $21, $22, $23, $24)
       RETURNING *
     `, [
       req.user.id,
+      req.organization.id,
       process_name,
       purpose,
       legal_basis,
@@ -83,7 +73,21 @@ router.post('/', adminCors, async (req: any, res) => {
       retention_period,
       cross_border_transfer === true,
       sourceVal,
-      statusVal
+      statusVal,
+      JSON.stringify(stringArray(systems)),
+      JSON.stringify(stringArray(data_sources)),
+      JSON.stringify(stringArray(data_subject_categories)),
+      JSON.stringify(stringArray(recipients)),
+      deletion_method || null,
+      process_owner_contact_id || null,
+      contains_sensitive_data === true,
+      JSON.stringify(stringArray(sensitive_data_categories)),
+      legal_basis_rationale || null,
+      retention_legal_basis || null,
+      JSON.stringify(stringArray(security_measures)),
+      review_due_at || null,
+      automated_decisions === true,
+      automated_decisions === true ? automated_decision_details || null : null
     ]);
     res.status(201).json(result.rows[0]);
   } catch (error: any) {
@@ -93,9 +97,12 @@ router.post('/', adminCors, async (req: any, res) => {
 });
 
 // PUT /api/ropa/:id - Update an existing process in the RoPA inventory
-router.put('/:id', adminCors, async (req: any, res) => {
+router.put('/:id', requireOrganizationPermission('compliance.write'), async (req: any, res) => {
   const { id } = req.params;
-  const { process_name, purpose, legal_basis, data_categories, retention_period, cross_border_transfer, source, status } = req.body;
+  const { process_name, purpose, legal_basis, data_categories, retention_period, cross_border_transfer, source, status,
+    systems, data_sources, data_subject_categories, recipients, deletion_method, process_owner_contact_id,
+    contains_sensitive_data, sensitive_data_categories, legal_basis_rationale, retention_legal_basis,
+    security_measures, review_due_at, automated_decisions, automated_decision_details } = req.body;
 
   if (!process_name || !purpose || !legal_basis || !data_categories || !retention_period) {
     return res.status(400).json({ error: 'Faltan parámetros requeridos para actualizar la actividad.' });
@@ -103,13 +110,25 @@ router.put('/:id', adminCors, async (req: any, res) => {
 
   const db = getDb();
   try {
+    if (process_owner_contact_id) {
+      const owner = await db.query('SELECT 1 FROM organization_contacts WHERE id = $1 AND organization_id = $2', [process_owner_contact_id, req.organization.id]);
+      if (!owner.rowCount) return res.status(400).json({ error: 'El responsable indicado no pertenece a la organización.' });
+    }
     const sourceVal = source || 'manual';
     const statusVal = status || 'confirmed';
 
     const result = await db.query(`
       UPDATE ropa_inventory 
-      SET process_name = $1, purpose = $2, legal_basis = $3, data_categories = $4, retention_period = $5, cross_border_transfer = $6, source = $7, status = $8
-      WHERE id = $9 AND user_id = $10
+      SET process_name = $1, purpose = $2, legal_basis = $3, data_categories = $4,
+          retention_period = $5, cross_border_transfer = $6, source = $7, status = $8,
+          systems = $9, data_sources = $10, data_subject_categories = $11,
+          recipients = $12, deletion_method = $13, process_owner_contact_id = $14,
+          contains_sensitive_data = $15, sensitive_data_categories = $16,
+          legal_basis_rationale = $17, retention_legal_basis = $18,
+          security_measures = $19, review_due_at = $20,
+          automated_decisions = $21, automated_decision_details = $22,
+          last_reviewed_at = CURRENT_TIMESTAMP, reviewed_by = $23
+      WHERE id = $24 AND organization_id = $25
       RETURNING *
     `, [
       process_name,
@@ -120,8 +139,22 @@ router.put('/:id', adminCors, async (req: any, res) => {
       cross_border_transfer === true,
       sourceVal,
       statusVal,
-      id,
-      req.user.id
+      JSON.stringify(stringArray(systems)),
+      JSON.stringify(stringArray(data_sources)),
+      JSON.stringify(stringArray(data_subject_categories)),
+      JSON.stringify(stringArray(recipients)),
+      deletion_method || null,
+      process_owner_contact_id || null,
+      contains_sensitive_data === true,
+      JSON.stringify(stringArray(sensitive_data_categories)),
+      legal_basis_rationale || null,
+      retention_legal_basis || null,
+      JSON.stringify(stringArray(security_measures)),
+      review_due_at || null,
+      automated_decisions === true,
+      automated_decisions === true ? automated_decision_details || null : null,
+      req.user.id,
+      id, req.organization.id
     ]);
 
     if (result.rowCount === 0) {
@@ -136,13 +169,13 @@ router.put('/:id', adminCors, async (req: any, res) => {
 });
 
 // DELETE /api/ropa/:id - Delete a process from the RoPA inventory
-router.delete('/:id', adminCors, async (req: any, res) => {
+router.delete('/:id', requireOrganizationPermission('compliance.write'), async (req: any, res) => {
   const { id } = req.params;
   const db = getDb();
   try {
     const result = await db.query(
-      'DELETE FROM ropa_inventory WHERE id = $1 AND user_id = $2',
-      [id, req.user.id]
+      'DELETE FROM ropa_inventory WHERE id = $1 AND organization_id = $2',
+      [id, req.organization.id]
     );
 
     if (result.rowCount === 0) {
@@ -157,7 +190,7 @@ router.delete('/:id', adminCors, async (req: any, res) => {
 });
 
 // POST /api/ropa/analyze-evidence - Analyze uploaded evidence (screenshot) using OpenAI Vision in memory
-router.post('/analyze-evidence', adminCors, upload.single('evidence'), async (req: any, res) => {
+router.post('/analyze-evidence', requireOrganizationPermission('evidence.write'), upload.single('evidence'), async (req: any, res) => {
   try {
     if (!req.file) {
       return res.status(400).json({ error: 'No se subió ningún archivo de evidencia.' });

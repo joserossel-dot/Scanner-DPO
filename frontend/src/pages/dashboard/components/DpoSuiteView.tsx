@@ -1,4 +1,5 @@
 import { authFetch } from '../../../lib/authFetch';
+import { API_BASE } from '../../../lib/api';
 import React, { useState, useEffect } from 'react';
 import { 
   Shield, 
@@ -13,25 +14,6 @@ import {
   Search,
   FileText
 } from 'lucide-react';
-
-const API_BASE = (() => {
-  const url = (import.meta as any).env.VITE_API_URL || '';
-  if (typeof window !== 'undefined') {
-    const hostname = window.location.hostname;
-    if (hostname.includes('onrender.com')) {
-      const parts = hostname.split('.');
-      const sub = parts[0];
-      if (sub.endsWith('-dashboard')) {
-        const baseSub = sub.replace('-dashboard', '-api');
-        return `https://${baseSub}.onrender.com`;
-      }
-    }
-  }
-  if (url && !url.startsWith('http://') && !url.startsWith('https://')) {
-    return 'https://' + url;
-  }
-  return url;
-})();
 
 interface DpoSuiteViewProps {
   token: string | null;

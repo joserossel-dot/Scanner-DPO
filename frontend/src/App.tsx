@@ -21,10 +21,12 @@ import LegalCopilot from './components/LegalCopilot';
 import CmpManagerView from './pages/dashboard/components/CmpManagerView';
 import EmployeeTrainingPublic from './pages/legal/EmployeeTrainingPublic';
 import EmployeeTrainingDashboard from './pages/dashboard/components/EmployeeTrainingDashboard';
+import ServiceWorkspaceView from './pages/dashboard/components/ServiceWorkspaceView';
 import ForgotPasswordView from './pages/auth/ForgotPasswordView';
 import ResetPasswordView from './pages/auth/ResetPasswordView';
 import AdminDashboardView from './pages/admin/AdminDashboardView';
 import { authFetch } from './lib/authFetch';
+import { API_BASE } from './lib/api';
 import { 
   Shield, 
   Activity, 
@@ -136,28 +138,6 @@ interface ClientConfig {
   banner_description: string;
 }
 
-const API_BASE = (() => {
-  const envUrl = (import.meta as any).env.VITE_API_URL || '';
-  // If explicitly provided, ensure it has protocol
-  if (envUrl && !envUrl.startsWith('http://') && !envUrl.startsWith('https://')) {
-    return 'https://' + envUrl;
-  }
-  // Use provided URL if valid
-  if (envUrl) {
-    return envUrl;
-  }
-  // Production fallback: use explicit Render backend URL
-  if (typeof window !== 'undefined') {
-    const hostname = window.location.hostname;
-    if (hostname.includes('onrender.com')) {
-      // Always point to the known backend service on Render
-      return 'https://pt-compliance-api.onrender.com';
-    }
-  }
-  // Default to localhost backend during dev
-  return 'http://localhost:3000';
-})();
-
 // Development domain param for diagnosis/report fetches (only include when running locally)
 const DEV_DOMAIN_PARAM = (typeof window !== 'undefined' && (window.location.hostname.includes('localhost') || window.location.hostname.includes('127.0.0.1')))
   ? '?domain=localhost:3000'
@@ -168,7 +148,7 @@ interface DashboardProps {
   token: string | null;
   user: any;
   onLogout: () => void;
-  initialTab?: 'scanner' | 'diagnosis' | 'remediation' | 'dpo' | 'dossier' | 'ropa' | 'admin';
+  initialTab?: 'service' | 'scanner' | 'diagnosis' | 'remediation' | 'dpo' | 'dossier' | 'ropa' | 'admin';
 }
 
 export function Dashboard({ token, user, onLogout, initialTab }: DashboardProps) {
@@ -178,7 +158,7 @@ export function Dashboard({ token, user, onLogout, initialTab }: DashboardProps)
   // Lexically shadow the global fetch with our centralized authenticated fetch helper
   const fetch = authFetch;
 
-  const [activeTab, setActiveTab] = useState<'scanner' | 'diagnosis' | 'remediation' | 'dpo' | 'dossier' | 'ropa' | 'admin'>(initialTab || 'scanner');
+  const [activeTab, setActiveTab] = useState<'service' | 'scanner' | 'diagnosis' | 'remediation' | 'dpo' | 'dossier' | 'ropa' | 'admin' | 'cmp' | 'training'>(initialTab || 'service');
   const [remediationSubTab, setRemediationSubTab] = useState<'cmp' | 'arco' | 'transfers' | 'policies' | 'contracts'>('cmp');
   const [diagnosisViewMode, setDiagnosisViewMode] = useState<'overview' | 'questionnaire'>('overview');
   
@@ -336,7 +316,7 @@ export function Dashboard({ token, user, onLogout, initialTab }: DashboardProps)
       const cleanDomain = (() => {
         try { return new URL(scanUrl).hostname; } catch (e) { return scanUrl.replace(/^https?:\/\//, '').replace(/\/$/, ''); }
       })();
-      const res = await fetch(`${API_BASE}/api/reports/evaluate`, {
+      const res = await authFetch(`${API_BASE}/api/reports/evaluate`, {
         method: 'POST',
         headers,
         body: JSON.stringify({ ...answers, domain: cleanDomain })
@@ -388,7 +368,7 @@ export function Dashboard({ token, user, onLogout, initialTab }: DashboardProps)
       if (token) {
         scanHeaders['Authorization'] = `Bearer ${token}`;
       }
-      const res = await fetch(`${API_BASE}/api/scan`, {
+      const res = await authFetch(`${API_BASE}/api/scan`, {
         method: 'POST',
         headers: scanHeaders,
         body: JSON.stringify({ url })
@@ -404,7 +384,7 @@ export function Dashboard({ token, user, onLogout, initialTab }: DashboardProps)
         if (token) {
           headers['Authorization'] = `Bearer ${token}`;
         }
-        const diagRes = await fetch(`${API_BASE}/api/reports/diagnosis${DEV_DOMAIN_PARAM}`, {
+        const diagRes = await authFetch(`${API_BASE}/api/reports/diagnosis${DEV_DOMAIN_PARAM}`, {
           headers
         });
         if (diagRes.ok) {
@@ -433,7 +413,7 @@ export function Dashboard({ token, user, onLogout, initialTab }: DashboardProps)
       const cleanDomain = (() => {
         try { return new URL(scanUrl).hostname; } catch (e) { return scanUrl.replace(/^https?:\/\//, '').replace(/\/$/, ''); }
       })();
-      const res = await fetch(`${API_BASE}/api/reports/diagnosis?domain=${cleanDomain}`, { headers });
+      const res = await authFetch(`${API_BASE}/api/reports/diagnosis?domain=${cleanDomain}`, { headers });
       if (res.ok) {
         const data = await res.json();
         setDiagnosisData(data);
@@ -463,7 +443,7 @@ export function Dashboard({ token, user, onLogout, initialTab }: DashboardProps)
     }
     
     try {
-      const res = await fetch(`${API_BASE}/api/testing/reset-my-data`, {
+      const res = await authFetch(`${API_BASE}/api/testing/reset-my-data`, {
         method: 'DELETE'
       });
       
@@ -509,7 +489,7 @@ export function Dashboard({ token, user, onLogout, initialTab }: DashboardProps)
 
   const fetchLatestScan = async () => {
     try {
-      const res = await fetch(`${API_BASE}/api/scan/latest`);
+      const res = await authFetch(`${API_BASE}/api/scan/latest`);
       if (res.ok) {
         const data = await res.json();
         setLatestScan(data);
@@ -521,7 +501,7 @@ export function Dashboard({ token, user, onLogout, initialTab }: DashboardProps)
 
   const fetchConsentsStats = async () => {
     try {
-      const res = await fetch(`${API_BASE}/api/consents/stats`);
+      const res = await authFetch(`${API_BASE}/api/consents/stats`);
       if (res.ok) {
         const data = await res.json();
         setConsentsStats(data);
@@ -533,7 +513,7 @@ export function Dashboard({ token, user, onLogout, initialTab }: DashboardProps)
 
   const fetchConsentLogs = async () => {
     try {
-      const res = await fetch(`${API_BASE}/api/consents/logs`);
+      const res = await authFetch(`${API_BASE}/api/consents/logs`);
       if (res.ok) {
         const data = await res.json();
         setConsentLogs(data);
@@ -545,7 +525,7 @@ export function Dashboard({ token, user, onLogout, initialTab }: DashboardProps)
 
   const fetchArcoTickets = async () => {
     try {
-      const res = await fetch(`${API_BASE}/api/arco/tickets`);
+      const res = await authFetch(`${API_BASE}/api/arco/tickets`);
       if (res.ok) {
         const data = await res.json();
         setArcoTickets(data);
@@ -557,14 +537,14 @@ export function Dashboard({ token, user, onLogout, initialTab }: DashboardProps)
 
   const fetchConfig = async () => {
     try {
-      const configsRes = await fetch(`${API_BASE}/api/configs`);
+      const configsRes = await authFetch(`${API_BASE}/api/configs`);
       if (configsRes.ok) {
         const configsList = await configsRes.json();
         if (configsList.length > 0) {
           const dom = configsList[0].domain;
           setActiveDomain(dom);
 
-          const res = await fetch(`${API_BASE}/api/config/${encodeURIComponent(dom)}`);
+          const res = await authFetch(`${API_BASE}/api/config/${encodeURIComponent(dom)}`);
           if (res.ok) {
             const data = await res.json();
             setConfig(data);
@@ -587,7 +567,7 @@ export function Dashboard({ token, user, onLogout, initialTab }: DashboardProps)
 
   const fetchRopaList = async () => {
     try {
-      const response = await fetch(`${API_BASE}/api/ropa`);
+      const response = await authFetch(`${API_BASE}/api/ropa`);
       if (response.ok) {
         const data = await response.json();
         setRopaList(data);
@@ -600,7 +580,7 @@ export function Dashboard({ token, user, onLogout, initialTab }: DashboardProps)
   const fetchTransfers = async () => {
     if (!activeDomain) return;
     try {
-      const res = await fetch(`${API_BASE}/api/transfers?domain=${encodeURIComponent(activeDomain)}`);
+      const res = await authFetch(`${API_BASE}/api/transfers?domain=${encodeURIComponent(activeDomain)}`);
       if (res.ok) {
         const data = await res.json();
         setTransfers(data);
@@ -612,7 +592,7 @@ export function Dashboard({ token, user, onLogout, initialTab }: DashboardProps)
 
   const fetchCountries = async () => {
     try {
-      const res = await fetch(`${API_BASE}/api/transfers/countries`);
+      const res = await authFetch(`${API_BASE}/api/transfers/countries`);
       if (res.ok) {
         const data = await res.json();
         setCountries(data);
@@ -625,7 +605,7 @@ export function Dashboard({ token, user, onLogout, initialTab }: DashboardProps)
   const fetchIncidents = async () => {
     if (!activeDomain) return;
     try {
-      const res = await fetch(`${API_BASE}/api/incidents?domain=${encodeURIComponent(activeDomain)}`);
+      const res = await authFetch(`${API_BASE}/api/incidents?domain=${encodeURIComponent(activeDomain)}`);
       if (res.ok) {
         const data = await res.json();
         setIncidents(data);
@@ -649,7 +629,7 @@ export function Dashboard({ token, user, onLogout, initialTab }: DashboardProps)
     setIsScanning(true);
     showToast('Iniciando escaneo de cookies, formularios y políticas...', 'info');
     try {
-      const res = await fetch(`${API_BASE}/api/scan`, {
+      const res = await authFetch(`${API_BASE}/api/scan`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ url: scanUrl })
@@ -660,7 +640,8 @@ export function Dashboard({ token, user, onLogout, initialTab }: DashboardProps)
         showToast(`Escaneo finalizado con éxito. Score de cumplimiento: ${data.score}%`, 'success');
         handleFetchDiagnosis();
       } else {
-        showToast('Error al auditar el sitio web.', 'warning');
+        const error = await res.json().catch(() => null);
+        showToast(error?.error || 'Error al auditar el sitio web.', 'warning');
       }
     } catch (err) {
       console.error(err);
@@ -687,7 +668,7 @@ export function Dashboard({ token, user, onLogout, initialTab }: DashboardProps)
           channels: configChannels
         }
       };
-      const res = await fetch(`${API_BASE}/api/config/${encodeURIComponent(activeDomain || window.location.hostname)}`, {
+      const res = await authFetch(`${API_BASE}/api/config/${encodeURIComponent(activeDomain || window.location.hostname)}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)
@@ -720,7 +701,7 @@ export function Dashboard({ token, user, onLogout, initialTab }: DashboardProps)
         has_scc: signedScc,
         scc_url: sccUrl
       };
-      const res = await fetch(`${API_BASE}/api/transfers`, {
+      const res = await authFetch(`${API_BASE}/api/transfers`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)
@@ -741,7 +722,7 @@ export function Dashboard({ token, user, onLogout, initialTab }: DashboardProps)
 
   const handleUpdateTransfer = async (id: string, updatedFields: any) => {
     try {
-      const res = await fetch(`${API_BASE}/api/transfers/${id}`, {
+      const res = await authFetch(`${API_BASE}/api/transfers/${id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(updatedFields)
@@ -759,7 +740,7 @@ export function Dashboard({ token, user, onLogout, initialTab }: DashboardProps)
   const handleDeleteTransfer = async (id: string) => {
     if (!confirm('¿Seguro que deseas eliminar este proveedor?')) return;
     try {
-      const res = await fetch(`${API_BASE}/api/transfers/${id}`, {
+      const res = await authFetch(`${API_BASE}/api/transfers/${id}`, {
         method: 'DELETE'
       });
       if (res.ok) {
@@ -808,7 +789,7 @@ Firmas autorizadas:
 
   const handleResolveArco = async (id: string) => {
     try {
-      const res = await fetch(`${API_BASE}/api/arco/tickets/${id}/resolve`, {
+      const res = await authFetch(`${API_BASE}/api/arco/tickets/${id}/resolve`, {
         method: 'POST'
       });
       if (res.ok) {
@@ -835,7 +816,7 @@ Firmas autorizadas:
         status: incidentStatus
       };
 
-      const res = await fetch(`${API_BASE}/api/incidents`, {
+      const res = await authFetch(`${API_BASE}/api/incidents`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)
@@ -867,7 +848,7 @@ Firmas autorizadas:
         updateFields.agency_notified_at = new Date().toISOString();
         updateFields.titulars_notified_at = new Date().toISOString();
       }
-      const res = await fetch(`${API_BASE}/api/incidents/${id}`, {
+      const res = await authFetch(`${API_BASE}/api/incidents/${id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(updateFields)
@@ -887,7 +868,7 @@ Firmas autorizadas:
   const handleGenerateIncidentNotice = async (incident: any) => {
     setSelectedIncidentForNotice(incident);
     try {
-      const res = await fetch(`${API_BASE}/api/incidents/${incident.id}/generate-notice`, {
+      const res = await authFetch(`${API_BASE}/api/incidents/${incident.id}/generate-notice`, {
         method: 'POST'
       });
       if (res.ok) {
@@ -907,7 +888,7 @@ Firmas autorizadas:
   const handleScanVulnerabilities = async () => {
     setIsScanningVulnerabilities(true);
     try {
-      const res = await fetch(`${API_BASE}/api/incidents/scan-vulnerabilities`, {
+      const res = await authFetch(`${API_BASE}/api/incidents/scan-vulnerabilities`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ domain: scanUrl })
@@ -975,7 +956,7 @@ Firmas autorizadas:
           has_scc: false,
           scc_url: ''
         };
-        const res = await fetch(`${API_BASE}/api/transfers`, {
+        const res = await authFetch(`${API_BASE}/api/transfers`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(payload)
@@ -1355,12 +1336,12 @@ Firmas autorizadas:
                 Copie este código y péguelo en su sitio web justo antes de cerrar la etiqueta <code>&lt;/head&gt;</code>. (Compatible con WordPress, Shopify o HTML nativo). Asegúrese de que la URL apunte a nuestro servidor de producción, no a localhost.
               </p>
               <div style={{ background: '#0a0a14', padding: '12px 16px', borderRadius: '6px', fontFamily: 'monospace', fontSize: '12px', border: '1px solid var(--border-color)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <code>{`<script src="https://pt-compliance-api.onrender.com/widget.js?tenant=${user?.id || 'default'}" async></script>`}</code>
+                <code>{`<script src="${API_BASE || window.location.origin}/widget.js?tenant=${user?.id || 'default'}" async></script>`}</code>
                 <button 
                   className="btn-action" 
                   style={{ padding: '2px 8px', fontSize: '10px' }}
                   onClick={() => {
-                    navigator.clipboard.writeText(`<script src="https://pt-compliance-api.onrender.com/widget.js?tenant=${user?.id || 'default'}" async></script>`);
+                    navigator.clipboard.writeText(`<script src="${API_BASE || window.location.origin}/widget.js?tenant=${user?.id || 'default'}" async></script>`);
                     showToast('Código copiado al portapapeles.', 'success');
                   }}
                 >
@@ -1478,12 +1459,12 @@ Firmas autorizadas:
               <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                 <span className="text-xs font-semibold text-slate-400">Enlace para sus clientes:</span>
                 <div style={{ background: '#0a0a14', padding: '12px 16px', borderRadius: '6px', fontFamily: 'monospace', fontSize: '12px', border: '1px solid var(--border-color)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <code>{`https://pt-compliance-api.onrender.com/arco?tenant=${user?.id || 'default'}`}</code>
+                  <code>{`${API_BASE || window.location.origin}/arco?tenant=${user?.id || 'default'}`}</code>
                   <button 
                     className="btn-action" 
                     style={{ padding: '2px 8px', fontSize: '10px' }}
                     onClick={() => {
-                      navigator.clipboard.writeText(`https://pt-compliance-api.onrender.com/arco?tenant=${user?.id || 'default'}`);
+                      navigator.clipboard.writeText(`${API_BASE || window.location.origin}/arco?tenant=${user?.id || 'default'}`);
                       showToast('Enlace copiado al portapapeles.', 'success');
                     }}
                   >
@@ -1921,7 +1902,7 @@ Firmas autorizadas:
                                             has_scc: displayScc,
                                             has_dpa: displayDpa
                                           };
-                                          const res = await fetch(`${API_BASE}/api/transfers`, {
+                                          const res = await authFetch(`${API_BASE}/api/transfers`, {
                                             method: 'POST',
                                             headers: { 'Content-Type': 'application/json' },
                                             body: JSON.stringify(payload)
@@ -2020,6 +2001,13 @@ Firmas autorizadas:
         </div>
         
         <nav className="nav-menu">
+          <div
+            className={`nav-item ${activeTab === 'service' ? 'active' : ''}`}
+            onClick={() => setActiveTab('service')}
+          >
+            <ClipboardList size={16} />
+            <span>0. Expediente del Servicio</span>
+          </div>
           <div 
             className={`nav-item ${activeTab === 'scanner' ? 'active' : ''}`}
             onClick={() => { setActiveTab('scanner'); fetchLatestScan(); }}
@@ -2213,6 +2201,7 @@ Firmas autorizadas:
           />
         </div>
         {activeTab === 'scanner' && renderScanner()}
+        {activeTab === 'service' && <ServiceWorkspaceView />}
         {activeTab === 'diagnosis' && renderDiagnosis()}
         {activeTab === 'remediation' && renderRemediation()}
         {activeTab === 'dpo' && <DpoSuiteView token={token} />}

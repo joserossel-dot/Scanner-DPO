@@ -23,7 +23,9 @@ export function getStoredToken(): string | null {
  * Authenticated fetch wrapper.
  * Automatically injects Authorization header if a token is present.
  * Falls through to window.fetch for requests that don't need auth.
- * Automatically cleans localStorage and redirects to /login on 401 or 403.
+ * Automatically cleans localStorage and redirects to /login on 401.
+ * A 403 represents an authenticated user without permission and must preserve
+ * the session so the UI can display the authorization error.
  */
 export async function authFetch(
   url: string,
@@ -45,7 +47,7 @@ export async function authFetch(
   try {
     const res = await window.fetch(url, { ...options, headers });
 
-    if (res.status === 401 || res.status === 403) {
+    if (res.status === 401) {
       localStorage.removeItem('dpo_token');
       localStorage.removeItem('token');
       localStorage.removeItem('dpo_user');
