@@ -64,6 +64,6 @@ export async function authenticateToken(req: AuthenticatedRequest, res: Response
     req.user = await verifyAccessToken(token);
     return next();
   } catch {
-    return res.status(403).json({ error: 'Token de acceso inválido o expirado.' });
+    return res.status(401).json({ error: 'Token de acceso inválido o expirado.' });
   }
 }
