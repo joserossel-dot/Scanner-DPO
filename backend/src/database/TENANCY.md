@@ -46,3 +46,9 @@ TLS certificate verification is enabled by default. Set `DATABASE_CA_CERT` to a
 PEM CA bundle when the database provider requires a private CA. Plaintext can be
 requested with `DATABASE_SSL_MODE=disable` only outside production, for a local
 database. Production rejects that setting.
+
+Render's internal PostgreSQL endpoint currently presents a certificate that is
+not trusted by Node's bundled CA store. For an internal Render hostname only,
+set `DATABASE_SSL_MODE=render-internal`. This keeps the connection encrypted but
+does not verify that endpoint's certificate. Prefer `DATABASE_CA_CERT` whenever
+Render provides a CA certificate, because that retains strict verification.

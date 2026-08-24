@@ -1,6 +1,7 @@
 import pg from 'pg';
 import dotenv from 'dotenv';
 import { runMigrations } from './migrationRunner.js';
+import { databaseSslConfig } from './sslConfig.js';
 
 // Load environment variables
 dotenv.config();
@@ -12,24 +13,9 @@ if (!connectionString) {
   throw new Error('DATABASE_URL environment variable is missing.');
 }
 
-function databaseSsl(): false | { rejectUnauthorized: true; ca?: string } {
-  const mode = process.env.DATABASE_SSL_MODE?.toLowerCase();
-  if (mode === 'disable') {
-    if (process.env.NODE_ENV === 'production') {
-      throw new Error('DATABASE_SSL_MODE=disable is not allowed in production.');
-    }
-    return false;
-  }
-
-  return {
-    rejectUnauthorized: true,
-    ...(process.env.DATABASE_CA_CERT ? { ca: process.env.DATABASE_CA_CERT } : {})
-  };
-}
-
 const pool = new Pool({
   connectionString,
-  ssl: databaseSsl()
+  ssl: databaseSslConfig(connectionString)
 });
 
 export async function initDb() {
