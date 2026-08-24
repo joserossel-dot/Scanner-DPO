@@ -33,7 +33,9 @@ router.get('/', requireOrganizationPermission('compliance.read'), async (req: an
 
 // POST /api/transfers - Register a new transfer flow for user
 router.post('/', requireOrganizationPermission('compliance.write'), async (req: any, res) => {
-  const { domain, vendor_name, provider_name, destination_country, country, data_categories, transfer_mechanism, has_signed_scc, has_scc, scc_document_url, signature_status, has_dpa } = req.body;
+  const { domain, vendor_name, provider_name, destination_country, country, data_categories, transfer_mechanism,
+    has_signed_scc, has_scc, scc_document_url, signature_status, has_dpa, ropa_activity_id, purpose,
+    legal_basis, safeguards, adequacy_status, assessment_source, assessment_version, review_due_at } = req.body;
 
   const vName = vendor_name || provider_name;
   const destCountry = destination_country || country;
@@ -46,10 +48,19 @@ router.post('/', requireOrganizationPermission('compliance.write'), async (req: 
 
   const db = getDb();
   try {
+    if (ropa_activity_id) {
+      const activity = await db.query(
+        'SELECT 1 FROM ropa_inventory WHERE id = $1 AND organization_id = $2',
+        [ropa_activity_id, req.organization.id]
+      );
+      if (!activity.rowCount) return res.status(400).json({ error: 'La actividad RoPA vinculada no pertenece a la organización.' });
+    }
     const result = await db.query(
       `INSERT INTO international_transfers 
-       (domain, vendor_name, destination_country, data_categories, transfer_mechanism, has_signed_scc, scc_document_url, signature_status, user_id, organization_id)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+       (domain, vendor_name, destination_country, data_categories, transfer_mechanism, has_signed_scc,
+        scc_document_url, signature_status, user_id, organization_id, ropa_activity_id, purpose,
+        legal_basis, safeguards, adequacy_status, assessment_source, assessment_version, review_due_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)
        RETURNING *`,
       [
         domain,
@@ -61,7 +72,15 @@ router.post('/', requireOrganizationPermission('compliance.write'), async (req: 
         scc_document_url || null,
         sigStatus,
         req.user.id,
-        req.organization.id
+        req.organization.id,
+        ropa_activity_id || null,
+        purpose || null,
+        legal_basis || null,
+        JSON.stringify(Array.isArray(safeguards) ? safeguards.map(String).filter(Boolean) : []),
+        adequacy_status || 'PENDING_REVIEW',
+        assessment_source || null,
+        assessment_version || null,
+        review_due_at || null
       ]
     );
     
@@ -83,7 +102,9 @@ router.post('/', requireOrganizationPermission('compliance.write'), async (req: 
 // PUT /api/transfers/:id - Update transfer mechanism or documents
 router.put('/:id', requireOrganizationPermission('compliance.write'), async (req: any, res) => {
   const { id } = req.params;
-  const { vendor_name, provider_name, destination_country, country, data_categories, transfer_mechanism, has_signed_scc, has_scc, scc_document_url, signature_status, has_dpa } = req.body;
+  const { vendor_name, provider_name, destination_country, country, data_categories, transfer_mechanism,
+    has_signed_scc, has_scc, scc_document_url, signature_status, has_dpa, ropa_activity_id, purpose,
+    legal_basis, safeguards, adequacy_status, assessment_source, assessment_version, review_due_at } = req.body;
 
   const vName = vendor_name || provider_name;
   const destCountry = destination_country || country;
@@ -97,6 +118,13 @@ router.put('/:id', requireOrganizationPermission('compliance.write'), async (req
     if (check.rowCount === 0) {
       return res.status(404).json({ error: 'Registro de transferencia no encontrado o sin permisos.' });
     }
+    if (ropa_activity_id) {
+      const activity = await db.query(
+        'SELECT 1 FROM ropa_inventory WHERE id = $1 AND organization_id = $2',
+        [ropa_activity_id, req.organization.id]
+      );
+      if (!activity.rowCount) return res.status(400).json({ error: 'La actividad RoPA vinculada no pertenece a la organización.' });
+    }
 
     const result = await db.query(
       `UPDATE international_transfers
@@ -107,8 +135,17 @@ router.put('/:id', requireOrganizationPermission('compliance.write'), async (req
            has_signed_scc = COALESCE($6, has_signed_scc),
            scc_document_url = COALESCE($7, scc_document_url),
            signature_status = COALESCE($8, signature_status),
+           ropa_activity_id = COALESCE($9, ropa_activity_id),
+           purpose = COALESCE($10, purpose),
+           legal_basis = COALESCE($11, legal_basis),
+           safeguards = COALESCE($12, safeguards),
+           adequacy_status = COALESCE($13, adequacy_status),
+           assessment_source = COALESCE($14, assessment_source),
+           assessment_version = COALESCE($15, assessment_version),
+           review_due_at = COALESCE($16, review_due_at),
+           last_reviewed_at = CURRENT_TIMESTAMP,
            updated_at = CURRENT_TIMESTAMP
-       WHERE id = $1 AND organization_id = $9
+       WHERE id = $1 AND organization_id = $17
        RETURNING *`,
       [
         id,
@@ -119,6 +156,14 @@ router.put('/:id', requireOrganizationPermission('compliance.write'), async (req
         hasScc,
         scc_document_url,
         sigStatus,
+        ropa_activity_id,
+        purpose,
+        legal_basis,
+        Array.isArray(safeguards) ? JSON.stringify(safeguards.map(String).filter(Boolean)) : null,
+        adequacy_status,
+        assessment_source,
+        assessment_version,
+        review_due_at,
         req.organization.id
       ]
     );

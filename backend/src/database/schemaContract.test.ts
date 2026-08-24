@@ -87,3 +87,34 @@ test('managed-service migration defines the P0 workspace without destructive ope
   assert.doesNotMatch(sql, /ENABLE ROW LEVEL SECURITY/);
   assert.doesNotMatch(sql, /DROP TABLE|TRUNCATE TABLE|DELETE FROM/i);
 });
+
+test('managed-service roles separate client ownership from professional review', async () => {
+  const rolePath = path.join(process.cwd(), 'src', 'database', 'migrations', '009_managed_service_roles.sql');
+  const sql = await readFile(rolePath, 'utf8');
+  assert.match(sql, /'service_consultant'/);
+  assert.match(sql, /'legal_reviewer'/);
+  assert.match(sql, /'arco_operator'/);
+  assert.match(sql, /r\.code = 'organization_owner' AND p\.code = 'service\.review'/);
+  assert.doesNotMatch(sql, /DROP TABLE|TRUNCATE TABLE/i);
+});
+
+test('inventory, risk and control migration is additive and evidence-oriented', async () => {
+  const inventoryPath = path.join(process.cwd(), 'src', 'database', 'migrations', '010_inventory_risk_controls.sql');
+  const sql = await readFile(inventoryPath, 'utf8');
+
+  for (const table of ['control_catalogs', 'control_definitions', 'control_assessments', 'risk_control_links']) {
+    assert.match(sql, new RegExp(`CREATE TABLE IF NOT EXISTS ${table}\\b`));
+  }
+  for (const field of [
+    'contains_sensitive_data', 'legal_basis_rationale', 'retention_legal_basis',
+    'security_measures', 'review_due_at', 'ropa_activity_id',
+    'inherent_probability', 'residual_probability', 'treatment_decision',
+    'verification_status'
+  ]) {
+    assert.match(sql, new RegExp(field));
+  }
+  assert.match(sql, /framework_version/);
+  assert.match(sql, /interpretation_status/);
+  assert.doesNotMatch(sql, /INSERT INTO control_(catalogs|definitions)/);
+  assert.doesNotMatch(sql, /DROP TABLE|TRUNCATE TABLE|DELETE FROM/i);
+});

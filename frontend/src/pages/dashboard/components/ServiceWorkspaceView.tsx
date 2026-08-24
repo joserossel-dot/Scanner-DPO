@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useState } from 'react';
-import { AlertTriangle, CalendarDays, CheckCircle, ClipboardList, RefreshCw, ShieldCheck } from 'lucide-react';
+import { AlertTriangle, CalendarDays, CheckCircle, ClipboardList, Download, FileText, RefreshCw, ShieldCheck, UserCheck } from 'lucide-react';
 import { API_BASE, getApiError } from '../../../lib/api';
 import { authFetch } from '../../../lib/authFetch';
 
 interface Workspace {
+  permissions: string[];
   engagement: any | null;
   eligibility: any | null;
   taskStats: Array<{ status: string; count: number }>;
@@ -31,14 +32,22 @@ export default function ServiceWorkspaceView() {
   const [industry, setIndustry] = useState('RETAIL');
   const [operatesInChile, setOperatesInChile] = useState(true);
   const [riskFactors, setRiskFactors] = useState<Record<string, boolean>>({});
+  const [documents, setDocuments] = useState<any[]>([]);
+  const [arcoRequests, setArcoRequests] = useState<any[]>([]);
 
   const loadWorkspace = useCallback(async () => {
     setLoading(true);
     setError('');
     try {
-      const response = await authFetch(`${API_BASE}/api/service/workspace`);
-      if (!response.ok) throw new Error(await getApiError(response, 'No fue posible cargar el expediente.'));
-      setWorkspace(await response.json());
+      const [workspaceResponse, documentsResponse, arcoResponse] = await Promise.all([
+        authFetch(`${API_BASE}/api/service/workspace`),
+        authFetch(`${API_BASE}/api/service/documents`),
+        authFetch(`${API_BASE}/api/service/arco`)
+      ]);
+      if (!workspaceResponse.ok) throw new Error(await getApiError(workspaceResponse, 'No fue posible cargar el expediente.'));
+      setWorkspace(await workspaceResponse.json());
+      setDocuments(documentsResponse.ok ? await documentsResponse.json() : []);
+      setArcoRequests(arcoResponse.ok ? await arcoResponse.json() : []);
     } catch (cause: any) {
       setError(cause.message || 'No fue posible cargar el expediente.');
     } finally {
@@ -125,11 +134,63 @@ export default function ServiceWorkspaceView() {
     }
   };
 
+  const generateDocument = async (documentType: string) => {
+    setSaving(true);
+    setError('');
+    try {
+      const response = await authFetch(`${API_BASE}/api/service/documents/generate`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ document_type: documentType })
+      });
+      if (!response.ok) throw new Error(await getApiError(response, 'No fue posible generar el documento.'));
+      await loadWorkspace();
+    } catch (cause: any) { setError(cause.message || 'No fue posible generar el documento.'); }
+    finally { setSaving(false); }
+  };
+
+  const reviewDocument = async (documentId: string, decision: string) => {
+    setSaving(true);
+    setError('');
+    try {
+      const response = await authFetch(`${API_BASE}/api/service/documents/${documentId}/review`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ decision })
+      });
+      if (!response.ok) throw new Error(await getApiError(response, 'No fue posible revisar el documento.'));
+      await loadWorkspace();
+    } catch (cause: any) { setError(cause.message || 'No fue posible revisar el documento.'); }
+    finally { setSaving(false); }
+  };
+
+  const downloadDocument = async (document: any) => {
+    const response = await authFetch(`${API_BASE}/api/documents/${document.id}/version/${document.version_number}`);
+    if (!response.ok) return setError(await getApiError(response, 'No fue posible descargar el documento.'));
+    const payload = await response.json();
+    const blob = new Blob([payload.version.content], { type: 'text/html;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const anchor = window.document.createElement('a');
+    anchor.href = url; anchor.download = `${document.document_type}-v${document.version_number}.html`; anchor.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const updateArco = async (id: number, body: Record<string, unknown>) => {
+    setSaving(true);
+    setError('');
+    try {
+      const response = await authFetch(`${API_BASE}/api/service/arco/${id}`, {
+        method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body)
+      });
+      if (!response.ok) throw new Error(await getApiError(response, 'No fue posible actualizar la solicitud ARCO+.'));
+      await loadWorkspace();
+    } catch (cause: any) { setError(cause.message || 'No fue posible actualizar la solicitud ARCO+.'); }
+    finally { setSaving(false); }
+  };
+
   if (loading) return <div className="card"><RefreshCw className="loader" size={18} /> Cargando expediente...</div>;
 
   const eligibility = workspace?.eligibility;
   const engagement = workspace?.engagement;
   const canActivate = engagement?.status === 'ACCEPTED' && eligibility?.professional_status === 'APPROVED';
+  const canReview = workspace?.permissions?.includes('service.review') === true;
   const active = engagement && !['ELIGIBILITY_REVIEW', 'ACCEPTED', 'SPECIAL_ASSESSMENT', 'REJECTED', 'CLOSED'].includes(engagement.status);
 
   return (
@@ -185,7 +246,7 @@ export default function ServiceWorkspaceView() {
               <h4 style={{ marginTop: 0 }}>Resultado: {eligibility.decision}</h4>
               <ul>{(eligibility.reasons || []).map((reason: string) => <li key={reason}>{reason}</li>)}</ul>
               <p>Revisión profesional: <strong>{eligibility.professional_status}</strong></p>
-              {eligibility.professional_status === 'PENDING' && <div style={{ display: 'flex', gap: 10 }}>
+              {eligibility.professional_status === 'PENDING' && canReview && <div style={{ display: 'flex', gap: 10 }}>
                 <button className="btn-save" disabled={saving} onClick={() => reviewEligibility('APPROVED')}><ShieldCheck size={14} /> Aprobar revisión</button>
                 <button className="btn-action" disabled={saving} onClick={() => reviewEligibility('CHANGES_REQUESTED')}><AlertTriangle size={14} /> Solicitar cambios</button>
               </div>}
@@ -207,6 +268,43 @@ export default function ServiceWorkspaceView() {
           <section className="card col-12">
             <h3><CalendarDays size={17} /> Calendario de revisiones</h3>
             <p>{workspace?.periodicReviews?.length || 0} revisiones programadas entre controles mensuales, trimestrales y anuales.</p>
+          </section>
+          <section className="card col-12">
+            <h3><FileText size={17} /> Paquete documental</h3>
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 16 }}>
+              {[
+                ['EMPLOYEE_ANNEX', 'Anexo laboral'], ['RETENTION_POLICY', 'Política de retención'],
+                ['ARCO_PROCEDURE', 'Procedimiento ARCO+'], ['INCIDENT_PLAYBOOK', 'Playbook de incidentes']
+              ].map(([type, label]) => <button key={type} className="btn-action" disabled={saving} onClick={() => generateDocument(type)}>{label}</button>)}
+            </div>
+            <div style={{ display: 'grid', gap: 10 }}>
+              {documents.map(document => <div key={document.id} style={{ padding: 12, border: '1px solid var(--border-color)', borderRadius: 8 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' }}>
+                  <div><strong>{document.title}</strong><div style={{ fontSize: 12, color: 'var(--text-secondary)' }}>v{document.version_number} | {document.workflow_status}</div></div>
+                  <div style={{ display: 'flex', gap: 8 }}>
+                    <button className="btn-action" onClick={() => downloadDocument(document)}><Download size={14} /> Descargar</button>
+                    {document.workflow_status !== 'APPROVED' && canReview && <button className="btn-save" disabled={saving} onClick={() => reviewDocument(document.id, 'APPROVED')}><ShieldCheck size={14} /> Aprobar</button>}
+                  </div>
+                </div>
+              </div>)}
+            </div>
+          </section>
+          <section className="card col-12">
+            <h3><UserCheck size={17} /> Solicitudes ARCO+ administradas</h3>
+            {arcoRequests.length === 0 && <p style={{ color: 'var(--text-secondary)' }}>No existen solicitudes registradas.</p>}
+            <div style={{ display: 'grid', gap: 10 }}>
+              {arcoRequests.map(request => <div key={request.id} style={{ padding: 12, border: '1px solid var(--border-color)', borderRadius: 8 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' }}>
+                  <div><strong>#{request.id} {request.request_type}</strong><div style={{ fontSize: 12, color: 'var(--text-secondary)' }}>{request.requester_name} | vence {String(request.due_date).slice(0, 10)}</div></div>
+                  <div style={{ fontSize: 12 }}>{request.verification_status} | {request.status}</div>
+                </div>
+                <p style={{ fontSize: 13 }}>{request.details}</p>
+                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                  {request.verification_status !== 'VERIFIED' && <button className="btn-action" disabled={saving} onClick={() => updateArco(request.id, { verification_status: 'VERIFIED', status: 'En Proceso' })}>Marcar identidad verificada</button>}
+                  {request.status !== 'Resuelto' && <button className="btn-save" disabled={saving || request.verification_status !== 'VERIFIED'} onClick={() => updateArco(request.id, { status: 'Resuelto', mark_response_sent: true, closed_reason: 'Respuesta gestionada y enviada.' })}>Registrar respuesta y cierre</button>}
+                </div>
+              </div>)}
+            </div>
           </section>
         </>}
       </div>

@@ -9,6 +9,9 @@ const storage = multer.memoryStorage();
 const upload = multer({ storage: storage });
 
 const router = Router();
+const stringArray = (value: unknown): string[] => Array.isArray(value)
+  ? value.map(item => String(item).trim()).filter(Boolean)
+  : [];
 
 // Protect all routes
 router.use(authenticateToken);
@@ -31,7 +34,10 @@ router.get('/', requireOrganizationPermission('compliance.read'), async (req: an
 
 // POST /api/ropa - Add a new process to the RoPA inventory
 router.post('/', requireOrganizationPermission('compliance.write'), async (req: any, res) => {
-  const { process_name, purpose, legal_basis, data_categories, retention_period, cross_border_transfer, source, status } = req.body;
+  const { process_name, purpose, legal_basis, data_categories, retention_period, cross_border_transfer, source, status,
+    systems, data_sources, data_subject_categories, recipients, deletion_method, process_owner_contact_id,
+    contains_sensitive_data, sensitive_data_categories, legal_basis_rationale, retention_legal_basis,
+    security_measures, review_due_at, automated_decisions, automated_decision_details } = req.body;
 
   if (!process_name || !purpose || !legal_basis || !data_categories || !retention_period) {
     return res.status(400).json({ error: 'Faltan parámetros requeridos para registrar la actividad.' });
@@ -39,12 +45,23 @@ router.post('/', requireOrganizationPermission('compliance.write'), async (req: 
 
   const db = getDb();
   try {
+    if (process_owner_contact_id) {
+      const owner = await db.query('SELECT 1 FROM organization_contacts WHERE id = $1 AND organization_id = $2', [process_owner_contact_id, req.organization.id]);
+      if (!owner.rowCount) return res.status(400).json({ error: 'El responsable indicado no pertenece a la organización.' });
+    }
     const sourceVal = source || 'manual';
     const statusVal = status || 'confirmed';
 
     const result = await db.query(`
-      INSERT INTO ropa_inventory (user_id, organization_id, process_name, purpose, legal_basis, data_categories, retention_period, cross_border_transfer, source, status)
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+      INSERT INTO ropa_inventory
+      (user_id, organization_id, engagement_id, process_name, purpose, legal_basis,
+       data_categories, retention_period, cross_border_transfer, source, status,
+       systems, data_sources, data_subject_categories, recipients, deletion_method, process_owner_contact_id,
+       contains_sensitive_data, sensitive_data_categories, legal_basis_rationale, retention_legal_basis,
+       security_measures, review_due_at, automated_decisions, automated_decision_details)
+      VALUES ($1, $2, (SELECT id FROM service_engagements WHERE organization_id = $2 ORDER BY created_at DESC LIMIT 1),
+       $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16,
+       $17, $18, $19, $20, $21, $22, $23, $24)
       RETURNING *
     `, [
       req.user.id,
@@ -56,7 +73,21 @@ router.post('/', requireOrganizationPermission('compliance.write'), async (req: 
       retention_period,
       cross_border_transfer === true,
       sourceVal,
-      statusVal
+      statusVal,
+      JSON.stringify(stringArray(systems)),
+      JSON.stringify(stringArray(data_sources)),
+      JSON.stringify(stringArray(data_subject_categories)),
+      JSON.stringify(stringArray(recipients)),
+      deletion_method || null,
+      process_owner_contact_id || null,
+      contains_sensitive_data === true,
+      JSON.stringify(stringArray(sensitive_data_categories)),
+      legal_basis_rationale || null,
+      retention_legal_basis || null,
+      JSON.stringify(stringArray(security_measures)),
+      review_due_at || null,
+      automated_decisions === true,
+      automated_decisions === true ? automated_decision_details || null : null
     ]);
     res.status(201).json(result.rows[0]);
   } catch (error: any) {
@@ -68,7 +99,10 @@ router.post('/', requireOrganizationPermission('compliance.write'), async (req: 
 // PUT /api/ropa/:id - Update an existing process in the RoPA inventory
 router.put('/:id', requireOrganizationPermission('compliance.write'), async (req: any, res) => {
   const { id } = req.params;
-  const { process_name, purpose, legal_basis, data_categories, retention_period, cross_border_transfer, source, status } = req.body;
+  const { process_name, purpose, legal_basis, data_categories, retention_period, cross_border_transfer, source, status,
+    systems, data_sources, data_subject_categories, recipients, deletion_method, process_owner_contact_id,
+    contains_sensitive_data, sensitive_data_categories, legal_basis_rationale, retention_legal_basis,
+    security_measures, review_due_at, automated_decisions, automated_decision_details } = req.body;
 
   if (!process_name || !purpose || !legal_basis || !data_categories || !retention_period) {
     return res.status(400).json({ error: 'Faltan parámetros requeridos para actualizar la actividad.' });
@@ -76,13 +110,25 @@ router.put('/:id', requireOrganizationPermission('compliance.write'), async (req
 
   const db = getDb();
   try {
+    if (process_owner_contact_id) {
+      const owner = await db.query('SELECT 1 FROM organization_contacts WHERE id = $1 AND organization_id = $2', [process_owner_contact_id, req.organization.id]);
+      if (!owner.rowCount) return res.status(400).json({ error: 'El responsable indicado no pertenece a la organización.' });
+    }
     const sourceVal = source || 'manual';
     const statusVal = status || 'confirmed';
 
     const result = await db.query(`
       UPDATE ropa_inventory 
-      SET process_name = $1, purpose = $2, legal_basis = $3, data_categories = $4, retention_period = $5, cross_border_transfer = $6, source = $7, status = $8
-      WHERE id = $9 AND organization_id = $10
+      SET process_name = $1, purpose = $2, legal_basis = $3, data_categories = $4,
+          retention_period = $5, cross_border_transfer = $6, source = $7, status = $8,
+          systems = $9, data_sources = $10, data_subject_categories = $11,
+          recipients = $12, deletion_method = $13, process_owner_contact_id = $14,
+          contains_sensitive_data = $15, sensitive_data_categories = $16,
+          legal_basis_rationale = $17, retention_legal_basis = $18,
+          security_measures = $19, review_due_at = $20,
+          automated_decisions = $21, automated_decision_details = $22,
+          last_reviewed_at = CURRENT_TIMESTAMP, reviewed_by = $23
+      WHERE id = $24 AND organization_id = $25
       RETURNING *
     `, [
       process_name,
@@ -93,8 +139,22 @@ router.put('/:id', requireOrganizationPermission('compliance.write'), async (req
       cross_border_transfer === true,
       sourceVal,
       statusVal,
-      id,
-      req.organization.id
+      JSON.stringify(stringArray(systems)),
+      JSON.stringify(stringArray(data_sources)),
+      JSON.stringify(stringArray(data_subject_categories)),
+      JSON.stringify(stringArray(recipients)),
+      deletion_method || null,
+      process_owner_contact_id || null,
+      contains_sensitive_data === true,
+      JSON.stringify(stringArray(sensitive_data_categories)),
+      legal_basis_rationale || null,
+      retention_legal_basis || null,
+      JSON.stringify(stringArray(security_measures)),
+      review_due_at || null,
+      automated_decisions === true,
+      automated_decisions === true ? automated_decision_details || null : null,
+      req.user.id,
+      id, req.organization.id
     ]);
 
     if (result.rowCount === 0) {

@@ -1,7 +1,9 @@
 import { Router } from 'express';
+import crypto from 'node:crypto';
 import { getDb } from '../database/db.js';
 import { authenticateToken } from '../middlewares/auth.js';
 import { evaluateEligibility } from '../services/eligibilityService.js';
+import { buildManagedDocument, documentTitle, type ManagedDocumentType } from '../services/managedDocumentBuilder.js';
 import { resolveActiveOrganization, requireOrganizationPermission } from '../tenancy/organizationContext.js';
 
 const router = Router();
@@ -10,6 +12,9 @@ router.use(resolveActiveOrganization);
 
 const validTaskStatuses = new Set([
   'PENDING', 'IN_PROGRESS', 'BLOCKED', 'IN_REVIEW', 'APPROVED', 'COMPLETED', 'CANCELLED'
+]);
+const managedDocumentTypes = new Set<ManagedDocumentType>([
+  'EMPLOYEE_ANNEX', 'RETENTION_POLICY', 'ARCO_PROCEDURE', 'INCIDENT_PLAYBOOK'
 ]);
 
 router.get('/workspace', requireOrganizationPermission('compliance.read'), async (req: any, res) => {
@@ -25,6 +30,7 @@ router.get('/workspace', requireOrganizationPermission('compliance.read'), async
       db.query(`SELECT * FROM organization_contacts WHERE organization_id = $1 AND active = TRUE ORDER BY is_primary DESC, full_name`, [organizationId])
     ]);
     res.json({
+      permissions: req.organization.permissions,
       engagement: engagement.rows[0] || null,
       eligibility: eligibility.rows[0] || null,
       taskStats: taskStats.rows,
@@ -306,24 +312,160 @@ router.patch('/tasks/:id', requireOrganizationPermission('service.manage'), asyn
 });
 
 router.post('/evidence', requireOrganizationPermission('evidence.write'), async (req: any, res) => {
-  const { task_id, evidence_type, title, description, source_reference, content_hash, valid_from, valid_until } = req.body;
+  const { task_id, evidence_type, title, description, source_reference, content_hash, valid_from, valid_until,
+    subject_type, subject_id } = req.body;
   if (!evidence_type || !title) return res.status(400).json({ error: 'Tipo y título de evidencia son obligatorios.' });
   try {
-    const result = await getDb().query(
+    const db = getDb();
+    const subjects: Record<string, string> = {
+      TASK: 'compliance_tasks', ROPA: 'ropa_inventory', RISK: 'risk_matrix',
+      CONTROL: 'control_assessments', TRANSFER: 'international_transfers',
+      DOCUMENT: 'documents', ARCO: 'arco_requests'
+    };
+    const normalizedSubject = subject_type ? String(subject_type).toUpperCase() : null;
+    if ((normalizedSubject && !subject_id) || (!normalizedSubject && subject_id)) {
+      return res.status(400).json({ error: 'Tipo y registro asociado deben informarse juntos.' });
+    }
+    if (normalizedSubject) {
+      const table = subjects[normalizedSubject];
+      if (!table) return res.status(400).json({ error: 'Tipo de registro asociado inválido.' });
+      const owner = await db.query(`SELECT 1 FROM ${table} WHERE id = $1 AND organization_id = $2`, [subject_id, req.organization.id]);
+      if (!owner.rowCount) return res.status(404).json({ error: 'El registro asociado no pertenece a la organización.' });
+    }
+    const result = await db.query(
       `INSERT INTO compliance_evidence
        (organization_id, task_id, evidence_type, title, description, source_reference,
-        content_hash, valid_from, valid_until, uploaded_by)
-       SELECT $1, $2, $3, $4, $5, $6, $7, $8, $9, $10
+        content_hash, valid_from, valid_until, uploaded_by, subject_type, subject_id)
+       SELECT $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12
        WHERE $2::uuid IS NULL OR EXISTS (
          SELECT 1 FROM compliance_tasks WHERE id = $2 AND organization_id = $1
        ) RETURNING *`,
-      [req.organization.id, task_id || null, evidence_type, title, description || null, source_reference || null, content_hash || null, valid_from || null, valid_until || null, req.user.id]
+      [req.organization.id, task_id || null, evidence_type, title, description || null,
+        source_reference || null, content_hash || null, valid_from || null, valid_until || null,
+        req.user.id, normalizedSubject, subject_id || null]
     );
     if (!result.rowCount) return res.status(404).json({ error: 'La tarea asociada no existe.' });
     res.status(201).json(result.rows[0]);
   } catch (error: any) {
     if (error?.code === '23514') return res.status(400).json({ error: 'Tipo de evidencia inválido.' });
     res.status(500).json({ error: 'No fue posible registrar la evidencia.' });
+  }
+});
+
+router.get('/documents', requireOrganizationPermission('compliance.read'), async (req: any, res) => {
+  try {
+    const result = await getDb().query(
+      `SELECT d.*, dv.version_number, dv.change_summary, dv.created_at AS version_created_at
+         FROM documents d
+         LEFT JOIN LATERAL (
+           SELECT version_number, change_summary, created_at
+             FROM document_versions WHERE document_id = d.id
+            ORDER BY version_number DESC LIMIT 1
+         ) dv ON TRUE
+        WHERE d.organization_id = $1 AND d.is_active = TRUE
+        ORDER BY d.document_type, d.created_at DESC`,
+      [req.organization.id]
+    );
+    res.json(result.rows);
+  } catch (error: any) {
+    console.error('Error loading managed documents:', error.message);
+    res.status(500).json({ error: 'No fue posible cargar los documentos del expediente.' });
+  }
+});
+
+router.post('/documents/generate', requireOrganizationPermission('compliance.write'), async (req: any, res) => {
+  const type = String(req.body.document_type || '') as ManagedDocumentType;
+  if (!managedDocumentTypes.has(type)) return res.status(400).json({ error: 'Tipo de documento administrado inválido.' });
+  const client = await getDb().connect();
+  try {
+    await client.query('BEGIN');
+    const [organization, contact, ropa] = await Promise.all([
+      client.query(`SELECT name, legal_name, tax_identifier FROM organizations WHERE id = $1`, [req.organization.id]),
+      client.query(`SELECT full_name, email FROM organization_contacts WHERE organization_id = $1 AND active = TRUE ORDER BY is_primary DESC, created_at LIMIT 1`, [req.organization.id]),
+      client.query(`SELECT process_name, data_categories, retention_period, deletion_method FROM ropa_inventory WHERE organization_id = $1 AND status = 'confirmed' ORDER BY created_at`, [req.organization.id])
+    ]);
+    if (!organization.rowCount) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ error: 'Organización no encontrada.' });
+    }
+    const content = buildManagedDocument(type, {
+      companyName: organization.rows[0].legal_name || organization.rows[0].name,
+      taxIdentifier: organization.rows[0].tax_identifier,
+      contactName: contact.rows[0]?.full_name,
+      contactEmail: contact.rows[0]?.email,
+      processes: ropa.rows.map((row: any) => ({
+        ...row,
+        data_categories: Array.isArray(row.data_categories) ? row.data_categories : []
+      }))
+    });
+    const contentHash = crypto.createHash('sha256').update(content).digest('hex');
+    const engagement = await client.query(`SELECT id FROM service_engagements WHERE organization_id = $1 ORDER BY created_at DESC LIMIT 1`, [req.organization.id]);
+    let document = await client.query(
+      `SELECT * FROM documents WHERE organization_id = $1 AND document_type = $2 AND is_active = TRUE ORDER BY created_at DESC LIMIT 1 FOR UPDATE`,
+      [req.organization.id, type]
+    );
+    if (!document.rowCount) {
+      document = await client.query(
+        `INSERT INTO documents (client_id, organization_id, engagement_id, title, document_type, workflow_status, content_hash)
+         VALUES ($1, $2, $3, $4, $5, 'DRAFT', $6) RETURNING *`,
+        [req.user.id, req.organization.id, engagement.rows[0]?.id || null, documentTitle(type), type, contentHash]
+      );
+    } else {
+      document = await client.query(
+        `UPDATE documents SET workflow_status = 'DRAFT', approved_by = NULL, approved_at = NULL,
+          content_hash = $1 WHERE id = $2 AND organization_id = $3 RETURNING *`,
+        [contentHash, document.rows[0].id, req.organization.id]
+      );
+    }
+    const version = await client.query(
+      `INSERT INTO document_versions (document_id, version_number, content, change_summary, author_id)
+       VALUES ($1, COALESCE((SELECT MAX(version_number) + 1 FROM document_versions WHERE document_id = $1), 1), $2, $3, $4)
+       RETURNING version_number`,
+      [document.rows[0].id, content, req.body.change_summary || 'Borrador regenerado desde información empresarial confirmada.', req.user.id]
+    );
+    await client.query('COMMIT');
+    res.status(201).json({ ...document.rows[0], version_number: version.rows[0].version_number });
+  } catch (error: any) {
+    await client.query('ROLLBACK');
+    console.error('Error generating managed document:', error.message);
+    res.status(500).json({ error: 'No fue posible generar el documento administrado.' });
+  } finally {
+    client.release();
+  }
+});
+
+router.post('/documents/:id/review', requireOrganizationPermission('service.review'), async (req: any, res) => {
+  const decision = String(req.body.decision || '');
+  if (!['APPROVED', 'CHANGES_REQUESTED', 'REJECTED'].includes(decision)) {
+    return res.status(400).json({ error: 'Decisión de revisión inválida.' });
+  }
+  const client = await getDb().connect();
+  try {
+    await client.query('BEGIN');
+    const workflowStatus = decision === 'APPROVED' ? 'APPROVED' : decision === 'CHANGES_REQUESTED' ? 'IN_REVIEW' : 'DRAFT';
+    const document = await client.query(
+      `UPDATE documents SET workflow_status = $1,
+         approved_by = CASE WHEN $2 = 'APPROVED' THEN $3::uuid ELSE NULL END,
+         approved_at = CASE WHEN $2 = 'APPROVED' THEN CURRENT_TIMESTAMP ELSE NULL END
+       WHERE id = $4 AND organization_id = $5 AND is_active = TRUE RETURNING *`,
+      [workflowStatus, decision, req.user.id, req.params.id, req.organization.id]
+    );
+    if (!document.rowCount) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ error: 'Documento no encontrado.' });
+    }
+    await client.query(
+      `INSERT INTO compliance_reviews (organization_id, subject_type, subject_id, decision, comments, reviewer_id)
+       VALUES ($1, 'DOCUMENT', $2, $3, $4, $5)`,
+      [req.organization.id, req.params.id, decision, req.body.comments || null, req.user.id]
+    );
+    await client.query('COMMIT');
+    res.json(document.rows[0]);
+  } catch (error: any) {
+    await client.query('ROLLBACK');
+    res.status(500).json({ error: 'No fue posible registrar la revisión del documento.' });
+  } finally {
+    client.release();
   }
 });
 
