@@ -21,6 +21,7 @@ import LegalCopilot from './components/LegalCopilot';
 import CmpManagerView from './pages/dashboard/components/CmpManagerView';
 import EmployeeTrainingPublic from './pages/legal/EmployeeTrainingPublic';
 import EmployeeTrainingDashboard from './pages/dashboard/components/EmployeeTrainingDashboard';
+import ServiceWorkspaceView from './pages/dashboard/components/ServiceWorkspaceView';
 import ForgotPasswordView from './pages/auth/ForgotPasswordView';
 import ResetPasswordView from './pages/auth/ResetPasswordView';
 import AdminDashboardView from './pages/admin/AdminDashboardView';
@@ -147,7 +148,7 @@ interface DashboardProps {
   token: string | null;
   user: any;
   onLogout: () => void;
-  initialTab?: 'scanner' | 'diagnosis' | 'remediation' | 'dpo' | 'dossier' | 'ropa' | 'admin';
+  initialTab?: 'service' | 'scanner' | 'diagnosis' | 'remediation' | 'dpo' | 'dossier' | 'ropa' | 'admin';
 }
 
 export function Dashboard({ token, user, onLogout, initialTab }: DashboardProps) {
@@ -157,7 +158,7 @@ export function Dashboard({ token, user, onLogout, initialTab }: DashboardProps)
   // Lexically shadow the global fetch with our centralized authenticated fetch helper
   const fetch = authFetch;
 
-  const [activeTab, setActiveTab] = useState<'scanner' | 'diagnosis' | 'remediation' | 'dpo' | 'dossier' | 'ropa' | 'admin'>(initialTab || 'scanner');
+  const [activeTab, setActiveTab] = useState<'service' | 'scanner' | 'diagnosis' | 'remediation' | 'dpo' | 'dossier' | 'ropa' | 'admin' | 'cmp' | 'training'>(initialTab || 'service');
   const [remediationSubTab, setRemediationSubTab] = useState<'cmp' | 'arco' | 'transfers' | 'policies' | 'contracts'>('cmp');
   const [diagnosisViewMode, setDiagnosisViewMode] = useState<'overview' | 'questionnaire'>('overview');
   
@@ -2000,6 +2001,13 @@ Firmas autorizadas:
         </div>
         
         <nav className="nav-menu">
+          <div
+            className={`nav-item ${activeTab === 'service' ? 'active' : ''}`}
+            onClick={() => setActiveTab('service')}
+          >
+            <ClipboardList size={16} />
+            <span>0. Expediente del Servicio</span>
+          </div>
           <div 
             className={`nav-item ${activeTab === 'scanner' ? 'active' : ''}`}
             onClick={() => { setActiveTab('scanner'); fetchLatestScan(); }}
@@ -2193,6 +2201,7 @@ Firmas autorizadas:
           />
         </div>
         {activeTab === 'scanner' && renderScanner()}
+        {activeTab === 'service' && <ServiceWorkspaceView />}
         {activeTab === 'diagnosis' && renderDiagnosis()}
         {activeTab === 'remediation' && renderRemediation()}
         {activeTab === 'dpo' && <DpoSuiteView token={token} />}

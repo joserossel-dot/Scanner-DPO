@@ -15,6 +15,7 @@ import ropaRouter from './routes/ropa.js';
 import aiRouter from './routes/ai.js';
 import adminRouter from './routes/admin.js';
 import healthRouter from './routes/health.js';
+import serviceWorkspaceRouter from './routes/serviceWorkspace.js';
 
 if (!process.env.JWT_SECRET || process.env.JWT_SECRET.length < 32) {
   console.error('FATAL ERROR: JWT_SECRET must contain at least 32 characters.');
@@ -59,6 +60,7 @@ app.use('/api/remediation', remediationRouter);
 app.use('/api/dpo', dpoSuiteRouter);
 app.use('/api/ropa', ropaRouter);
 app.use('/api/ai', aiRouter);
+app.use('/api/service', serviceWorkspaceRouter);
 
 // Serve the compiled Frontend Dashboard from the frontend workspace
 const frontendDistPath = path.resolve(__dirname, '../../frontend/dist');

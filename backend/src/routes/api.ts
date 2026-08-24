@@ -463,9 +463,15 @@ router.post('/arco', publicArcoLimiter, async (req, res) => {
     }
 
     const result = await db.query(`
-      INSERT INTO arco_requests (domain, requester_name, requester_email, request_type, details, status, due_date)
-      VALUES ($1, $2, $3, $4, $5, $6, $7)
-      RETURNING due_date
+      INSERT INTO arco_requests
+      (domain, requester_name, requester_email, request_type, details, status, due_date, organization_id, engagement_id)
+      SELECT $1, $2, $3, $4, $5, $6, $7, sc.organization_id,
+             (SELECT se.id FROM service_engagements se
+               WHERE se.organization_id = sc.organization_id
+               ORDER BY se.created_at DESC LIMIT 1)
+        FROM site_configs sc
+       WHERE sc.domain = $1
+      RETURNING id, due_date, organization_id, engagement_id
     `, [
       domain,
       requesterName,
@@ -476,6 +482,22 @@ router.post('/arco', publicArcoLimiter, async (req, res) => {
       dueDate
     ]);
 
+    if (!result.rowCount) {
+      return res.status(404).json({ error: 'El dominio no está configurado para recibir solicitudes ARCO+.' });
+    }
+    await db.query(
+      `INSERT INTO compliance_tasks
+       (organization_id, engagement_id, activity_code, title, description, cadence,
+        priority, due_date, evidence_required)
+       VALUES ($1, $2, 8, $3, $4, 'EVENT_DRIVEN', 'HIGH', $5, TRUE)`,
+      [
+        result.rows[0].organization_id,
+        result.rows[0].engagement_id,
+        `Gestionar solicitud ARCO+ ${requestType}`,
+        `Solicitud ARCO+ #${result.rows[0].id}`,
+        result.rows[0].due_date
+      ]
+    );
     return res.json({ success: true, dueDate: result.rows[0].due_date });
   } catch (error: any) {
     return res.status(500).json({ error: error.message });
