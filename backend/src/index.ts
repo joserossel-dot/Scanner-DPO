@@ -14,6 +14,7 @@ import dpoSuiteRouter from './routes/dpoSuite.js';
 import ropaRouter from './routes/ropa.js';
 import aiRouter from './routes/ai.js';
 import adminRouter from './routes/admin.js';
+import healthRouter from './routes/health.js';
 
 if (!process.env.JWT_SECRET || process.env.JWT_SECRET.length < 32) {
   console.error('FATAL ERROR: JWT_SECRET must contain at least 32 characters.');
@@ -47,6 +48,7 @@ app.use(cors((req, callback) => {
 }));
 
 // API Routes
+app.use('/health', healthRouter);
 app.use('/api/auth', authRouter);
 app.use('/api/admin', adminRouter);
 app.use('/api', apiRouter);

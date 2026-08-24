@@ -1,0 +1,47 @@
+name: Staging E2E
+
+on:
+  workflow_dispatch:
+    inputs:
+      api_url:
+        description: URL base de la API de staging
+        required: true
+        type: string
+      scan_target:
+        description: URL publica y segura que auditara el crawler
+        required: false
+        default: https://example.com
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: staging-e2e
+  cancel-in-progress: false
+
+jobs:
+  company-flow:
+    name: Flujo empresarial en staging
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: staging
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: e2e/package-lock.json
+      - name: Instalar Playwright para pruebas API
+        run: npm ci --prefix e2e
+      - name: Validar destino de staging
+        env:
+          E2E_API_URL: ${{ inputs.api_url }}
+        run: |
+          node -e "const u=new URL(process.env.E2E_API_URL); if(u.protocol !== 'https:') throw new Error('La API E2E debe usar HTTPS'); if(!/(staging|preview|localhost)/i.test(u.hostname)) throw new Error('El hostname no parece un ambiente de staging permitido')"
+      - name: Ejecutar flujo empresarial
+        env:
+          E2E_API_URL: ${{ inputs.api_url }}
+          E2E_SCAN_TARGET: ${{ inputs.scan_target }}
+        run: npm test --prefix e2e

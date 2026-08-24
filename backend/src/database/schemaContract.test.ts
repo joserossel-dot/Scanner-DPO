@@ -39,3 +39,22 @@ test('migration is additive and seeds data idempotently', async () => {
   assert.match(sql, /HAVING COUNT\(DISTINCT organization_id\) = 1/);
   assert.doesNotMatch(sql, /DROP TABLE|TRUNCATE TABLE|DELETE FROM/i);
 });
+
+test('repair migration is idempotent and grants ownership only to organization creators', async () => {
+  const repairPath = path.join(
+    process.cwd(),
+    'src',
+    'database',
+    'migrations',
+    '007_repair_user_organization_ownership.sql'
+  );
+  const sql = await readFile(repairPath, 'utf8');
+
+  assert.match(sql, /'repair-' \|\| u\.id::text/);
+  assert.match(sql, /ON CONFLICT \(slug\) DO NOTHING/);
+  assert.match(sql, /ON CONFLICT \(organization_id, user_id\) DO NOTHING/);
+  assert.match(sql, /o\.created_by = om\.user_id/);
+  assert.match(sql, /om\.status = 'active'/);
+  assert.doesNotMatch(sql, /UPDATE organization_memberships[\s\S]*status/i);
+  assert.doesNotMatch(sql, /DROP TABLE|TRUNCATE TABLE|DELETE FROM/i);
+});

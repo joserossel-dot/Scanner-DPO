@@ -39,3 +39,9 @@ export function createRateLimitStore(prefix: string): Store | undefined {
 export function getRateLimitBackend(): RateLimitBackend {
   return configuredBackend();
 }
+
+export async function checkRateLimitStore(): Promise<void> {
+  if (configuredBackend() === 'memory') return;
+  if (!redisClient?.isReady) throw new Error('Shared rate-limit store is not ready.');
+  await redisClient.ping();
+}

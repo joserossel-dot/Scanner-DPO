@@ -1,4 +1,5 @@
 import { authFetch } from '../../../lib/authFetch';
+import { API_BASE, getApiError } from '../../../lib/api';
 import React, { useState, useEffect } from 'react';
 import { 
   FolderLock, 
@@ -37,25 +38,6 @@ interface RopaInventoryViewProps {
   onRopaUpdated?: () => void;
 }
 
-const API_BASE = (() => {
-  const url = (import.meta as any).env.VITE_API_URL || '';
-  if (typeof window !== 'undefined') {
-    const hostname = window.location.hostname;
-    if (hostname.includes('onrender.com')) {
-      const parts = hostname.split('.');
-      const sub = parts[0];
-      if (sub.endsWith('-dashboard')) {
-        const baseSub = sub.replace('-dashboard', '-api');
-        return `https://${baseSub}.onrender.com`;
-      }
-    }
-  }
-  if (url && !url.startsWith('http://') && !url.startsWith('https://')) {
-    return 'https://' + url;
-  }
-  return url;
-})();
-
 export default function RopaInventoryView({ token, onRopaUpdated }: RopaInventoryViewProps) {
   const [ropaList, setRopaList] = useState<RopaRecord[]>([]);
   const [isLoading, setIsLoading] = useState(false);
@@ -92,7 +74,7 @@ export default function RopaInventoryView({ token, onRopaUpdated }: RopaInventor
         const data = await response.json();
         setRopaList(data);
       } else {
-        setErrorMsg('Error al consultar el inventario de actividades (RoPA).');
+        setErrorMsg(await getApiError(response, 'Error al consultar el inventario de actividades (RoPA).'));
       }
     } catch (e) {
       console.error(e);
@@ -166,7 +148,7 @@ export default function RopaInventoryView({ token, onRopaUpdated }: RopaInventor
         ? `${API_BASE}/api/ropa/${editingRecord.id}` 
         : `${API_BASE}/api/ropa`;
 
-      const response = await fetch(url, {
+      const response = await authFetch(url, {
         method,
         headers: {
           'Content-Type': 'application/json',
@@ -181,8 +163,7 @@ export default function RopaInventoryView({ token, onRopaUpdated }: RopaInventor
         fetchRopa();
         onRopaUpdated?.();
       } else {
-        const data = await response.json();
-        alert(data.error || 'Error al guardar la actividad de tratamiento.');
+        alert(await getApiError(response, 'Error al guardar la actividad de tratamiento.'));
       }
     } catch (err) {
       console.error(err);
@@ -204,7 +185,7 @@ export default function RopaInventoryView({ token, onRopaUpdated }: RopaInventor
         fetchRopa();
         onRopaUpdated?.();
       } else {
-        alert('Error al intentar eliminar la actividad de tratamiento.');
+        alert(await getApiError(response, 'Error al intentar eliminar la actividad de tratamiento.'));
       }
     } catch (e) {
       console.error(e);

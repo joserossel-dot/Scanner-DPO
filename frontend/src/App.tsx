@@ -25,6 +25,7 @@ import ForgotPasswordView from './pages/auth/ForgotPasswordView';
 import ResetPasswordView from './pages/auth/ResetPasswordView';
 import AdminDashboardView from './pages/admin/AdminDashboardView';
 import { authFetch } from './lib/authFetch';
+import { API_BASE } from './lib/api';
 import { 
   Shield, 
   Activity, 
@@ -135,28 +136,6 @@ interface ClientConfig {
   banner_title: string;
   banner_description: string;
 }
-
-const API_BASE = (() => {
-  const envUrl = (import.meta as any).env.VITE_API_URL || '';
-  // If explicitly provided, ensure it has protocol
-  if (envUrl && !envUrl.startsWith('http://') && !envUrl.startsWith('https://')) {
-    return 'https://' + envUrl;
-  }
-  // Use provided URL if valid
-  if (envUrl) {
-    return envUrl;
-  }
-  // Production fallback: use explicit Render backend URL
-  if (typeof window !== 'undefined') {
-    const hostname = window.location.hostname;
-    if (hostname.includes('onrender.com')) {
-      // Always point to the known backend service on Render
-      return 'https://pt-compliance-api.onrender.com';
-    }
-  }
-  // Default to localhost backend during dev
-  return 'http://localhost:3000';
-})();
 
 // Development domain param for diagnosis/report fetches (only include when running locally)
 const DEV_DOMAIN_PARAM = (typeof window !== 'undefined' && (window.location.hostname.includes('localhost') || window.location.hostname.includes('127.0.0.1')))
@@ -1356,12 +1335,12 @@ Firmas autorizadas:
                 Copie este código y péguelo en su sitio web justo antes de cerrar la etiqueta <code>&lt;/head&gt;</code>. (Compatible con WordPress, Shopify o HTML nativo). Asegúrese de que la URL apunte a nuestro servidor de producción, no a localhost.
               </p>
               <div style={{ background: '#0a0a14', padding: '12px 16px', borderRadius: '6px', fontFamily: 'monospace', fontSize: '12px', border: '1px solid var(--border-color)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <code>{`<script src="https://pt-compliance-api.onrender.com/widget.js?tenant=${user?.id || 'default'}" async></script>`}</code>
+                <code>{`<script src="${API_BASE || window.location.origin}/widget.js?tenant=${user?.id || 'default'}" async></script>`}</code>
                 <button 
                   className="btn-action" 
                   style={{ padding: '2px 8px', fontSize: '10px' }}
                   onClick={() => {
-                    navigator.clipboard.writeText(`<script src="https://pt-compliance-api.onrender.com/widget.js?tenant=${user?.id || 'default'}" async></script>`);
+                    navigator.clipboard.writeText(`<script src="${API_BASE || window.location.origin}/widget.js?tenant=${user?.id || 'default'}" async></script>`);
                     showToast('Código copiado al portapapeles.', 'success');
                   }}
                 >
@@ -1479,12 +1458,12 @@ Firmas autorizadas:
               <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                 <span className="text-xs font-semibold text-slate-400">Enlace para sus clientes:</span>
                 <div style={{ background: '#0a0a14', padding: '12px 16px', borderRadius: '6px', fontFamily: 'monospace', fontSize: '12px', border: '1px solid var(--border-color)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <code>{`https://pt-compliance-api.onrender.com/arco?tenant=${user?.id || 'default'}`}</code>
+                  <code>{`${API_BASE || window.location.origin}/arco?tenant=${user?.id || 'default'}`}</code>
                   <button 
                     className="btn-action" 
                     style={{ padding: '2px 8px', fontSize: '10px' }}
                     onClick={() => {
-                      navigator.clipboard.writeText(`https://pt-compliance-api.onrender.com/arco?tenant=${user?.id || 'default'}`);
+                      navigator.clipboard.writeText(`${API_BASE || window.location.origin}/arco?tenant=${user?.id || 'default'}`);
                       showToast('Enlace copiado al portapapeles.', 'success');
                     }}
                   >
