@@ -17,6 +17,7 @@ import DiagnosticQuestionnaire from './DiagnosticQuestionnaire';
 import BusinessDiscoveryQuestionnaire from './BusinessDiscoveryQuestionnaire';
 
 interface RopaRecord {
+  [key: string]: any;
   id: string;
   process_name: string;
   purpose: string;
@@ -120,7 +121,11 @@ export default function DiagnosticHubView({ token, scanUrl, onEvaluationSuccess,
     setEditingRecord(record);
     setProcessName(record.process_name || '');
     setPurpose(record.purpose || '');
-    setLegalBasis(record.legal_basis || '');
+    const normalizedBasis: Record<string, string> = {
+      'Consentimiento': 'CONSENT', 'Contrato': 'CONTRACT', 'Obligación Legal': 'LEGAL_OBLIGATION',
+      'Interés Legítimo': 'LEGITIMATE_INTEREST', 'Interés Público': 'PUBLIC_INTEREST'
+    };
+    setLegalBasis(normalizedBasis[record.legal_basis] || record.legal_basis || '');
     setRetentionPeriod(record.retention_period || '');
     setDataCategories(record.data_categories || []);
     setCrossBorderTransfer(record.cross_border_transfer || false);
@@ -139,6 +144,7 @@ export default function DiagnosticHubView({ token, scanUrl, onEvaluationSuccess,
           'Authorization': `Bearer ${token}`
         },
         body: JSON.stringify({
+          ...editingRecord,
           process_name: processName,
           purpose,
           legal_basis: legalBasis,
@@ -413,11 +419,11 @@ export default function DiagnosticHubView({ token, scanUrl, onEvaluationSuccess,
                     className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-xs text-slate-200 focus:outline-none focus:border-indigo-500/50"
                   >
                     <option value="">Seleccione una base</option>
-                    <option value="Consentimiento">Consentimiento del Titular</option>
-                    <option value="Contrato">Ejecución del Contrato</option>
-                    <option value="Obligación Legal">Cumplimiento de Obligación Legal</option>
-                    <option value="Interés Legítimo">Interés Legítimo</option>
-                    <option value="Interés Público">Interés Público / Ley</option>
+                    <option value="CONSENT">Consentimiento del Titular</option>
+                    <option value="CONTRACT">Ejecución del Contrato</option>
+                    <option value="LEGAL_OBLIGATION">Cumplimiento de Obligación Legal</option>
+                    <option value="LEGITIMATE_INTEREST">Interés Legítimo</option>
+                    <option value="PUBLIC_INTEREST">Interés Público / Ley</option>
                   </select>
                 </div>
 
@@ -436,6 +442,14 @@ export default function DiagnosticHubView({ token, scanUrl, onEvaluationSuccess,
 
               <div>
                 <label className="text-xs font-semibold text-slate-300 block mb-2">Categorías de Datos Personales Tratados *</label>
+                <input
+                  type="text"
+                  required
+                  value={dataCategories.join(', ')}
+                  onChange={e => setDataCategories(e.target.value.split(',').map(value => value.trim()).filter(Boolean))}
+                  placeholder="Ej. nombre, RUT, correo, teléfono, historial de compras"
+                  className="w-full mb-3 bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-xs text-slate-200 focus:outline-none focus:border-indigo-500/50"
+                />
                 <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5 bg-slate-950/40 p-3 rounded-lg border border-slate-850">
                   {[
                     'Identificatorios',
