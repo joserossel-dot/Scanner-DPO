@@ -16,3 +16,10 @@ test('baseline migration is additive and defines migration 005 dependencies', as
   }
   assert.doesNotMatch(sql, /^\s*(?:DROP|TRUNCATE|DELETE)\b/im);
 });
+
+test('security incidents do not require an unrelated CMP site configuration', async () => {
+  const sql = await readFile(path.resolve(process.cwd(), 'src/database/migrations/016_security_incident_domain_independence.sql'), 'utf8');
+  assert.match(sql, /ALTER TABLE security_incidents\s+DROP CONSTRAINT IF EXISTS security_incidents_domain_fkey/i);
+  assert.match(sql, /CREATE INDEX IF NOT EXISTS idx_incidents_domain/i);
+  assert.doesNotMatch(sql, /DELETE\s+FROM|TRUNCATE\s+/i);
+});

@@ -26,7 +26,7 @@ import ForgotPasswordView from './pages/auth/ForgotPasswordView';
 import ResetPasswordView from './pages/auth/ResetPasswordView';
 import AdminDashboardView from './pages/admin/AdminDashboardView';
 import { authFetch } from './lib/authFetch';
-import { API_BASE } from './lib/api';
+import { API_BASE, getApiError } from './lib/api';
 import { complianceTrafficLight } from './lib/complianceTrafficLight';
 import { 
   Shield, 
@@ -905,7 +905,7 @@ ESTADO: BORRADOR SUJETO A REVISIÓN PROFESIONAL Y APROBACIÓN DE LAS PARTES.`;
         fetchIncidents();
         handleFetchDiagnosis();
       } else {
-        showToast('Error al ejecutar el escaneo de vulnerabilidades.', 'warning');
+        showToast(await getApiError(res, 'Error al ejecutar el escaneo de vulnerabilidades.'), 'warning');
       }
     } catch (e) {
       console.error(e);
