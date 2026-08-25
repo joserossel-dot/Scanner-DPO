@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { API_BASE } from '../../lib/api';
 import { complianceTrafficLight } from '../../lib/complianceTrafficLight';
+import { classifyDiagnosisFinding, remediationTargetForFinding } from './diagnosisFindingRouting';
 import { 
   ShieldAlert, 
   CheckCircle, 
@@ -148,76 +149,6 @@ export default function DiagnosisResultsView({
       return 'bg-amber-950/20 border-amber-900/30';
     };
 
-    // Phase classification helper
-    const classifyFinding = (f: DiagnosisFinding): 1 | 2 | 3 => {
-      const id = f?.id || '';
-      const cat = f?.category?.toLowerCase() || '';
-      const desc = f?.description?.toLowerCase() || '';
-      
-      // Fase 1: Cambios Digitales y Web: Cookies, Trackers, Formularios web y Canal ARCO+.
-      if (
-        id?.includes('COOKIES') || 
-        id?.includes('TRACKER') || 
-        id?.includes('FORM') || 
-        id?.includes('ARCO') || 
-        cat.includes('cookie') || 
-        cat.includes('tracker') || 
-        cat.includes('form') || 
-        cat.includes('arco') ||
-        desc.includes('cookie') || 
-        desc.includes('tracker') || 
-        desc.includes('formulario') || 
-        desc.includes('arco')
-      ) {
-        return 1;
-      }
-      
-      // Fase 2: Blindaje Documental: Política de Privacidad, Textos Informativos.
-      if (
-        id?.includes('POLICY') || 
-        id?.includes('POLICIES') || 
-        cat.includes('polic') || 
-        desc.includes('política')
-      ) {
-        return 2;
-      }
-      
-      // Fase 3: Cambios Operativos y Procesos: Cifrado, Bases de Datos, Biometría, retención de CVs, y Shadow IT.
-      return 3;
-    };
-
-    // Maps finding to corresponding remediation subtab
-    const getSubTabForFinding = (f: DiagnosisFinding): 'cmp' | 'arco' | 'transfers' | 'policies' | 'ropa_hub' => {
-      const id = f?.id || '';
-      const cat = f?.category?.toLowerCase() || '';
-      const desc = f?.description?.toLowerCase() || '';
-
-      if (id === 'FIND_ROPA_MISSING' || id === 'FIND_ROPA_DRAFTS_PENDING') {
-        return 'ropa_hub';
-      }
-      if (id?.includes('ARCO') || cat.includes('arco') || desc.includes('arco')) {
-        return 'arco';
-      }
-      if (id?.includes('COOKIES') || cat.includes('cookie') || desc.includes('cookie') || desc.includes('tracker')) {
-        return 'cmp';
-      }
-      if (id?.includes('POLICY') || cat.includes('polic') || desc.includes('política')) {
-        return 'policies';
-      }
-      if (
-        id?.includes('CONTRACT') || 
-        id?.includes('TRANSFER') || 
-        id?.includes('TID') || 
-        cat.includes('transfer') || 
-        cat.includes('proveedor') || 
-        desc.includes('dpa') || 
-        desc.includes('scc')
-      ) {
-        return 'transfers';
-      }
-      return 'cmp';
-    };
-
     // Business impact descriptions for Phase 3 findings
     const getBusinessImpact = (f: DiagnosisFinding): string => {
       const id = f?.id || '';
@@ -239,9 +170,9 @@ export default function DiagnosisResultsView({
       return "Tendrá que modificar sus procesos internos. Su organización debe regularizar y documentar el tratamiento de datos para evitar sanciones.";
     };
 
-    const phase1Findings = findings?.filter(f => classifyFinding(f) === 1) || [];
-    const phase2Findings = findings?.filter(f => classifyFinding(f) === 2) || [];
-    const phase3Findings = findings?.filter(f => classifyFinding(f) === 3) || [];
+    const phase1Findings = findings?.filter(f => classifyDiagnosisFinding(f) === 1) || [];
+    const phase2Findings = findings?.filter(f => classifyDiagnosisFinding(f) === 2) || [];
+    const phase3Findings = findings?.filter(f => classifyDiagnosisFinding(f) === 3) || [];
 
     const togglePhase = (phaseNum: number) => {
       setExpandedPhase(expandedPhase === phaseNum ? null : phaseNum);
@@ -423,7 +354,7 @@ export default function DiagnosisResultsView({
 
                     {!f.isGated && (
                       <button
-                        onClick={() => onNavigateToRemediation(getSubTabForFinding(f))}
+                        onClick={() => onNavigateToRemediation(remediationTargetForFinding(f))}
                         className="flex items-center gap-1.5 px-3 py-1.5 bg-indigo-650 hover:bg-indigo-500 text-white font-bold text-xs rounded-lg transition-all flex-shrink-0"
                       >
                         <span>Ir a solucionar</span>
@@ -497,7 +428,7 @@ export default function DiagnosisResultsView({
 
                     {!f.isGated && (
                       <button
-                        onClick={() => onNavigateToRemediation(getSubTabForFinding(f))}
+                        onClick={() => onNavigateToRemediation(remediationTargetForFinding(f))}
                         className="flex items-center gap-1.5 px-3 py-1.5 bg-indigo-650 hover:bg-indigo-500 text-white font-bold text-xs rounded-lg transition-all flex-shrink-0"
                       >
                         <span>Ir a solucionar</span>
