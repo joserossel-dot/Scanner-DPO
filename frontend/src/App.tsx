@@ -54,7 +54,8 @@ import {
   ChevronUp,
   FolderLock,
   ClipboardList,
-  Info
+  Info,
+  Database
 } from 'lucide-react';
 
 interface AuditFinding {
@@ -1199,8 +1200,7 @@ ESTADO: BORRADOR SUJETO A REVISIÓN PROFESIONAL Y APROBACIÓN DE LAS PARTES.`;
               token={token}
               onNavigateToRemediation={(subTab) => {
                 if (subTab === 'ropa_hub') {
-                  setActiveTab('diagnosis');
-                  setEvalResults(null);
+                  setActiveTab('ropa');
                 } else {
                   setActiveTab('remediation');
                   setRemediationSubTab(subTab as any);
@@ -2006,6 +2006,15 @@ ESTADO: BORRADOR SUJETO A REVISIÓN PROFESIONAL Y APROBACIÓN DE LAS PARTES.`;
           >
             <Activity size={16} />
             <span>📊 2. Inventario y Diagnóstico</span>
+          </div>
+
+          <div
+            className={`nav-item ${activeTab === 'ropa' ? 'active' : ''}`}
+            style={{ paddingLeft: '28px', fontSize: '11.5px' }}
+            onClick={() => setActiveTab('ropa')}
+          >
+            <Database size={15} />
+            <span>2.1 Ver RoPA y Flujos</span>
           </div>
           
           <div 

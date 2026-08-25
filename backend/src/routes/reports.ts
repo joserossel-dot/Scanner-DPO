@@ -5,6 +5,7 @@ import { analyzeQuestionnaireAnswers } from '../services/ropaDraftService.js';
 import { authenticateToken } from '../middlewares/auth.js';
 import { sendTenantActivationAlert } from '../services/emailService.js';
 import { resolveActiveOrganization, requireOrganizationPermission } from '../tenancy/organizationContext.js';
+import { evaluateDiagnosisCoverage } from '../services/diagnosisCoverageService.js';
 
 const router = Router();
 
@@ -152,68 +153,65 @@ router.get('/diagnosis', requireOrganizationPermission('compliance.read'), async
     });
     securityScore = Math.max(0, securityScore);
 
-    // 5.5 Query ROPA confirmed and draft counts to apply exclusion / compliance gap check
-    const ropaRes = await db.query(
-      `SELECT 
-        COUNT(CASE WHEN status = 'confirmed' THEN 1 END)::int as confirmed_count,
-        COUNT(CASE WHEN status = 'draft' THEN 1 END)::int as draft_count
-       FROM ropa_inventory WHERE organization_id = $1`,
-      [req.organization.id]
-    );
-    const confirmedRopaCount = ropaRes.rows[0]?.confirmed_count || 0;
-    const draftRopaCount = ropaRes.rows[0]?.draft_count || 0;
-
-    const ropaFindings: any[] = [];
-    const ropaActions: any[] = [];
-    let ropaForcedToZero = false;
-
-    if (confirmedRopaCount === 0) {
-      ropaForcedToZero = true;
-      ropaFindings.push({
-        id: 'FIND_ROPA_MISSING',
-        category: 'Gobernanza',
-        severity: 'Gravísima',
-        description: 'Ausencia de Registro de Actividades (RoPA)',
-        recommendation: 'Es imposible evaluar el cumplimiento sin confirmar primero el inventario de datos en la pestaña RoPA. Por favor, confirme o complete la información para generar su diagnóstico de riesgos.',
-        details: 'El Registro de Actividades de Tratamiento es obligatorio para demostrar cumplimiento ante fiscalizaciones del regulador.'
-      });
-      ropaActions.push({
-        step: 0, // re-enumerated later
-        title: 'Formalizar y confirmar el inventario RoPA',
-        description: 'Mapear e inventariar las actividades de tratamiento de datos personales de la empresa (Art. 12).',
-        priority: 'Alta',
-        estimatedEffort: '3 horas',
-        details: 'Ingresar al módulo RoPA, revisar las sugerencias automáticas generadas y confirmar los borradores correspondientes.'
-      });
-    } else if (draftRopaCount > 0) {
-      ropaForcedToZero = true;
-      ropaFindings.push({
-        id: 'FIND_ROPA_DRAFTS_PENDING',
-        category: 'Gobernanza',
-        severity: 'Gravísima',
-        description: 'Borradores de procesos detectados pendientes de revisión en el RoPA.',
-        recommendation: 'Tiene procesos detectados pendientes de revisión en su Inventario. Confirme o rechace los borradores para generar un diagnóstico preciso.',
-        details: 'Tiene procesos detectados pendientes de revisión en su Inventario. Confirme o rechace los borradores para generar un diagnóstico preciso.'
-      });
-      ropaActions.push({
-        step: 0,
-        title: 'Revisar borradores pendientes en RoPA',
-        description: 'Revisar y confirmar o rechazar los borradores sugeridos en el Registro de Actividades de Tratamiento (RoPA).',
-        priority: 'Alta',
-        estimatedEffort: '15 minutos',
-        details: 'Ingrese al módulo RoPA, analice los borradores sugeridos por el escáner y la IA, y confírmelos o rechácelos para poder evaluar el cumplimiento.'
-      });
-    }
-
-    // 6. Calculate unified Global Compliance Score
-    let globalScore = Math.round((crawlScore * 0.5) + (transfersScore * 0.3) + (securityScore * 0.2));
-    if (ropaForcedToZero) {
-      globalScore = 0;
-    }
+    // 5.5 Evidence coverage. Missing information is pending, never assumed compliant.
+    const coverageRes = await db.query(`SELECT
+      EXISTS(SELECT 1 FROM organizations o WHERE o.id = $1 AND o.legal_name IS NOT NULL AND o.tax_identifier IS NOT NULL) AS has_identity,
+      EXISTS(SELECT 1 FROM organization_contacts oc WHERE oc.organization_id = $1 AND oc.active = TRUE AND oc.is_primary = TRUE) AS has_contact,
+      EXISTS(SELECT 1 FROM audit_reports ar WHERE ar.organization_id = $1 AND ar.pages_analyzed IS NOT NULL AND ar.pages_analyzed::text <> '[]') AS has_scan,
+      EXISTS(SELECT 1 FROM audit_reports ar WHERE ar.organization_id = $1 AND ar.questionnaire_answers IS NOT NULL) AS has_questionnaire,
+      EXISTS(SELECT 1 FROM ropa_inventory r WHERE r.organization_id = $1 AND r.status = 'confirmed') AS has_ropa,
+      EXISTS(SELECT 1 FROM ropa_inventory r WHERE r.organization_id = $1 AND r.status = 'draft') AS has_ropa_drafts,
+      EXISTS(SELECT 1 FROM processing_data_flows f WHERE f.organization_id = $1)
+        AND NOT EXISTS(SELECT 1 FROM processing_data_flows f WHERE f.organization_id = $1 AND (f.review_status <> 'CONFIRMED' OR f.evidence_status <> 'VERIFIED')) AS verified_flows,
+      EXISTS(SELECT 1 FROM external_parties ep WHERE ep.organization_id = $1)
+        AND NOT EXISTS(SELECT 1 FROM external_parties ep WHERE ep.organization_id = $1 AND ep.data_processing_terms_status NOT IN ('SIGNED','NOT_REQUIRED')) AS processors_reviewed,
+      EXISTS(SELECT 1 FROM processing_data_flows f WHERE f.organization_id = $1)
+        AND NOT EXISTS(SELECT 1 FROM processing_data_flows f WHERE f.organization_id = $1 AND jsonb_array_length(f.destination_countries) > 0
+        AND (f.review_status <> 'CONFIRMED' OR f.evidence_status <> 'VERIFIED' OR f.transfer_mechanism IS NULL OR jsonb_array_length(f.transfer_safeguards) = 0)) AS transfers_protected,
+      EXISTS(SELECT 1 FROM risk_matrix r WHERE r.organization_id = $1 AND r.review_status = 'CONFIRMED'
+        AND EXISTS(SELECT 1 FROM compliance_evidence ce WHERE ce.organization_id = r.organization_id AND ce.subject_type = 'RISK' AND ce.subject_id = r.id AND ce.verification_status = 'VERIFIED')) AS verified_risks,
+      EXISTS(SELECT 1 FROM control_assessments ca WHERE ca.organization_id = $1 AND ca.review_status = 'CONFIRMED' AND ca.status IN ('IMPLEMENTED','NOT_APPLICABLE')
+        AND EXISTS(SELECT 1 FROM compliance_evidence ce WHERE ce.organization_id = ca.organization_id AND ce.subject_type = 'CONTROL' AND ce.subject_id = ca.id AND ce.verification_status = 'VERIFIED')) AS verified_controls,
+      (SELECT COUNT(DISTINCT d.document_type) FROM documents d WHERE d.organization_id = $1 AND d.is_active = TRUE AND d.workflow_status = 'APPROVED'
+        AND d.document_type IN ('PRIVACY_NOTICE','DATA_PROTECTION_POLICY','ARCO_PROCEDURE','INCIDENT_PLAYBOOK')) = 4 AS approved_documents,
+      (EXISTS(SELECT 1 FROM form_consent_logs fcl WHERE fcl.organization_id = $1)
+        OR EXISTS(SELECT 1 FROM consent_logs cl WHERE cl.organization_id = $1)) AS consent_evidence,
+      EXISTS(SELECT 1 FROM employee_trainings et WHERE et.organization_id = $1) AS training_evidence`, [req.organization.id]);
+    const coverageRow = coverageRes.rows[0] || {};
+    const coverage = evaluateDiagnosisCoverage({
+      hasOrganizationIdentity: coverageRow.has_identity === true,
+      hasResponsibleContact: coverageRow.has_contact === true,
+      hasWebScan: coverageRow.has_scan === true,
+      hasQuestionnaire: coverageRow.has_questionnaire === true,
+      hasConfirmedRopa: coverageRow.has_ropa === true,
+      hasPendingRopaDrafts: coverageRow.has_ropa_drafts === true,
+      hasVerifiedFlows: coverageRow.verified_flows === true,
+      processorsReviewed: coverageRow.processors_reviewed === true,
+      transfersProtected: coverageRow.transfers_protected === true,
+      hasVerifiedRiskAssessment: coverageRow.verified_risks === true,
+      hasVerifiedControls: coverageRow.verified_controls === true,
+      hasApprovedCoreDocuments: coverageRow.approved_documents === true,
+      hasConsentEvidence: coverageRow.consent_evidence === true,
+      hasTrainingEvidence: coverageRow.training_evidence === true
+    });
+    const globalScore = coverage.score;
+    const coverageFindings = coverage.pending.map(check => ({
+      id: check.id, category: check.category, severity: check.severity,
+      description: check.description, recommendation: check.recommendation,
+      details: 'Estado calculado desde antecedentes y evidencia disponibles en el expediente.',
+      riskUtm: 0, effort: 'MEDIUM', scoreBasis: 'EVIDENCE_COVERAGE'
+    }));
+    const coverageActions = coverage.pending.map(check => ({
+      step: 0, title: check.description, description: check.recommendation,
+      priority: check.severity === 'Gravísima' ? 'Alta' : 'Media', estimatedEffort: 'Por estimar',
+      details: 'La actividad permanece pendiente hasta contar con confirmación y evidencia suficiente.'
+    }));
 
     // Combine findings and re-enumerate action steps
-    const combinedFindings = [...findings, ...transferFindings, ...ropaFindings];
-    const combinedActions = [...actionPlan, ...transferActions, ...ropaActions];
+    const findingMap = new Map<string, any>();
+    [...findings, ...transferFindings, ...coverageFindings].forEach(item => findingMap.set(item.id, item));
+    const combinedFindings = Array.from(findingMap.values());
+    const combinedActions = [...actionPlan, ...transferActions, ...coverageActions];
     
     // Sort combined actions by priority
     const priorityOrder: Record<string, number> = { 'Alta': 1, 'Media': 2, 'Baja': 3 };
@@ -253,6 +251,8 @@ router.get('/diagnosis', requireOrganizationPermission('compliance.read'), async
     res.json({
       domain,
       globalScore,
+      scoreBasis: 'EVIDENCE_COVERAGE',
+      coverage: { met: coverage.met, total: coverage.total, checks: coverage.checks },
       breakdown: {
         crawlScore,
         transfersScore,

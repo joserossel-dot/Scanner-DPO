@@ -286,6 +286,15 @@ export default function DiagnosticHubView({ token, scanUrl, onEvaluationSuccess,
                   <p className="text-[10px] text-slate-500 mt-1 leading-normal max-w-xs mx-auto">
                     {hasConfirmedInventory ? 'Puede revisar el diagnóstico con las actividades ya confirmadas.' : 'Complete al menos una actividad, cree su borrador y confírmelo antes de avanzar.'}
                   </p>
+                  {hasConfirmedInventory && setActiveTab && (
+                    <button
+                      type="button"
+                      onClick={() => setActiveTab('ropa')}
+                      className="mt-3 py-1.5 px-3 bg-indigo-600/15 hover:bg-indigo-600/25 text-indigo-300 font-bold text-[10px] rounded-lg border border-indigo-800/50"
+                    >
+                      Ver actividades confirmadas y flujos
+                    </button>
+                  )}
                 </div>
               </div>
             ) : (
