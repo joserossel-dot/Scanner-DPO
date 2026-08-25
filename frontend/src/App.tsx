@@ -27,6 +27,7 @@ import ResetPasswordView from './pages/auth/ResetPasswordView';
 import AdminDashboardView from './pages/admin/AdminDashboardView';
 import { authFetch } from './lib/authFetch';
 import { API_BASE } from './lib/api';
+import { complianceTrafficLight } from './lib/complianceTrafficLight';
 import { 
   Shield, 
   Activity, 
@@ -1018,7 +1019,7 @@ Firmas autorizadas:
               <div style={{ background: 'rgba(255,255,255,0.02)', padding: '16px', borderRadius: '8px', border: '1px solid var(--border-color)', marginTop: '20px' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', flexWrap: 'wrap', gap: '15px', marginBottom: '15px' }}>
                   <span style={{ fontSize: '14px', fontWeight: 600 }}>Dominio Analizado: <code>{latestScan.url}</code></span>
-                  <span className="badge badge-success">Crawler Score: {latestScan.score}%</span>
+                  <span className={`badge badge-${complianceTrafficLight(latestScan.score) === 'green' ? 'success' : complianceTrafficLight(latestScan.score) === 'red' ? 'danger' : 'warning'}`}>Crawler Score: {latestScan.score}%</span>
                 </div>
                 
                 {/* Sitemap and Scope Coverage */}

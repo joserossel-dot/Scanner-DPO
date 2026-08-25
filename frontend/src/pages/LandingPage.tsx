@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { API_BASE } from '../lib/api';
+import { complianceTrafficLight } from '../lib/complianceTrafficLight';
 import { useNavigate, Link } from 'react-router-dom';
 import { 
   Shield, 
@@ -223,7 +224,7 @@ export default function LandingPage() {
                   <svg className="absolute w-full h-full -rotate-90">
                     <circle className="stroke-slate-800" strokeWidth="8" fill="transparent" r="46" cx="56" cy="56" />
                     <circle 
-                      className={scanResult.score >= 80 ? 'stroke-emerald-500' : scanResult.score >= 50 ? 'stroke-amber-500' : 'stroke-rose-500'} 
+                      className={complianceTrafficLight(scanResult.score) === 'green' ? 'stroke-emerald-500' : complianceTrafficLight(scanResult.score) === 'red' ? 'stroke-rose-500' : 'stroke-amber-500'}
                       strokeWidth="8" 
                       fill="transparent" 
                       r="46" 

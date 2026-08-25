@@ -318,6 +318,32 @@ body {
   margin-bottom: 8px;
 }
 
+.form-input {
+  width: 100%;
+  margin-top: 8px;
+  box-sizing: border-box;
+  background-color: var(--bg-primary);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 10px;
+  color: #ffffff;
+  -webkit-text-fill-color: #ffffff;
+  padding: 11px 14px;
+  font-family: inherit;
+  font-size: 14px;
+  color-scheme: dark;
+}
+
+.form-input:focus {
+  border-color: var(--color-primary);
+  outline: none;
+  box-shadow: 0 0 0 3px var(--color-primary-glow);
+}
+
+.form-input option {
+  background: #0f172a;
+  color: #ffffff;
+}
+
 .form-textarea {
   width: 100%;
   background-color: var(--bg-primary);

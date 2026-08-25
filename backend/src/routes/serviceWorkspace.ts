@@ -4,6 +4,7 @@ import { getDb } from '../database/db.js';
 import { authenticateToken } from '../middlewares/auth.js';
 import { evaluateEligibility } from '../services/eligibilityService.js';
 import { buildManagedDocument, documentTitle, type ManagedDocumentType } from '../services/managedDocumentBuilder.js';
+import { assessLegalDeliverables, type EvidenceStatus, type LegalEvidence } from '../services/legalDeliverablesService.js';
 import { resolveActiveOrganization, requireOrganizationPermission } from '../tenancy/organizationContext.js';
 
 const router = Router();
@@ -14,34 +15,119 @@ const validTaskStatuses = new Set([
   'PENDING', 'IN_PROGRESS', 'BLOCKED', 'IN_REVIEW', 'APPROVED', 'COMPLETED', 'CANCELLED'
 ]);
 const managedDocumentTypes = new Set<ManagedDocumentType>([
-  'EMPLOYEE_ANNEX', 'RETENTION_POLICY', 'ARCO_PROCEDURE', 'INCIDENT_PLAYBOOK'
+  'EMPLOYEE_ANNEX', 'PROCESSOR_ANNEX', 'PRIVACY_NOTICE', 'DATA_PROTECTION_POLICY',
+  'RETENTION_POLICY', 'ARCO_PROCEDURE', 'INCIDENT_PLAYBOOK'
 ]);
+
+const evidenceStatus = (confirmed: boolean, draft: boolean): EvidenceStatus => confirmed ? 'CONFIRMED' : draft ? 'DRAFT' : 'MISSING';
 
 router.get('/workspace', requireOrganizationPermission('compliance.read'), async (req: any, res) => {
   try {
     const db = getDb();
     const organizationId = req.organization.id;
-    const [engagement, eligibility, taskStats, nextTasks, reviews, contacts] = await Promise.all([
+    const [organization, engagement, eligibility, taskStats, nextTasks, reviews, contacts, readiness] = await Promise.all([
+      db.query(`SELECT id, name, legal_name, tax_identifier FROM organizations WHERE id = $1`, [organizationId]),
       db.query(`SELECT * FROM service_engagements WHERE organization_id = $1 ORDER BY created_at DESC LIMIT 1`, [organizationId]),
       db.query(`SELECT * FROM eligibility_assessments WHERE organization_id = $1 ORDER BY created_at DESC LIMIT 1`, [organizationId]),
       db.query(`SELECT status, COUNT(*)::int AS count FROM compliance_tasks WHERE organization_id = $1 GROUP BY status`, [organizationId]),
       db.query(`SELECT * FROM compliance_tasks WHERE organization_id = $1 AND status NOT IN ('COMPLETED', 'CANCELLED') ORDER BY due_date NULLS LAST, priority DESC LIMIT 20`, [organizationId]),
       db.query(`SELECT * FROM periodic_reviews WHERE organization_id = $1 ORDER BY period_start ASC LIMIT 20`, [organizationId]),
-      db.query(`SELECT * FROM organization_contacts WHERE organization_id = $1 AND active = TRUE ORDER BY is_primary DESC, full_name`, [organizationId])
+      db.query(`SELECT * FROM organization_contacts WHERE organization_id = $1 AND active = TRUE ORDER BY is_primary DESC, full_name`, [organizationId]),
+      db.query(`SELECT
+        EXISTS(SELECT 1 FROM audit_reports WHERE organization_id = $1 AND pages_analyzed IS NOT NULL AND pages_analyzed::text <> '[]') AS has_web_scan,
+        EXISTS(SELECT 1 FROM audit_reports WHERE organization_id = $1 AND questionnaire_answers IS NOT NULL) AS has_questionnaire,
+        EXISTS(SELECT 1 FROM ropa_inventory WHERE organization_id = $1 AND status = 'confirmed') AS has_confirmed_ropa,
+        EXISTS(SELECT 1 FROM risk_matrix WHERE organization_id = $1) AS has_risk_assessment,
+        EXISTS(SELECT 1 FROM control_assessments WHERE organization_id = $1) AS has_control_assessment,
+        (SELECT COUNT(*)::int FROM documents WHERE organization_id = $1 AND workflow_status = 'APPROVED' AND is_active = TRUE) AS approved_documents`, [organizationId])
     ]);
     res.json({
       permissions: req.organization.permissions,
+      organization: organization.rows[0] || null,
       engagement: engagement.rows[0] || null,
       eligibility: eligibility.rows[0] || null,
       taskStats: taskStats.rows,
       nextTasks: nextTasks.rows,
       periodicReviews: reviews.rows,
-      contacts: contacts.rows
+      contacts: contacts.rows,
+      readiness: readiness.rows[0]
     });
   } catch (error: any) {
     console.error('Error loading service workspace:', error.message);
     res.status(500).json({ error: 'No fue posible cargar el expediente del servicio.' });
   }
+});
+
+router.get('/deliverables/readiness', requireOrganizationPermission('compliance.read'), async (req: any, res) => {
+  try {
+    const db = getDb();
+    const org = req.organization.id;
+    const [organization, contacts, ropa, flows, parties, controls, risks, documents, incidents, consents, training] = await Promise.all([
+      db.query('SELECT legal_name, tax_identifier FROM organizations WHERE id = $1', [org]),
+      db.query('SELECT COUNT(*)::int AS count FROM organization_contacts WHERE organization_id = $1 AND active = TRUE', [org]),
+      db.query(`SELECT COUNT(*) FILTER (WHERE status = 'confirmed')::int AS confirmed, COUNT(*)::int AS total FROM ropa_inventory WHERE organization_id = $1`, [org]),
+      db.query(`SELECT COUNT(*) FILTER (WHERE review_status = 'CONFIRMED' AND evidence_status = 'VERIFIED')::int AS confirmed,
+        COUNT(*) FILTER (WHERE review_status <> 'ARCHIVED')::int AS total,
+        COUNT(*) FILTER (WHERE jsonb_array_length(destination_countries) > 0)::int AS transfers,
+        COUNT(*) FILTER (WHERE jsonb_array_length(destination_countries) > 0 AND transfer_mechanism IS NOT NULL AND jsonb_array_length(transfer_safeguards) > 0)::int AS protected_transfers
+        FROM processing_data_flows WHERE organization_id = $1`, [org]),
+      db.query(`SELECT COUNT(*)::int AS total, COUNT(*) FILTER (WHERE data_processing_terms_status IN ('SIGNED','NOT_REQUIRED'))::int AS confirmed FROM external_parties WHERE organization_id = $1`, [org]),
+      db.query(`SELECT COUNT(*)::int AS total,
+        COUNT(*) FILTER (WHERE ca.status IN ('IMPLEMENTED','NOT_APPLICABLE') AND EXISTS (
+          SELECT 1 FROM compliance_evidence ce WHERE ce.organization_id = ca.organization_id
+            AND ce.subject_type = 'CONTROL' AND ce.subject_id = ca.id AND ce.verification_status = 'VERIFIED'
+        ))::int AS confirmed FROM control_assessments ca WHERE organization_id = $1`, [org]),
+      db.query('SELECT COUNT(*)::int AS total FROM risk_matrix WHERE organization_id = $1', [org]),
+      db.query(`SELECT document_type, workflow_status FROM documents WHERE organization_id = $1 AND is_active = TRUE`, [org]),
+      db.query('SELECT COUNT(*)::int AS total FROM security_incidents WHERE organization_id = $1', [org]),
+      db.query('SELECT COUNT(*)::int AS total FROM form_consent_logs WHERE organization_id = $1', [org]),
+      db.query('SELECT COUNT(*)::int AS total FROM employee_trainings WHERE organization_id = $1', [org])
+    ]);
+    const docStatus = (type: ManagedDocumentType): EvidenceStatus => {
+      const matching = documents.rows.filter((row: any) => row.document_type === type);
+      return evidenceStatus(matching.some((row: any) => row.workflow_status === 'APPROVED'), matching.length > 0);
+    };
+    const hasOrganization = Boolean(organization.rows[0]?.legal_name && organization.rows[0]?.tax_identifier);
+    const flowConfirmed = Number(flows.rows[0]?.confirmed || 0) > 0;
+    const flowDraft = Number(flows.rows[0]?.total || 0) > 0 || Number(ropa.rows[0]?.total || 0) > 0;
+    const transferTotal = Number(flows.rows[0]?.transfers || 0);
+    const transferConfirmed = transferTotal === Number(flows.rows[0]?.protected_transfers || 0) && flowConfirmed;
+    const evidence: LegalEvidence = {
+      organization: evidenceStatus(hasOrganization, Boolean(organization.rows[0]?.legal_name)),
+      governance: evidenceStatus(Number(contacts.rows[0]?.count || 0) > 0 && docStatus('DATA_PROTECTION_POLICY') === 'CONFIRMED', Number(contacts.rows[0]?.count || 0) > 0),
+      processingInventory: evidenceStatus(flowConfirmed, flowDraft),
+      lawfulBasis: evidenceStatus(flowConfirmed, flowDraft),
+      transparency: docStatus('PRIVACY_NOTICE'),
+      rightsProcedure: docStatus('ARCO_PROCEDURE'),
+      processors: evidenceStatus(Number(parties.rows[0]?.total || 0) > 0 && parties.rows[0].total === parties.rows[0].confirmed, Number(parties.rows[0]?.total || 0) > 0),
+      internationalTransfers: transferTotal === 0 ? evidenceStatus(flowConfirmed, flowDraft) : evidenceStatus(transferConfirmed, flowDraft),
+      retentionAndDeletion: evidenceStatus(flowConfirmed, flowDraft),
+      securityMeasures: evidenceStatus(Number(controls.rows[0]?.confirmed || 0) > 0, Number(controls.rows[0]?.total || 0) > 0),
+      incidentResponse: evidenceStatus(docStatus('INCIDENT_PLAYBOOK') === 'CONFIRMED', docStatus('INCIDENT_PLAYBOOK') === 'DRAFT' || Number(incidents.rows[0]?.total || 0) > 0),
+      riskAndImpactAssessment: evidenceStatus(Number(risks.rows[0]?.total || 0) > 0, false),
+      consentEvidence: evidenceStatus(Number(consents.rows[0]?.total || 0) > 0, false),
+      training: evidenceStatus(Number(training.rows[0]?.total || 0) > 0, false),
+      approvalsAndVersioning: evidenceStatus(documents.rows.some((row: any) => row.workflow_status === 'APPROVED'), documents.rows.length > 0)
+    };
+    res.json({ evidence, deliverables: assessLegalDeliverables(evidence) });
+  } catch (error: any) {
+    console.error('Error evaluating legal deliverables:', error.message);
+    res.status(500).json({ error: 'No fue posible evaluar los entregables del expediente.' });
+  }
+});
+
+router.patch('/organization', requireOrganizationPermission('service.manage'), async (req: any, res) => {
+  const legalName = typeof req.body.legal_name === 'string' ? req.body.legal_name.trim() : '';
+  const taxIdentifier = typeof req.body.tax_identifier === 'string' ? req.body.tax_identifier.trim() : '';
+  if (!legalName || legalName.length > 255 || taxIdentifier.length > 100) {
+    return res.status(400).json({ error: 'Razón social válida es obligatoria y el identificador no puede superar 100 caracteres.' });
+  }
+  const result = await getDb().query(
+    `UPDATE organizations SET legal_name = $1, tax_identifier = NULLIF($2, ''), updated_at = CURRENT_TIMESTAMP
+      WHERE id = $3 RETURNING id, name, legal_name, tax_identifier`,
+    [legalName, taxIdentifier, req.organization.id]
+  );
+  res.json(result.rows[0]);
 });
 
 router.post('/eligibility', requireOrganizationPermission('service.manage'), async (req: any, res) => {
@@ -382,7 +468,10 @@ router.post('/documents/generate', requireOrganizationPermission('compliance.wri
     const [organization, contact, ropa] = await Promise.all([
       client.query(`SELECT name, legal_name, tax_identifier FROM organizations WHERE id = $1`, [req.organization.id]),
       client.query(`SELECT full_name, email FROM organization_contacts WHERE organization_id = $1 AND active = TRUE ORDER BY is_primary DESC, created_at LIMIT 1`, [req.organization.id]),
-      client.query(`SELECT process_name, data_categories, retention_period, deletion_method FROM ropa_inventory WHERE organization_id = $1 AND status = 'confirmed' ORDER BY created_at`, [req.organization.id])
+      client.query(`SELECT process_name, purpose, legal_basis, data_categories, data_subject_categories AS data_subjects,
+        recipients, retention_period, deletion_method,
+        CASE WHEN cross_border_transfer THEN ARRAY['Transferencia internacional declarada']::text[] ELSE ARRAY[]::text[] END AS international_transfers
+        FROM ropa_inventory WHERE organization_id = $1 AND status = 'confirmed' ORDER BY created_at`, [req.organization.id])
     ]);
     if (!organization.rowCount) {
       await client.query('ROLLBACK');
