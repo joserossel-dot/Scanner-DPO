@@ -39,7 +39,7 @@ export interface DiagnosisFinding {
 
 export interface DiagnosisResults {
   scoreTotal: number;
-  riesgoUTM: number;
+  riesgoUTM?: number | null;
   findings: DiagnosisFinding[];
   actionPlan: ActionStep[];
   globalScore?: number;
@@ -126,14 +126,15 @@ export default function DiagnosisResultsView({
   try {
     const findings = results.findings || [];
     const scoreTotal = results.scoreTotal !== undefined ? results.scoreTotal : (results.globalScore !== undefined ? results.globalScore : 0);
-    const riesgoUTM = results.riesgoUTM !== undefined ? results.riesgoUTM : (findings?.reduce((max, f) => Math.max(max, f.riskUtm || 0), 0) || 20000);
+    const riesgoUTM = results.riesgoUTM !== undefined && results.riesgoUTM !== null
+      ? results.riesgoUTM
+      : findings.reduce((max, finding) => Math.max(max, Number(finding.riskUtm) || 0), 0);
 
     const isRopaMissing = findings?.some(f => f?.id === 'FIND_ROPA_MISSING' || f?.id === 'FIND_ROPA_DRAFTS_PENDING') || false;
-    const displayScore = isRopaMissing ? 30 : scoreTotal;
+    const displayScore = scoreTotal;
 
     // Determine severity border and text color for the score
     const getScoreColor = () => {
-      if (isRopaMissing) return 'text-amber-500 stroke-amber-500 animate-pulse';
       const light = complianceTrafficLight(displayScore);
       if (light === 'green') return 'text-emerald-500 stroke-emerald-500';
       if (light === 'red') return 'text-rose-500 stroke-rose-500';
@@ -141,7 +142,6 @@ export default function DiagnosisResultsView({
     };
 
     const getScoreBgColorClass = () => {
-      if (isRopaMissing) return 'bg-amber-950/20 border-amber-900/30';
       const light = complianceTrafficLight(displayScore);
       if (light === 'green') return 'bg-emerald-950/20 border-emerald-900/30';
       if (light === 'red') return 'bg-rose-950/20 border-rose-900/30';
@@ -288,7 +288,7 @@ export default function DiagnosisResultsView({
             </svg>
             <div className="text-center z-10">
               <span className="text-3xl font-black text-white">{displayScore}%</span>
-              <span className="text-[10px] text-slate-400 block uppercase font-bold tracking-wider mt-0.5">Diagnóstico</span>
+              <span className="text-[10px] text-slate-400 block uppercase font-bold tracking-wider mt-0.5">Cobertura verificable</span>
             </div>
           </div>
         </div>
@@ -296,9 +296,9 @@ export default function DiagnosisResultsView({
         {/* Info Column */}
         <div className="md:col-span-8 space-y-4 text-left">
           <div>
-            <h3 className="text-lg font-bold text-white tracking-wide">Resultados de Evaluación Normativa</h3>
+            <h3 className="text-lg font-bold text-white tracking-wide">Resultados de Cobertura del Expediente</h3>
             <p className="text-xs text-slate-400 leading-relaxed mt-1">
-              Su score de cumplimiento se calcula cruzando las auditorías técnicas web y la gobernanza declarada en base a la Ley N° 21.719 de Chile.
+              El porcentaje mide antecedentes confirmados y evidencia disponible. No equivale por sí solo a una conclusión jurídica de cumplimiento.
             </p>
           </div>
 
@@ -323,18 +323,22 @@ export default function DiagnosisResultsView({
             </div>
           ) : (
             <>
-              <div className="p-4 bg-slate-950/60 border border-slate-850 rounded-lg flex items-center gap-4">
-                <div className="w-10 h-10 rounded-full bg-rose-950/50 border border-rose-900/30 flex items-center justify-center text-rose-500 flex-shrink-0">
-                  <ShieldAlert size={18} />
+              {riesgoUTM > 0 ? (
+                <div className="p-4 bg-slate-950/60 border border-slate-850 rounded-lg flex items-center gap-4">
+                  <div className="w-10 h-10 rounded-full bg-rose-950/50 border border-rose-900/30 flex items-center justify-center text-rose-500 flex-shrink-0">
+                    <ShieldAlert size={18} />
+                  </div>
+                  <div>
+                    <span className="text-[10px] font-black text-rose-500 uppercase tracking-wider block">Referencia sancionatoria asociada a hallazgos</span>
+                    <span className="text-base font-extrabold text-white">{riesgoUTM.toLocaleString()} UTM</span>
+                    <span className="text-[11px] text-slate-400 ml-2">Estimación preliminar sujeta a revisión profesional.</span>
+                  </div>
                 </div>
-                <div>
-                  <span className="text-[10px] font-black text-rose-500 uppercase tracking-wider block">Exposición Financiera Estimada</span>
-                  <span className="text-base font-extrabold text-white">{riesgoUTM.toLocaleString()} UTM</span>
-                  <span className="text-[11px] text-slate-400 ml-2">
-                    (Aprox. ${(riesgoUTM * 65000).toLocaleString('es-CL')} CLP en multas potenciales de la Agencia DPA)
-                  </span>
+              ) : (
+                <div className="p-4 bg-slate-950/60 border border-slate-850 rounded-lg text-xs text-slate-400">
+                  No se muestra una exposición UTM porque los antecedentes disponibles no sustentan una estimación específica.
                 </div>
-              </div>
+              )}
 
               <div className="flex gap-3">
                 <button 
