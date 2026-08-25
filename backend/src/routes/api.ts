@@ -309,6 +309,19 @@ router.put('/config/:domain', authenticateToken, resolveActiveOrganization, requ
     if (!apiKey) {
       apiKey = 'pt_live_' + crypto.randomBytes(16).toString('hex');
     }
+    const ropaResult = await db.query(
+      `SELECT id, process_name, purpose, legal_basis, retention_period
+         FROM ropa_inventory WHERE organization_id = $1 AND status = 'confirmed' ORDER BY process_name`,
+      [req.organization.id]
+    );
+    const linkedPolicyContent = {
+      ...policy_content,
+      processing_activities: ropaResult.rows.map((row: any) => ({
+        ropa_id: row.id, activity: row.process_name, purpose: row.purpose,
+        legal_basis: row.legal_basis, retention_period: row.retention_period
+      })),
+      source_status: ropaResult.rowCount ? 'CONFIRMED_ROPA_LINKED' : 'PENDING_CONFIRMED_ROPA'
+    };
 
     await db.query(`
       INSERT INTO site_configs (domain, company_name, policy_version, policy_content, banner_title, banner_description, updated_at, user_id, organization_id, api_key)
@@ -327,7 +340,7 @@ router.put('/config/:domain', authenticateToken, resolveActiveOrganization, requ
       domain,
       company_name,
       policy_version,
-      JSON.stringify(policy_content),
+      JSON.stringify(linkedPolicyContent),
       banner_title,
       banner_description,
       req.user.id,
@@ -422,20 +435,25 @@ router.post('/remediation/consent-log', async (req, res) => {
 
     // Versión real de la política vigente para ese dominio en este momento — nunca hardcodeada
     const configRes = await db.query(
-      'SELECT policy_version FROM site_configs WHERE domain = $1',
+      'SELECT policy_version, organization_id FROM site_configs WHERE domain = $1',
       [domain]
     );
-    const currentPolicyVersion = configRes.rows[0]?.policy_version || 'sin_version_registrada';
+    if (!configRes.rowCount || !configRes.rows[0].organization_id) {
+      return res.status(404).json({ error: 'El dominio no está configurado para registrar preferencias.' });
+    }
+    const currentPolicyVersion = configRes.rows[0].policy_version;
 
     await db.query(`
-      INSERT INTO consent_logs (domain, ip_hash, consent_types, user_agent, policy_version)
-      VALUES ($1, $2, $3, $4, $5)
+      INSERT INTO consent_logs (domain, ip_hash, consent_types, user_agent, policy_version, organization_id, action)
+      VALUES ($1, $2, $3, $4, $5, $6, $7)
     `, [
       domain,
       ipHash,
       JSON.stringify(finalConsentTypes),
       userAgent || '',
-      currentPolicyVersion
+      currentPolicyVersion,
+      configRes.rows[0].organization_id,
+      action === 'revoked' ? 'REVOKED' : 'PREFERENCES_SAVED'
     ]);
     return res.json({ success: true });
   } catch (error: any) {
@@ -464,8 +482,8 @@ router.post('/arco', publicArcoLimiter, async (req, res) => {
 
     const result = await db.query(`
       INSERT INTO arco_requests
-      (domain, requester_name, requester_email, request_type, details, status, due_date, organization_id, engagement_id)
-      SELECT $1, $2, $3, $4, $5, $6, $7, sc.organization_id,
+      (domain, requester_name, requester_email, request_type, details, status, due_date, deadline_rule, organization_id, engagement_id)
+      SELECT $1, $2, $3, $4, $5, $6, $7, $8, sc.organization_id,
              (SELECT se.id FROM service_engagements se
                WHERE se.organization_id = sc.organization_id
                ORDER BY se.created_at DESC LIMIT 1)
@@ -479,12 +497,20 @@ router.post('/arco', publicArcoLimiter, async (req, res) => {
       requestType,
       details,
       'Pendiente',
-      dueDate
+      dueDate,
+      requestType === 'Bloqueo'
+        ? 'Cálculo operativo preliminar: 2 días hábiles. Requiere revisión profesional según el derecho y circunstancias.'
+        : 'Cálculo operativo preliminar: 30 días corridos. Requiere revisión profesional según el derecho y circunstancias.'
     ]);
 
     if (!result.rowCount) {
       return res.status(404).json({ error: 'El dominio no está configurado para recibir solicitudes ARCO+.' });
     }
+    await db.query(
+      `INSERT INTO arco_request_events (organization_id, arco_request_id, event_type, notes, metadata)
+       VALUES ($1, $2, 'RECEIVED', 'Solicitud recibida por el canal público.', $3::jsonb)`,
+      [result.rows[0].organization_id, result.rows[0].id, JSON.stringify({ domain, requestType })]
+    );
     await db.query(
       `INSERT INTO compliance_tasks
        (organization_id, engagement_id, activity_code, title, description, cadence,
@@ -601,14 +627,18 @@ router.post('/consent/collect', async (req: any, res) => {
 
     // Fetch dynamic policy version or use default/supplied
     const configRes = await db.query(
-      'SELECT policy_version FROM site_configs WHERE domain = $1',
+      'SELECT policy_version, organization_id FROM site_configs WHERE domain = $1',
       [domain]
     );
+    if (!configRes.rowCount || !configRes.rows[0].organization_id) {
+      return res.status(404).json({ error: 'El dominio no está configurado para registrar preferencias.' });
+    }
     const currentPolicyVersion = policyVersion || configRes.rows[0]?.policy_version || 'sin_version_registrada';
+    const action = req.body.action === 'REVOKED' ? 'REVOKED' : 'PREFERENCES_SAVED';
 
     const result = await db.query(`
-      INSERT INTO consent_logs (domain, ip_hash, consent_types, user_agent, policy_version, consent_token)
-      VALUES ($1, $2, $3, $4, $5, $6)
+      INSERT INTO consent_logs (domain, ip_hash, consent_types, user_agent, policy_version, consent_token, organization_id, action)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
       RETURNING *
     `, [
       domain,
@@ -616,7 +646,9 @@ router.post('/consent/collect', async (req: any, res) => {
       JSON.stringify(finalPreferences),
       userAgent || req.headers['user-agent'] || '',
       currentPolicyVersion,
-      finalToken
+      finalToken,
+      configRes.rows[0].organization_id,
+      action
     ]);
 
     res.json({ success: true, log: result.rows[0] });
@@ -679,7 +711,9 @@ router.get('/consent/logs', async (req: any, res) => {
 
   try {
     const result = await db.query(
-      'SELECT * FROM consent_logs WHERE domain = $1 ORDER BY id DESC LIMIT 100',
+      `SELECT cl.* FROM consent_logs cl
+        JOIN site_configs sc ON sc.organization_id = cl.organization_id AND sc.domain = cl.domain
+       WHERE cl.domain = $1 ORDER BY cl.id DESC LIMIT 100`,
       [targetDomain]
     );
     return res.json(result.rows.map((r: any) => ({
@@ -692,6 +726,7 @@ router.get('/consent/logs', async (req: any, res) => {
       consent_types: safeParseJson(r.consent_types),
       user_agent: r.user_agent,
       policy_version: r.policy_version,
+      action: r.action,
       created_at: r.timestamp
     })));
   } catch (error: any) {
@@ -721,15 +756,22 @@ router.post('/consent/form-collect', async (req: any, res) => {
     let currentPolicyVersion = privacy_policy_version;
     if (!currentPolicyVersion) {
       const configRes = await db.query(
-        'SELECT policy_version FROM site_configs WHERE domain = $1',
+        'SELECT policy_version, organization_id FROM site_configs WHERE domain = $1',
         [client_id]
       );
       currentPolicyVersion = configRes.rows[0]?.policy_version || 'sin_version_registrada';
     }
+    const configRes = await db.query(
+      'SELECT organization_id FROM site_configs WHERE domain = $1', [client_id]
+    );
+    if (!configRes.rowCount || !configRes.rows[0].organization_id) {
+      return res.status(404).json({ error: 'El dominio no está configurado para registrar preferencias.' });
+    }
+    const action = req.body.action === 'REVOKED' ? 'REVOKED' : 'PREFERENCES_SAVED';
 
     const result = await db.query(`
-      INSERT INTO form_consent_logs (client_id, user_identifier, privacy_policy_accepted, privacy_policy_version, marketing_opt_in, form_id, ip_hash)
-      VALUES ($1, $2, $3, $4, $5, $6, $7)
+      INSERT INTO form_consent_logs (client_id, user_identifier, privacy_policy_accepted, privacy_policy_version, marketing_opt_in, form_id, ip_hash, organization_id, action)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
       RETURNING *
     `, [
       client_id,
@@ -738,7 +780,9 @@ router.post('/consent/form-collect', async (req: any, res) => {
       currentPolicyVersion,
       marketing_opt_in,
       form_id || 'default_contact_form',
-      ipHash
+      ipHash,
+      configRes.rows[0].organization_id,
+      action
     ]);
 
     res.json({ success: true, log: result.rows[0] });

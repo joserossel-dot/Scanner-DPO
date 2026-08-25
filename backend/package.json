@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "tsx watch src/index.ts",
     "build": "tsc",
-    "test": "npm run build && node --test dist/database/schemaContract.test.js dist/database/migrationArchitecture.test.js dist/database/integratedInventoryContract.test.js dist/database/sslConfig.test.js dist/health/healthService.test.js dist/scanner/networkSafety.test.js dist/services/adaptiveQuestionnaireCoverage.test.js dist/services/discoveryMapping.test.js dist/services/eligibilityService.test.js dist/services/legalDeliverablesService.test.js dist/services/managedDocumentBuilder.test.js dist/tenancy/organizationTransaction.test.js dist/tenancy/provisionOrganization.test.js tests/*.test.mjs",
+    "test": "npm run build && node --test dist/database/schemaContract.test.js dist/database/migrationArchitecture.test.js dist/database/integratedInventoryContract.test.js dist/database/sslConfig.test.js dist/health/healthService.test.js dist/scanner/networkSafety.test.js dist/services/adaptiveQuestionnaireCoverage.test.js dist/services/discoveryMapping.test.js dist/services/eligibilityService.test.js dist/services/legalDeliverablesService.test.js dist/services/managedDocumentBuilder.test.js dist/services/riskCandidateService.test.js dist/tenancy/organizationTransaction.test.js dist/tenancy/provisionOrganization.test.js tests/*.test.mjs",
     "start": "node dist/index.js"
   },
   "dependencies": {

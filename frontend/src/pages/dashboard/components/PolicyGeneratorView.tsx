@@ -14,7 +14,8 @@ export default function PolicyGeneratorView({ token }: PolicyGeneratorViewProps)
   const [contactEmail, setContactEmail] = useState('');
   const [dataCategories, setDataCategories] = useState<string[]>([]);
   const [purposes, setPurposes] = useState<string[]>([]);
-  const [retentionRules, setRetentionRules] = useState('5 años contados desde el cese de la relación contractual o la revocación del consentimiento.');
+  const [retentionRules, setRetentionRules] = useState('');
+  const [sourceSummary, setSourceSummary] = useState({ ropa: 0, flows: 0, pending: [] as string[] });
   
   // App states
   const [policyHtml, setPolicyHtml] = useState<string>('');
@@ -25,26 +26,88 @@ export default function PolicyGeneratorView({ token }: PolicyGeneratorViewProps)
   const [isCopied, setIsCopied] = useState(false);
 
   // Available options
-  const categoryOptions = [
+  const categoryOptions = Array.from(new Set([
     'Datos Identificatorios (Nombre, RUT, Email, Teléfono)',
     'Datos de Navegación y Cookies (Dirección IP, comportamiento de clicks)',
     'Datos Financieros y Transaccionales (Información de tarjetas de crédito, historial de facturación)',
     'Datos Biométricos (Huella dactilar, reconocimiento facial)',
-    'Datos Sensibles (Estado de salud, afiliación sindical, orientación política)'
-  ];
+    'Datos Sensibles (Estado de salud, afiliación sindical, orientación política)',
+    ...dataCategories
+  ]));
 
-  const purposeOptions = [
+  const purposeOptions = Array.from(new Set([
     'Operación de la Plataforma SaaS principal',
     'Soporte Técnico y Atención al Cliente',
     'Envío de boletines comerciales y Marketing Directo',
-    'Análisis estadístico y optimización del sitio web'
-  ];
+    'Análisis estadístico y optimización del sitio web',
+    ...purposes
+  ]));
 
   useEffect(() => {
     if (token) {
-      loadSavedPolicy();
+      loadIntegratedContext();
     }
   }, [token]);
+
+  const parseList = (value: any): string[] => {
+    if (Array.isArray(value)) return value.map(String).filter(Boolean);
+    if (typeof value !== 'string' || !value.trim()) return [];
+    try { return parseList(JSON.parse(value)); } catch { return value.split(',').map(v => v.trim()).filter(Boolean); }
+  };
+
+  const loadIntegratedContext = async () => {
+    setIsLoading(true);
+    setErrorMsg('');
+    try {
+      const [savedRes, workspaceRes, ropaRes, flowsRes] = await Promise.all([
+        authFetch(`${API_BASE}/api/remediation/policies`),
+        authFetch(`${API_BASE}/api/service/workspace`),
+        authFetch(`${API_BASE}/api/ropa`),
+        authFetch(`${API_BASE}/api/data-inventory/flows`)
+      ]);
+      const saved = savedRes.ok ? await savedRes.json() : null;
+      const workspace = workspaceRes.ok ? await workspaceRes.json() : null;
+      const ropa = ropaRes.ok ? await ropaRes.json() : [];
+      const flows = flowsRes.ok ? await flowsRes.json() : [];
+      const confirmedRopa = ropa.filter((row: any) => row.status === 'confirmed');
+      const reviewedFlows = flows.filter((row: any) => row.review_status === 'CONFIRMED');
+      const inferredCategories = Array.from(new Set([
+        ...confirmedRopa.flatMap((row: any) => parseList(row.data_categories)),
+        ...reviewedFlows.flatMap((row: any) => parseList(row.data_categories))
+      ])) as string[];
+      const inferredPurposes = Array.from(new Set([
+        ...confirmedRopa.map((row: any) => row.purpose),
+        ...reviewedFlows.map((row: any) => row.purpose)
+      ].filter(Boolean))) as string[];
+      const inferredRetention = Array.from(new Set([
+        ...confirmedRopa.map((row: any) => row.retention_period),
+        ...reviewedFlows.map((row: any) => row.retention_period)
+      ].filter(Boolean))).join('; ');
+      const primaryContact = workspace?.contacts?.find((c: any) => c.is_primary) || workspace?.contacts?.[0];
+      const savedCategories = parseList(saved?.data_categories);
+      const savedPurposes = parseList(saved?.purposes);
+
+      setCompanyRut(saved?.company_rut || workspace?.organization?.tax_identifier || '');
+      setAddress(saved?.address || '');
+      setContactEmail(saved?.contact_email || primaryContact?.email || '');
+      setDataCategories(savedCategories.length ? savedCategories : inferredCategories);
+      setPurposes(savedPurposes.length ? savedPurposes : inferredPurposes);
+      setRetentionRules(saved?.retention_rules || inferredRetention);
+      setPolicyHtml(saved?.policy_html || '');
+      const pending: string[] = [];
+      if (!saved?.address) pending.push('domicilio legal');
+      if (!primaryContact?.email && !saved?.contact_email) pending.push('contacto responsable');
+      if (!inferredCategories.length) pending.push('categorías confirmadas');
+      if (!inferredPurposes.length) pending.push('finalidades confirmadas');
+      if (!inferredRetention) pending.push('reglas de conservación confirmadas');
+      setSourceSummary({ ropa: confirmedRopa.length, flows: reviewedFlows.length, pending });
+    } catch (err) {
+      console.error(err);
+      setErrorMsg('No fue posible recuperar toda la información integrada. Revise los campos antes de generar.');
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
   const loadSavedPolicy = async () => {
     setIsLoading(true);
@@ -205,9 +268,9 @@ export default function PolicyGeneratorView({ token }: PolicyGeneratorViewProps)
             <FileText size={20} />
           </div>
           <div>
-            <h3 style={{ margin: 0, fontSize: '16px', fontWeight: 600 }}>Generador de Políticas de Privacidad (Art. 14 ter)</h3>
+            <h3 style={{ margin: 0, fontSize: '16px', fontWeight: 600 }}>Borrador de Política de Privacidad</h3>
             <p style={{ margin: '2px 0 0 0', fontSize: '12px', color: 'var(--text-secondary)' }}>
-              Configure las cláusulas obligatorias requeridas por la Ley N° 21.719 en Chile.
+              Reutiliza información confirmada del expediente. El resultado requiere revisión y aprobación antes de publicarse.
             </p>
           </div>
         </div>
@@ -224,6 +287,12 @@ export default function PolicyGeneratorView({ token }: PolicyGeneratorViewProps)
           {/* Column Left: Config Wizard */}
           <div className="lg:col-span-5 space-y-6">
             <div className="card" style={{ padding: '20px' }}>
+              <div className="mb-4 rounded-lg border border-slate-800 bg-slate-950/40 p-3 text-[11px] text-slate-400">
+                Fuente integrada: {sourceSummary.ropa} actividades RoPA confirmadas y {sourceSummary.flows} flujos revisados.
+                {sourceSummary.pending.length > 0 && (
+                  <div className="mt-1 text-amber-400">Pendiente de confirmación: {sourceSummary.pending.join(', ')}.</div>
+                )}
+              </div>
               <h4 style={{ margin: '0 0 15px 0', fontSize: '13.5px', fontWeight: 700, textTransform: 'uppercase', color: 'white', letterSpacing: '0.5px' }}>
                 Wizard de Configuración
               </h4>
