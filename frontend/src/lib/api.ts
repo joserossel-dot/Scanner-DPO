@@ -2,6 +2,9 @@ const configuredApiUrl = String((import.meta as any).env.VITE_API_URL || '').tri
 
 function normalizeApiUrl(url: string): string {
   if (!url) return '';
+  // Render commonly exposes the service name separately from its public host.
+  // Accept that value so `pt-compliance-api` resolves to the deployed service.
+  if (/^[a-z0-9-]+-api$/i.test(url)) return `https://${url}.onrender.com`;
   const withProtocol = /^https?:\/\//i.test(url) ? url : `https://${url}`;
   return withProtocol.replace(/\/+$/, '');
 }
