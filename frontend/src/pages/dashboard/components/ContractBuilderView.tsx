@@ -1,6 +1,6 @@
 import { authFetch } from '../../../lib/authFetch';
 import { API_BASE } from '../../../lib/api';
-import React, { useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { 
   FileSignature, 
   Copy, 
@@ -16,8 +16,16 @@ interface ContractBuilderViewProps {
   ropaList?: any[];
 }
 
+const parseList = (value: any): string[] => {
+  if (Array.isArray(value)) return value.map(String).filter(Boolean);
+  if (typeof value !== 'string' || !value.trim()) return [];
+  try { return parseList(JSON.parse(value)); } catch { return value.split(',').map(v => v.trim()).filter(Boolean); }
+};
+
 export default function ContractBuilderView({ token, ropaList }: ContractBuilderViewProps) {
-  const externalProviders = (ropaList || [])
+  const [catalogParties, setCatalogParties] = useState<any[]>([]);
+  const [confirmedFlows, setConfirmedFlows] = useState<any[]>([]);
+  const ropaProviders = (ropaList || [])
     .filter(p => 
       p.status === 'confirmed' && 
       (p.cross_border_transfer === true || 
@@ -32,29 +40,62 @@ export default function ContractBuilderView({ token, ropaList }: ContractBuilder
         .replace(/\(CCTV\)/i, '')
         .trim();
       return cleanName;
-    }).filter((val, idx, self) => self.indexOf(val) === idx);
+    }).filter((val, idx, self) => val && self.indexOf(val) === idx);
+
+  const externalProviders = useMemo(() => Array.from(new Set([
+    ...catalogParties
+      .filter(p => parseList(p.party_roles).some(role => /encargad|processor|proveedor|destinat/i.test(role)))
+      .map(p => p.legal_name).filter(Boolean),
+    ...ropaProviders
+  ])), [catalogParties, ropaList]);
 
   // Form fields
-  const [clientName, setClientName] = useState('Mi Empresa Chile SpA');
-  const [clientRut, setClientRut] = useState('76.123.456-7');
-  const [clientAddress, setClientAddress] = useState('Av. Apoquindo 1234, Las Condes, Santiago');
-  const [clientRepresentative, setClientRepresentative] = useState('Juan Pérez');
+  const [clientName, setClientName] = useState('');
+  const [clientRut, setClientRut] = useState('');
+  const [clientAddress, setClientAddress] = useState('');
+  const [clientRepresentative, setClientRepresentative] = useState('');
   
   const [vendorName, setVendorName] = useState('');
-  const [vendorCountry, setVendorCountry] = useState('US');
+  const [vendorCountry, setVendorCountry] = useState('');
   const [vendorAddress, setVendorAddress] = useState('');
   
   const [contractType, setContractType] = useState<'DPA_LOCAL' | 'SCC_INTERNATIONAL'>('DPA_LOCAL');
-  const [dataCategories, setDataCategories] = useState<string[]>([
-    'Datos de contacto',
-    'Logs de navegación'
-  ]);
+  const [dataCategories, setDataCategories] = useState<string[]>([]);
   const [customCategory, setCustomCategory] = useState('');
 
   // UI state
   const [isGenerating, setIsGenerating] = useState(false);
   const [contractHtml, setContractHtml] = useState<string>('');
   const [copied, setCopied] = useState(false);
+
+  useEffect(() => {
+    if (!token) return;
+    Promise.all([
+      authFetch(`${API_BASE}/api/service/workspace`),
+      authFetch(`${API_BASE}/api/data-inventory/catalog`),
+      authFetch(`${API_BASE}/api/data-inventory/flows`)
+    ]).then(async ([workspaceRes, catalogRes, flowsRes]) => {
+      const workspace = workspaceRes.ok ? await workspaceRes.json() : null;
+      const catalog = catalogRes.ok ? await catalogRes.json() : { parties: [] };
+      const flows = flowsRes.ok ? await flowsRes.json() : [];
+      const primary = workspace?.contacts?.find((c: any) => c.is_primary) || workspace?.contacts?.[0];
+      setClientName(current => current || workspace?.organization?.legal_name || workspace?.organization?.name || '');
+      setClientRut(current => current || workspace?.organization?.tax_identifier || '');
+      setClientRepresentative(current => current || primary?.full_name || '');
+      setCatalogParties(catalog.parties || []);
+      setConfirmedFlows(flows.filter((flow: any) => flow.review_status === 'CONFIRMED'));
+    }).catch(error => console.error('No fue posible cargar el contexto contractual:', error));
+  }, [token]);
+
+  const selectProvider = (providerName: string) => {
+    const party = catalogParties.find(p => p.legal_name === providerName);
+    const relatedFlows = confirmedFlows.filter(flow => flow.external_party_name === providerName);
+    setVendorName(providerName);
+    setVendorCountry(parseList(party?.countries)[0] || parseList(relatedFlows[0]?.destination_countries)[0] || '');
+    setDataCategories(Array.from(new Set(relatedFlows.flatMap(flow => parseList(flow.data_categories)))));
+    setContractType(relatedFlows.some(flow => parseList(flow.destination_countries).some(country => country && country !== 'CL' && country !== 'Chile'))
+      ? 'SCC_INTERNATIONAL' : 'DPA_LOCAL');
+  };
 
   const handleAddCategory = () => {
     if (customCategory.trim() && !dataCategories.includes(customCategory.trim())) {
@@ -69,7 +110,7 @@ export default function ContractBuilderView({ token, ropaList }: ContractBuilder
 
   const handleGenerateContract = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!vendorName.trim()) return;
+    if (!clientName.trim() || !clientRut.trim() || !clientAddress.trim() || !clientRepresentative.trim() || !vendorName.trim() || !vendorCountry.trim() || dataCategories.length === 0) return;
 
     setIsGenerating(true);
     try {
@@ -191,12 +232,11 @@ export default function ContractBuilderView({ token, ropaList }: ContractBuilder
               </h4>
               <div className="space-y-2 pt-1.5">
                 {externalProviders.map((prov, index) => (
-                  <label key={index} className="flex items-start gap-2.5 text-xs text-slate-350 cursor-pointer select-none">
-                    <input type="checkbox" className="mt-0.5 rounded border-slate-800 text-indigo-600 focus:ring-0 bg-slate-950" />
-                    <span>
-                      <strong className="text-white">{prov}</strong>
-                    </span>
-                  </label>
+                  <button key={index} type="button" onClick={() => selectProvider(prov)}
+                    className="block w-full rounded border border-slate-800 px-3 py-2 text-left text-xs text-slate-300 hover:border-indigo-500">
+                    <strong className="text-white">{prov}</strong>
+                    <span className="ml-2 text-[10px] text-indigo-400">Usar datos confirmados</span>
+                  </button>
                 ))}
               </div>
             </div>
@@ -204,7 +244,7 @@ export default function ContractBuilderView({ token, ropaList }: ContractBuilder
             ropaList && ropaList.length > 0 && (
               <div className="p-4 bg-slate-900/20 border border-slate-800/40 rounded-lg text-left mb-4">
                 <span className="text-[9px] font-black uppercase text-slate-500 tracking-wider">Tubería RoPA ➔ Contratos</span>
-                <p className="text-xs text-slate-450 italic mt-1">No se detectaron requerimientos de contratos con proveedores extranjeros en su RoPA actual.</p>
+                <p className="text-xs text-slate-450 italic mt-1">No existen proveedores registrados ni relaciones confirmadas que permitan preparar un contrato.</p>
               </div>
             )
           )}
@@ -321,8 +361,8 @@ export default function ContractBuilderView({ token, ropaList }: ContractBuilder
                     onChange={e => setContractType(e.target.value as any)}
                     className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-xs text-slate-200 focus:outline-none focus:border-indigo-500/50"
                   >
-                    <option value="DPA_LOCAL">Modelo A: DPA Local (Art. 15 bis)</option>
-                    <option value="SCC_INTERNATIONAL">Modelo B: SCC Internacional (Art. 28)</option>
+                    <option value="DPA_LOCAL">Borrador de anexo para encargado</option>
+                    <option value="SCC_INTERNATIONAL">Borrador para transferencia internacional</option>
                   </select>
                 </div>
 
@@ -376,6 +416,10 @@ export default function ContractBuilderView({ token, ropaList }: ContractBuilder
                 </>
               )}
             </button>
+
+            <p className="text-[10px] leading-relaxed text-amber-400">
+              Este documento es un borrador. País, mecanismo, facultades de representación y categorías deben revisarse y aprobarse antes de firma.
+            </p>
 
           </form>
         </div>

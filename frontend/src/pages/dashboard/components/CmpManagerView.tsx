@@ -48,6 +48,7 @@ interface ConsentLog {
   user_agent: string;
   policy_version: string;
   created_at: string;
+  action?: 'PREFERENCES_SAVED' | 'REVOKED';
 }
 
 interface FormConsentLog {
@@ -258,7 +259,7 @@ export default function CmpManagerView({ token }: CmpManagerViewProps) {
             Gestión de Consentimiento CMP B2B
           </h2>
           <p className="text-xs text-slate-400">
-            Administre banners de cookies, configure integraciones de formularios y audite bitácoras de opt-in comercial conforme a la legislación vigente.
+            Administre preferencias, versiones de avisos y registros técnicos para su revisión dentro del expediente de cumplimiento.
           </p>
         </div>
         <button
@@ -388,7 +389,7 @@ export default function CmpManagerView({ token }: CmpManagerViewProps) {
               </h3>
               
               <p className="text-[11px] text-slate-455 leading-relaxed">
-                Envíe una petición <code className="font-mono text-indigo-400">POST</code> a nuestra API al procesar registros en su sitio web para certificar de forma legal la aceptación de políticas.
+                Envíe una petición <code className="font-mono text-indigo-400">POST</code> al procesar formularios para conservar un registro técnico de la preferencia y la versión informada.
               </p>
 
               <div className="relative bg-slate-950 p-3 rounded-xl border border-slate-855">
@@ -462,7 +463,7 @@ export default function CmpManagerView({ token }: CmpManagerViewProps) {
                     <Globe className="text-slate-600 mx-auto" size={24} />
                     <p className="text-xs font-bold text-slate-400">Sin consentimientos registrados aún</p>
                     <p className="text-[10px] text-slate-550 max-w-sm mx-auto leading-relaxed">
-                      Instale el código de integración en el sitio web para capturar y auditar la trazabilidad de sus visitas en tiempo real.
+                      Instale el código de integración para registrar preferencias vinculadas a la versión vigente del aviso. Este registro debe revisarse junto con la finalidad y base de licitud aplicables.
                     </p>
                   </div>
                 ) : (
@@ -565,7 +566,7 @@ export default function CmpManagerView({ token }: CmpManagerViewProps) {
                     <UserCheck className="text-slate-600 mx-auto" size={24} />
                     <p className="text-xs font-bold text-slate-400">Sin logs de formularios registrados aún</p>
                     <p className="text-[10px] text-slate-550 max-w-sm mx-auto leading-relaxed">
-                      Conecte sus formularios web usando la API para certificar legalmente el opt-in comercial y aceptación de políticas en tiempo real.
+                      Conecte sus formularios mediante la API para conservar la preferencia, la versión informada, el canal y la fecha como antecedentes revisables.
                     </p>
                   </div>
                 ) : (

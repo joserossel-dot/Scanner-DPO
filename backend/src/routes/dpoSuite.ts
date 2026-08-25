@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { getDb } from '../database/db.js';
 import { authenticateToken } from '../middlewares/auth.js';
 import { resolveActiveOrganization, requireOrganizationPermission } from '../tenancy/organizationContext.js';
+import { deriveRiskCandidates } from '../services/riskCandidateService.js';
 
 const router = Router();
 
@@ -16,13 +17,69 @@ router.get('/risks', requireOrganizationPermission('compliance.read'), async (re
   const db = getDb();
   try {
     const result = await db.query(
-      'SELECT * FROM risk_matrix WHERE organization_id = $1 ORDER BY created_at DESC',
+      `SELECT r.*, oc.full_name AS owner_name,
+        (SELECT COUNT(*)::int FROM compliance_evidence ce WHERE ce.organization_id = r.organization_id AND ce.subject_type = 'RISK' AND ce.subject_id = r.id) AS evidence_count,
+        (SELECT COUNT(*)::int FROM compliance_evidence ce WHERE ce.organization_id = r.organization_id AND ce.subject_type = 'RISK' AND ce.subject_id = r.id AND ce.verification_status = 'VERIFIED') AS verified_evidence_count
+       FROM risk_matrix r LEFT JOIN organization_contacts oc ON oc.id = r.owner_contact_id AND oc.organization_id = r.organization_id
+       WHERE r.organization_id = $1 ORDER BY r.created_at DESC`,
       [req.organization.id]
     );
     res.json(result.rows);
   } catch (error: any) {
     console.error('Error fetching risk matrix:', error.message);
     res.status(500).json({ error: 'Error al consultar la matriz de riesgos.' });
+  }
+});
+
+// Synchronizes review candidates from confirmed RoPA/data-flow facts. The
+// resulting rows remain PENDING_REVIEW and are not legal findings.
+router.post('/risks/sync-candidates', requireOrganizationPermission('compliance.write'), async (req: any, res) => {
+  const db = getDb();
+  try {
+    const source = await db.query(
+      `SELECT r.id AS ropa_id, r.process_name, r.contains_sensitive_data, r.sensitive_data_categories,
+              r.automated_decisions, r.cross_border_transfer,
+              f.id AS flow_id, f.destination_countries, f.recipient_roles, f.security_controls,
+              f.process_owner_contact_id, f.technical_owner_contact_id, f.evidence_status AS flow_evidence_status
+         FROM ropa_inventory r
+         LEFT JOIN processing_data_flows f ON f.organization_id = r.organization_id
+          AND f.ropa_activity_id = r.id AND f.review_status = 'CONFIRMED'
+        WHERE r.organization_id = $1 AND r.status = 'confirmed'`,
+      [req.organization.id]
+    );
+    const candidates = deriveRiskCandidates(source.rows.map((row: any) => ({
+      ropaId: row.ropa_id, processName: row.process_name,
+      containsSensitiveData: row.contains_sensitive_data, sensitiveCategories: row.sensitive_data_categories,
+      automatedDecisions: row.automated_decisions, crossBorderTransfer: row.cross_border_transfer,
+      flowId: row.flow_id, destinationCountries: row.destination_countries, recipientRoles: row.recipient_roles,
+      securityControls: row.security_controls, processOwnerContactId: row.process_owner_contact_id,
+      technicalOwnerContactId: row.technical_owner_contact_id, flowEvidenceStatus: row.flow_evidence_status
+    })));
+    let created = 0;
+    let refreshed = 0;
+    for (const candidate of candidates) {
+      const result = await db.query(
+        `INSERT INTO risk_matrix
+          (user_id, organization_id, process_name, identified_risk, severity, mitigation_control, status,
+           ropa_activity_id, owner_contact_id, candidate_key, origin_type, source_snapshot,
+           review_status, review_frequency, evidence_status)
+         VALUES ($1,$2,$3,$4,'PRELIMINAR',$5,'PENDING_REVIEW',$6,$7,$8,$9,$10,'PENDING_REVIEW','ANNUAL',$11)
+         ON CONFLICT (organization_id, candidate_key) WHERE candidate_key IS NOT NULL DO UPDATE SET
+           process_name = EXCLUDED.process_name, identified_risk = EXCLUDED.identified_risk,
+           mitigation_control = EXCLUDED.mitigation_control, source_snapshot = EXCLUDED.source_snapshot,
+           owner_contact_id = COALESCE(risk_matrix.owner_contact_id, EXCLUDED.owner_contact_id),
+           evidence_status = CASE WHEN risk_matrix.review_status = 'PENDING_REVIEW' THEN EXCLUDED.evidence_status ELSE risk_matrix.evidence_status END
+         RETURNING (xmax = 0) AS inserted`,
+        [req.user.id, req.organization.id, candidate.processName, candidate.identifiedRisk,
+          candidate.mitigationControl, candidate.sourceSnapshot.ropa_activity_id, candidate.ownerContactId,
+          candidate.candidateKey, candidate.originType, candidate.sourceSnapshot, candidate.evidenceStatus]
+      );
+      result.rows[0]?.inserted ? created++ : refreshed++;
+    }
+    res.json({ source: 'CONFIRMED_PROCESSING_FACTS', candidates: candidates.length, created, refreshed, legalConclusion: false });
+  } catch (error: any) {
+    console.error('Error synchronizing risk candidates:', error.message);
+    res.status(500).json({ error: 'No fue posible sincronizar los riesgos candidatos.' });
   }
 });
 
@@ -93,7 +150,8 @@ router.post('/risks', requireOrganizationPermission('compliance.write'), async (
 router.put('/risks/:id', requireOrganizationPermission('compliance.write'), async (req: any, res) => {
   const { id } = req.params;
   const { status, mitigation_control, residual_probability, residual_impact,
-    treatment_decision, treatment_action, owner_contact_id, due_date } = req.body;
+    treatment_decision, treatment_action, owner_contact_id, due_date,
+    review_status, review_notes, review_frequency, next_review_date, evidence_status } = req.body;
 
   if (!status || !mitigation_control) {
     return res.status(400).json({ error: 'Campos incompletos en la solicitud de actualización.' });
@@ -118,12 +176,18 @@ router.put('/risks/:id', requireOrganizationPermission('compliance.write'), asyn
            treatment_decision = COALESCE($5, treatment_decision),
            treatment_action = COALESCE($6, treatment_action),
            owner_contact_id = COALESCE($7, owner_contact_id),
-           due_date = COALESCE($8, due_date)
-       WHERE id = $9 AND organization_id = $10
+           due_date = COALESCE($8, due_date),
+           review_status = COALESCE($9, review_status), review_notes = COALESCE($10, review_notes),
+           review_frequency = COALESCE($11, review_frequency), next_review_date = COALESCE($12, next_review_date),
+           evidence_status = COALESCE($13, evidence_status),
+           reviewed_by = CASE WHEN $9 IN ('CONFIRMED','DISMISSED') THEN $14 ELSE reviewed_by END,
+           reviewed_at = CASE WHEN $9 IN ('CONFIRMED','DISMISSED') THEN CURRENT_TIMESTAMP ELSE reviewed_at END
+       WHERE id = $15 AND organization_id = $16
        RETURNING *`,
       [status, mitigation_control, residual_probability ?? null, residual_impact ?? null,
         treatment_decision || null, treatment_action || null, owner_contact_id || null,
-        due_date || null, id, req.organization.id]
+        due_date || null, review_status || null, review_notes || null, review_frequency || null,
+        next_review_date || null, evidence_status || null, req.user.id, id, req.organization.id]
     );
 
     if (result.rowCount === 0) {
@@ -166,7 +230,9 @@ router.get('/controls', requireOrganizationPermission('compliance.read'), async 
               cc.framework_code, cc.framework_version, cc.jurisdiction, cc.source_url,
               ca.id AS assessment_id, ca.status AS assessment_status,
               ca.applicability_rationale, ca.assessment_notes, ca.owner_contact_id,
-              ca.due_date, ca.assessed_at, ca.next_review_date
+              ca.due_date, ca.assessed_at, ca.next_review_date, ca.review_status,
+              ca.review_frequency, ca.evidence_status, ca.source_snapshot, ca.reviewed_at,
+              (SELECT COUNT(*)::int FROM compliance_evidence ce WHERE ce.organization_id = $1 AND ce.subject_type = 'CONTROL' AND ce.subject_id = ca.id) AS evidence_count
          FROM control_definitions cd
          JOIN control_catalogs cc ON cc.id = cd.catalog_id AND cc.status = 'APPROVED'
          LEFT JOIN control_assessments ca ON ca.control_id = cd.id AND ca.organization_id = $1
@@ -193,8 +259,11 @@ router.put('/controls/:controlId/assessment', requireOrganizationPermission('com
     const result = await db.query(
       `INSERT INTO control_assessments
        (organization_id, control_id, status, applicability_rationale, assessment_notes,
-        owner_contact_id, due_date, assessed_by, assessed_at, next_review_date)
-       SELECT $1, cd.id, $3, $4, $5, $6, $7, $8, CURRENT_TIMESTAMP, $9
+        owner_contact_id, due_date, assessed_by, assessed_at, next_review_date,
+        review_status, review_frequency, evidence_status, source_snapshot, reviewed_by, reviewed_at)
+       SELECT $1, cd.id, $3, $4, $5, $6, $7, $8, CURRENT_TIMESTAMP, $9,
+              $10, $11, $12, $13, CASE WHEN $10 IN ('CONFIRMED','DISMISSED') THEN $8 ELSE NULL END,
+              CASE WHEN $10 IN ('CONFIRMED','DISMISSED') THEN CURRENT_TIMESTAMP ELSE NULL END
          FROM control_definitions cd
          JOIN control_catalogs cc ON cc.id = cd.catalog_id
         WHERE cd.id = $2 AND cc.status = 'APPROVED'
@@ -207,12 +276,20 @@ router.put('/controls/:controlId/assessment', requireOrganizationPermission('com
          assessed_by = EXCLUDED.assessed_by,
          assessed_at = EXCLUDED.assessed_at,
          next_review_date = EXCLUDED.next_review_date,
+         review_status = EXCLUDED.review_status,
+         review_frequency = EXCLUDED.review_frequency,
+         evidence_status = EXCLUDED.evidence_status,
+         source_snapshot = EXCLUDED.source_snapshot,
+         reviewed_by = EXCLUDED.reviewed_by,
+         reviewed_at = EXCLUDED.reviewed_at,
          updated_at = CURRENT_TIMESTAMP
        RETURNING *`,
       [req.organization.id, req.params.controlId, assessmentStatus,
         req.body.applicability_rationale || null, req.body.assessment_notes || null,
         req.body.owner_contact_id || null, req.body.due_date || null, req.user.id,
-        req.body.next_review_date || null]
+        req.body.next_review_date || null, req.body.review_status || 'PENDING_REVIEW',
+        req.body.review_frequency || null, req.body.evidence_status || 'PENDING',
+        req.body.source_snapshot || {}]
     );
     if (!result.rowCount) return res.status(404).json({ error: 'Control aprobado no encontrado.' });
     res.json(result.rows[0]);

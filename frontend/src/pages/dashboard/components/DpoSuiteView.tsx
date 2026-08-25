@@ -27,6 +27,12 @@ interface RiskItem {
   mitigation_control: string;
   status: string;
   created_at?: string;
+  origin_type?: string;
+  review_status?: string;
+  review_frequency?: string;
+  evidence_status?: string;
+  evidence_count?: number;
+  owner_name?: string;
 }
 
 interface WhistleblowerReport {
@@ -82,6 +88,24 @@ export default function DpoSuiteView({ token }: DpoSuiteViewProps) {
       setErrorMsg('Error al consultar la matriz de riesgos.');
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  const syncRiskCandidates = async () => {
+    setIsSaving(true);
+    setErrorMsg('');
+    try {
+      const response = await authFetch(`${API_BASE}/api/dpo/risks/sync-candidates`, {
+        method: 'POST', headers: { 'Authorization': `Bearer ${token}` }
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || 'No fue posible sincronizar.');
+      await fetchRisks();
+      triggerToast(`${data.candidates} señales sincronizadas para revisión profesional.`);
+    } catch (error: any) {
+      setErrorMsg(error.message || 'Error al sincronizar riesgos candidatos.');
+    } finally {
+      setIsSaving(false);
     }
   };
 
@@ -321,13 +345,14 @@ export default function DpoSuiteView({ token }: DpoSuiteViewProps) {
                     Visualización integrada de riesgos de privacidad asociados a procesos corporativos.
                   </p>
                 </div>
-                <button
-                  onClick={() => setIsModalOpen(true)}
-                  className="flex items-center gap-1.5 py-1.5 px-3 bg-indigo-600 hover:bg-indigo-500 font-bold rounded-lg text-white text-[11px] transition-all shadow-md shadow-indigo-600/10"
-                >
-                  <Plus size={13} />
-                  <span>Añadir Nuevo Riesgo</span>
-                </button>
+                <div className="flex gap-2">
+                  <button onClick={syncRiskCandidates} disabled={isSaving} className="flex items-center gap-1.5 py-1.5 px-3 border border-indigo-500/50 font-bold rounded-lg text-indigo-200 text-[11px] disabled:opacity-50">
+                    <RefreshCw size={13} /><span>Sincronizar desde RoPA</span>
+                  </button>
+                  <button onClick={() => setIsModalOpen(true)} className="flex items-center gap-1.5 py-1.5 px-3 bg-indigo-600 hover:bg-indigo-500 font-bold rounded-lg text-white text-[11px] transition-all shadow-md shadow-indigo-600/10">
+                    <Plus size={13} /><span>Añadir Nuevo Riesgo</span>
+                  </button>
+                </div>
               </div>
 
               {/* DataGrid Risk Matrix */}
@@ -349,6 +374,7 @@ export default function DpoSuiteView({ token }: DpoSuiteViewProps) {
                         <td className="px-4 py-3.5 text-xs font-bold text-white whitespace-nowrap">{item.process_name}</td>
                         <td className="px-4 py-3.5 text-xs text-slate-300 max-w-xs truncate" title={item.identified_risk}>
                           {item.identified_risk}
+                          {item.origin_type && item.origin_type !== 'MANUAL' && <div className="mt-1 text-[10px] text-indigo-300">Señal derivada de información confirmada. Requiere revisión.</div>}
                         </td>
                         <td className="px-4 py-3.5 whitespace-nowrap">
                           <span className={`inline-block border text-[10px] font-bold px-2 py-0.5 rounded-full ${getSeverityBadgeColor(item.severity)}`}>
@@ -357,13 +383,14 @@ export default function DpoSuiteView({ token }: DpoSuiteViewProps) {
                         </td>
                         <td className="px-4 py-3.5 text-xs text-slate-400 max-w-sm truncate" title={item.mitigation_control}>
                           {item.mitigation_control}
+                          <div className="mt-1 text-[10px] text-slate-500">Responsable: {item.owner_name || 'pendiente'} · Frecuencia: {item.review_frequency || 'pendiente'} · Evidencia: {item.evidence_status || 'PENDING'} ({item.evidence_count || 0})</div>
                         </td>
                         <td className="px-4 py-3.5 whitespace-nowrap">
                           <span className={`inline-flex items-center gap-1 text-[11px] font-semibold ${
                             item.status === 'IMPLEMENTED' ? 'text-emerald-400' : 'text-amber-400'
                           }`}>
                             <span className={`w-1.5 h-1.5 rounded-full ${item.status === 'IMPLEMENTED' ? 'bg-emerald-400' : 'bg-amber-400'}`}></span>
-                            {item.status === 'IMPLEMENTED' ? 'Mitigado' : 'Pendiente'}
+                            {item.review_status === 'PENDING_REVIEW' ? 'Candidato por revisar' : item.status === 'IMPLEMENTED' ? 'Mitigado y revisado' : 'Pendiente'}
                           </span>
                         </td>
                         <td className="px-4 py-3.5 whitespace-nowrap text-right text-slate-500">
@@ -380,7 +407,7 @@ export default function DpoSuiteView({ token }: DpoSuiteViewProps) {
                     {risks.length === 0 && (
                       <tr>
                         <td colSpan={6} className="text-center py-10 text-slate-500 text-xs">
-                          No existen riesgos registrados en la matriz para esta organización. Presione "Añadir Nuevo Riesgo" para inicializar.
+                          No existen riesgos registrados. Sincronice el RoPA confirmado o añada un riesgo manual.
                         </td>
                       </tr>
                     )}

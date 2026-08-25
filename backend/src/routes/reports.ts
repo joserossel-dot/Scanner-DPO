@@ -440,7 +440,8 @@ router.get('/dossier', requireOrganizationPermission('compliance.read'), async (
       [req.organization.id]
     );
     const totalRisks = risksRes.rowCount;
-    const mitigatedRisks = risksRes.rows.filter((r: any) => r.status === 'IMPLEMENTED').length;
+    const mitigatedRisks = risksRes.rows.filter((r: any) => r.status === 'IMPLEMENTED' && r.review_status === 'CONFIRMED').length;
+    const candidateRisks = risksRes.rows.filter((r: any) => r.review_status === 'PENDING_REVIEW').length;
 
     // Filter action plan items by priority (High and Medium, corresponding to Grave and Gravísima)
     const rawActionPlan = latestReport.action_plan || [];
@@ -461,7 +462,9 @@ router.get('/dossier', requireOrganizationPermission('compliance.read'), async (
       },
       risks: {
         total: totalRisks,
-        mitigated: mitigatedRisks
+        mitigated: mitigatedRisks,
+        pending_review: candidateRisks,
+        note: 'Los candidatos pendientes de revisión no constituyen conclusiones jurídicas.'
       },
       ropa: {
         confirmed_count: confirmedRopaCount

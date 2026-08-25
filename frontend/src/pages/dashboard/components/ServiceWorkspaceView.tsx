@@ -42,6 +42,7 @@ export default function ServiceWorkspaceView() {
   const [contactName, setContactName] = useState('');
   const [contactEmail, setContactEmail] = useState('');
   const [deliverables, setDeliverables] = useState<any[]>([]);
+  const [arcoDrafts, setArcoDrafts] = useState<Record<number, { analysis: string; response: string; channel: string }>>({});
 
   const loadWorkspace = useCallback(async () => {
     setLoading(true);
@@ -228,6 +229,13 @@ export default function ServiceWorkspaceView() {
     finally { setSaving(false); }
   };
 
+  const arcoDraft = (request: any) => arcoDrafts[request.id] || {
+    analysis: request.analysis_notes || '', response: request.response_content || '', channel: request.response_channel || 'EMAIL'
+  };
+  const setArcoDraft = (request: any, field: 'analysis' | 'response' | 'channel', value: string) => {
+    setArcoDrafts(current => ({ ...current, [request.id]: { ...arcoDraft(request), [field]: value } }));
+  };
+
   if (loading) return <div className="card"><RefreshCw className="loader" size={18} /> Cargando expediente...</div>;
 
   const eligibility = workspace?.eligibility;
@@ -381,17 +389,36 @@ export default function ServiceWorkspaceView() {
             <h3><UserCheck size={17} /> Solicitudes ARCO+ administradas</h3>
             {arcoRequests.length === 0 && <p style={{ color: 'var(--text-secondary)' }}>No existen solicitudes registradas.</p>}
             <div style={{ display: 'grid', gap: 10 }}>
-              {arcoRequests.map(request => <div key={request.id} style={{ padding: 12, border: '1px solid var(--border-color)', borderRadius: 8 }}>
+              {arcoRequests.map(request => {
+                const draft = arcoDraft(request);
+                return <div key={request.id} style={{ padding: 12, border: '1px solid var(--border-color)', borderRadius: 8 }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' }}>
                   <div><strong>#{request.id} {request.request_type}</strong><div style={{ fontSize: 12, color: 'var(--text-secondary)' }}>{request.requester_name} | vence {String(request.due_date).slice(0, 10)}</div></div>
                   <div style={{ fontSize: 12 }}>{request.verification_status} | {request.status}</div>
                 </div>
                 <p style={{ fontSize: 13 }}>{request.details}</p>
-                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                  {request.verification_status !== 'VERIFIED' && <button className="btn-action" disabled={saving} onClick={() => updateArco(request.id, { verification_status: 'VERIFIED', status: 'En Proceso' })}>Marcar identidad verificada</button>}
-                  {request.status !== 'Resuelto' && <button className="btn-save" disabled={saving || request.verification_status !== 'VERIFIED'} onClick={() => updateArco(request.id, { status: 'Resuelto', mark_response_sent: true, closed_reason: 'Respuesta gestionada y enviada.' })}>Registrar respuesta y cierre</button>}
+                <p style={{ fontSize: 12, color: 'var(--text-secondary)' }}><strong>Plazo:</strong> {request.deadline_rule || 'Regla pendiente de documentar.'} {request.deadline_reviewed_at ? 'Revisado.' : 'Pendiente de revisión.'}</p>
+                <div style={{ display: 'grid', gap: 8, marginBottom: 10 }}>
+                  <label style={{ fontSize: 12 }}>Análisis y decisión preliminar
+                    <textarea value={draft.analysis} onChange={event => setArcoDraft(request, 'analysis', event.target.value)} rows={3} style={{ width: '100%', marginTop: 4 }} placeholder="Indique datos localizados, procedencia, decisión y acciones requeridas." />
+                  </label>
+                  <label style={{ fontSize: 12 }}>Respuesta al titular
+                    <textarea value={draft.response} onChange={event => setArcoDraft(request, 'response', event.target.value)} rows={3} style={{ width: '100%', marginTop: 4 }} placeholder="Registre el contenido que será enviado al titular." />
+                  </label>
+                  <label style={{ fontSize: 12 }}>Canal de respuesta
+                    <select value={draft.channel} onChange={event => setArcoDraft(request, 'channel', event.target.value)} style={{ display: 'block', marginTop: 4 }}>
+                      <option value="EMAIL">Correo electrónico</option><option value="PORTAL">Portal</option><option value="PRESENCIAL">Entrega presencial</option><option value="OTRO">Otro canal verificado</option>
+                    </select>
+                  </label>
                 </div>
-              </div>)}
+                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                  {request.verification_status !== 'VERIFIED' && <button className="btn-action" disabled={saving} onClick={() => updateArco(request.id, { verification_status: 'VERIFIED', status: 'En Proceso', event_notes: 'Identidad revisada por el operador.' })}>Registrar identidad verificada</button>}
+                  {!request.deadline_reviewed_at && <button className="btn-action" disabled={saving} onClick={() => updateArco(request.id, { mark_deadline_reviewed: true, event_notes: 'Plazo aplicable revisado por el operador.' })}>Confirmar revisión del plazo</button>}
+                  {request.status !== 'Resuelto' && <button className="btn-action" disabled={saving || request.verification_status !== 'VERIFIED' || !request.deadline_reviewed_at || !draft.analysis.trim()} onClick={() => updateArco(request.id, { status: 'En Revisión', analysis_notes: draft.analysis, event_notes: 'Análisis y decisión preliminar registrados.' })}>Guardar análisis</button>}
+                  {request.status !== 'Resuelto' && <button className="btn-save" disabled={saving || request.verification_status !== 'VERIFIED' || !request.deadline_reviewed_at || !draft.analysis.trim() || !draft.response.trim()} onClick={() => updateArco(request.id, { status: 'Resuelto', analysis_notes: draft.analysis, response_content: draft.response, response_channel: draft.channel, mark_response_sent: true, closed_reason: 'Respuesta registrada como enviada y solicitud cerrada.', event_notes: 'Cierre operativo registrado.' })}>Registrar envío y cerrar</button>}
+                </div>
+                {request.events?.length > 0 && <details style={{ marginTop: 10, fontSize: 12 }}><summary>Bitácora ({request.events.length})</summary>{request.events.map((event: any) => <div key={event.id} style={{ padding: '4px 0' }}>{String(event.created_at).slice(0, 16).replace('T', ' ')} | {event.event_type}{event.notes ? ` | ${event.notes}` : ''}</div>)}</details>}
+              </div>})}
             </div>
           </section>
         </>}

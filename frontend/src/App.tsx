@@ -756,34 +756,36 @@ export function Dashboard({ token, user, onLogout, initialTab }: DashboardProps)
   };
 
   const handleGenerateScc = (provider: any) => {
-    setSccExporterName(config?.company_name || 'Mi Empresa Chile S.A.');
-    setSccExporterRut('76.123.456-7');
-    setSccExporterAddress('Av. Apoquindo 4500, Las Condes, Santiago, Chile');
-    setSccImporterName(provider.provider_name);
-    setSccImporterAddress(`HQ in ${provider.country}`);
+    setSccExporterName(config?.company_name || '');
+    setSccExporterRut('');
+    setSccExporterAddress('');
+    setSccImporterName(provider.provider_name || provider.vendor_name || '');
+    setSccImporterAddress('');
     
     const docText = `CONTRATO DE TRANSFERENCIA INTERNACIONAL DE DATOS (ART. 28 LEY N° 21.719)
 
 EXPORTADOR DE DATOS:
-Razón Social: ${config?.company_name || 'Mi Empresa Chile S.A.'}
-RUT: 76.123.456-7
-Domicilio: Av. Apoquindo 4500, Las Condes, Santiago, Chile
-Representante Legal / DPO: ${configRepresentative || 'DPO de la Compañía'}
+Razón Social: ${config?.company_name || '[PENDIENTE DE CONFIRMACIÓN]'}
+RUT: [PENDIENTE DE CONFIRMACIÓN]
+Domicilio: [PENDIENTE DE CONFIRMACIÓN]
+Representante Legal / Responsable: ${configRepresentative || '[PENDIENTE DE CONFIRMACIÓN]'}
 
 IMPORTADOR DE DATOS:
-Proveedor: ${provider.provider_name}
-País Destinatario: ${provider.country}
-Categoría de Datos transferidos: ${provider.data_categories?.join(', ') || 'Contacto general'}
+Proveedor: ${provider.provider_name || provider.vendor_name || '[PENDIENTE DE CONFIRMACIÓN]'}
+País Destinatario: ${provider.country || provider.destination_country || '[PENDIENTE DE CONFIRMACIÓN]'}
+Categoría de Datos transferidos: ${Array.isArray(provider.data_categories) ? provider.data_categories.join(', ') : '[PENDIENTE DE CONFIRMACIÓN]'}
 
 CLÁUSULAS CONTRACTUALES TIPO (SCC):
 1. OBJETO Y ALCANCE: El Importador se compromete a tratar los datos personales únicamente bajo las instrucciones del Exportador de acuerdo con la Ley N° 21.719 de Chile.
-2. MEDIDAS DE SEGURIDAD: El Importador declara poseer medidas técnicas y organizativas óptimas para prevenir fugas, ransomware o accesos no autorizados.
-3. EJERCICIO DE DERECHOS: El Importador cooperará con el Exportador para responder solicitudes ARCO+ en un plazo máximo de 48 horas hábiles.
+2. MEDIDAS DE SEGURIDAD: Las partes deberán describir y anexar las medidas técnicas y organizativas verificadas para esta transferencia.
+3. EJERCICIO DE DERECHOS: El Importador cooperará con el Exportador dentro del plazo operacional que las partes documenten y aprueben.
 4. AGENCIA DE DATOS: Ambas partes se someten a la fiscalización de la Agencia de Protección de Datos Personales de Chile.
 
 Firmas autorizadas:
 - Por el Exportador: ____________________________
-- Por el Importador: ____________________________`;
+- Por el Importador: ____________________________
+
+ESTADO: BORRADOR SUJETO A REVISIÓN PROFESIONAL Y APROBACIÓN DE LAS PARTES.`;
     
     setGeneratedSccText(docText);
     setIsGeneratingScc(true);
@@ -1294,7 +1296,7 @@ Firmas autorizadas:
                     </span>
                   </div>
                   <p className="text-[11.5px] text-slate-400 leading-relaxed" style={{ marginTop: '10px' }}>
-                    El consentimiento es la base de licitud para trackers web. Debe integrar el widget SDK en su frontend. Las preferencias de los usuarios alimentarán automáticamente su inventario legal e histórico de consentimientos.
+                    El widget registra preferencias para tecnologías opcionales. La finalidad, necesidad y base de licitud de cada tecnología deben vincularse al inventario y quedar sujetas a revisión.
                   </p>
                 </div>
                 
@@ -1358,7 +1360,7 @@ Firmas autorizadas:
               <div className="bg-indigo-950/20 border border-indigo-900/30 rounded-xl p-3.5 mb-4 flex items-start gap-2.5">
                 <Info size={15} className="text-indigo-400 flex-shrink-0 mt-0.5" />
                 <span className="text-[11.5px] text-slate-350 leading-relaxed">
-                  <strong>Evidencia Legal (Art. 12):</strong> Nuestro widget captura automáticamente la hora y la IP anonimizada de quienes aceptan sus políticas. Esta bitácora es su prueba irrefutable ante una fiscalización de la Agencia de Datos. Todo funciona en piloto automático.
+                  <strong>Registro técnico para revisión:</strong> El widget conserva fecha, identificador seudonimizado, preferencias y versión del aviso. Estos antecedentes apoyan la trazabilidad, pero deben revisarse junto con la finalidad, la base de licitud y la implementación efectiva del sitio.
                 </span>
               </div>
 
@@ -1522,29 +1524,6 @@ Firmas autorizadas:
             return name;
           };
 
-          const getSaaSDefaults = (processName: string) => {
-            const lower = (processName || '').toLowerCase();
-            
-            if (
-              ['google', 'aws', 'amazon', 'microsoft', 'meta', 'facebook', 'hubspot', 'mailchimp'].some(k => lower.includes(k)) ||
-              lower.includes('gestión de leads') ||
-              lower.includes('rastreo y analítica') ||
-              lower.includes('alojamiento') ||
-              lower.includes('comunicaciones corporativas') ||
-              lower.includes('plataforma saas') ||
-              lower.includes('soporte y atención') ||
-              lower.includes('base de datos de clientes')
-            ) {
-              return { country: 'US', transfer_mechanism: 'STANDARD_CLAUSES', has_scc: true, has_dpa: true };
-            }
-            
-            if (['buk', 'talana', 'defontana'].some(k => lower.includes(k)) || lower.includes('liquidación de sueldos')) {
-              return { country: 'CL', transfer_mechanism: 'ADEQUATE_COUNTRY', has_scc: false, has_dpa: true };
-            }
-            
-            return { country: 'US', transfer_mechanism: 'STANDARD_CLAUSES', has_scc: false, has_dpa: false };
-          };
-
           // Per-row autocomplete helper — isolated, no global useEffect
           const getSuggestedCountry = (providerName: string): string => {
             if (!providerName) return '';
@@ -1574,29 +1553,29 @@ Firmas autorizadas:
             }
             const raw = String(providerString).toLowerCase();
 
-            // 🇺🇸 ESTADOS UNIDOS — SCC obligatorio
+            // Identificación preliminar por proveedor; el mecanismo requiere revisión.
             if (/(google|aws|amazon|azure|microsoft|meta|facebook|instagram|whatsapp|hubspot|mailchimp|salesforce|stripe|slack|zoom|notion|asana|openai|mixpanel|segment|twilio|sendgrid|intercom|zendesk|figma|dropbox|docusign|workday|bamboohr|rippling|adyen|braintree)/.test(raw)) {
-              return { country: 'Estados Unidos', mechanism: 'Cláusulas Tipo (SCC)', hasScc: true, hasDpa: true };
+              return { country: 'Estados Unidos', mechanism: 'Requiere evaluación', hasScc: false, hasDpa: false };
             }
             // 🇨🇦 CANADÁ — Decisión de adecuación parcial + SCC recomendado
             if (/(shopify)/.test(raw)) {
-              return { country: 'Canadá', mechanism: 'Cláusulas Tipo (SCC)', hasScc: true, hasDpa: true };
+              return { country: 'Canadá', mechanism: 'Requiere evaluación', hasScc: false, hasDpa: false };
             }
-            // 🇦🇺 AUSTRALIA — Sin adecuación, SCC obligatorio
+            // Identificación preliminar por proveedor; el mecanismo requiere revisión.
             if (/(atlassian|jira|trello|confluence|canva)/.test(raw)) {
-              return { country: 'Australia', mechanism: 'Cláusulas Tipo (SCC)', hasScc: true, hasDpa: true };
+              return { country: 'Australia', mechanism: 'Requiere evaluación', hasScc: false, hasDpa: false };
             }
             // 🇪🇺 UNIÓN EUROPEA — RGPD aplicable, sin SCC adicional
             if (/(sendinblue|brevo|holded|typeform|pipedrive|teamleader|pandadoc)/.test(raw)) {
-              return { country: 'Unión Europea', mechanism: 'Decisión de Adecuación', hasScc: false, hasDpa: true };
+              return { country: 'Unión Europea', mechanism: 'Requiere evaluación', hasScc: false, hasDpa: false };
             }
             // 🇩🇪 ALEMANIA (dentro de UE)
             if (/(sap|teamviewer)/.test(raw)) {
-              return { country: 'Alemania (UE)', mechanism: 'Decisión de Adecuación', hasScc: false, hasDpa: true };
+              return { country: 'Alemania (UE)', mechanism: 'Requiere evaluación', hasScc: false, hasDpa: false };
             }
             // 🇨🇱 CHILE — DPA local, sin SCC
             if (/(buk|talana|defontana|rex\+|fintual|transbank|flow\.cl|bsale|nubox|tuu\.cl|centry)/.test(raw)) {
-              return { country: 'Chile', mechanism: 'Acuerdo (DPA) Local', hasScc: false, hasDpa: true };
+              return { country: 'Chile', mechanism: 'Requiere evaluación contractual', hasScc: false, hasDpa: false };
             }
 
             // Fallback: evaluar también el campo purpose si viene en el objeto
@@ -1605,10 +1584,13 @@ Firmas autorizadas:
 
           // Re-order countries: Chile, US and EU (Spain, Germany, France, Italy) at the top
           const topCodes = ['CL', 'US', 'ES', 'DE', 'FR', 'IT'];
-          const topList = countries.filter(c => topCodes.includes(c.code))
+          const validCountries = Array.isArray(countries)
+            ? countries.filter(c => c && typeof c.code === 'string' && typeof c.name === 'string')
+            : [];
+          const topList = validCountries.filter(c => topCodes.includes(c.code))
             .sort((a, b) => topCodes.indexOf(a.code) - topCodes.indexOf(b.code));
-          const otherList = countries.filter(c => !topCodes.includes(c.code))
-            .sort((a, b) => a.name.localeCompare(b.name));
+          const otherList = validCountries.filter(c => !topCodes.includes(c.code))
+            .sort((a, b) => String(a.name).localeCompare(String(b.name), 'es'));
           
           const orderedCountries: any[] = [];
           if (topList.length > 0) {
@@ -1623,7 +1605,7 @@ Firmas autorizadas:
                 <div className="bg-amber-950/20 border border-amber-900/40 rounded-xl p-3.5 mb-4 flex items-start gap-2.5">
                   <AlertTriangle size={16} className="text-amber-500 flex-shrink-0 mt-0.5" />
                   <span className="text-[11.5px] text-amber-500 leading-relaxed">
-                    <strong>⚠️ Conexión Legal:</strong> Los proveedores extranjeros detectados en su RoPA deben contar con garantías de transferencia (SCC) y acuerdos de tratamiento (DPA) regulados bajo el Art. 28 de la Ley N° 21.719.
+                    <strong>Evaluación preliminar:</strong> Los proveedores y países detectados deben revisarse para determinar el mecanismo aplicable, la documentación contractual y la evidencia necesaria. El sistema no presume que una SCC o un DPA ya estén firmados.
                   </span>
                 </div>
 
@@ -1648,7 +1630,7 @@ Firmas autorizadas:
                           <th>
                             <div style={{ display: 'flex', alignItems: 'center', gap: '4px', whiteSpace: 'nowrap' }}>
                               <span>Garantía (SCC)</span>
-                              <span title="Standard Contractual Clauses: Cláusulas internacionales obligatorias si el servidor del proveedor está fuera de Chile.">
+                              <span title="Cláusulas contractuales: su aplicabilidad debe evaluarse según el flujo, país, partes y reglas vigentes.">
                                 <Info 
                                   size={12} 
                                   className="text-slate-400 cursor-help mt-0.5" 

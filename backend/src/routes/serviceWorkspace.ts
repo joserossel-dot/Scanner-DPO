@@ -37,8 +37,10 @@ router.get('/workspace', requireOrganizationPermission('compliance.read'), async
         EXISTS(SELECT 1 FROM audit_reports WHERE organization_id = $1 AND pages_analyzed IS NOT NULL AND pages_analyzed::text <> '[]') AS has_web_scan,
         EXISTS(SELECT 1 FROM audit_reports WHERE organization_id = $1 AND questionnaire_answers IS NOT NULL) AS has_questionnaire,
         EXISTS(SELECT 1 FROM ropa_inventory WHERE organization_id = $1 AND status = 'confirmed') AS has_confirmed_ropa,
-        EXISTS(SELECT 1 FROM risk_matrix WHERE organization_id = $1) AS has_risk_assessment,
-        EXISTS(SELECT 1 FROM control_assessments WHERE organization_id = $1) AS has_control_assessment,
+        EXISTS(SELECT 1 FROM risk_matrix r WHERE r.organization_id = $1 AND r.review_status = 'CONFIRMED'
+          AND EXISTS (SELECT 1 FROM compliance_evidence ce WHERE ce.organization_id = r.organization_id AND ce.subject_type = 'RISK' AND ce.subject_id = r.id AND ce.verification_status = 'VERIFIED')) AS has_risk_assessment,
+        EXISTS(SELECT 1 FROM control_assessments ca WHERE ca.organization_id = $1 AND ca.review_status = 'CONFIRMED'
+          AND ca.status IN ('IMPLEMENTED','NOT_APPLICABLE') AND EXISTS (SELECT 1 FROM compliance_evidence ce WHERE ce.organization_id = ca.organization_id AND ce.subject_type = 'CONTROL' AND ce.subject_id = ca.id AND ce.verification_status = 'VERIFIED')) AS has_control_assessment,
         (SELECT COUNT(*)::int FROM documents WHERE organization_id = $1 AND workflow_status = 'APPROVED' AND is_active = TRUE) AS approved_documents`, [organizationId])
     ]);
     res.json({
@@ -77,7 +79,13 @@ router.get('/deliverables/readiness', requireOrganizationPermission('compliance.
           SELECT 1 FROM compliance_evidence ce WHERE ce.organization_id = ca.organization_id
             AND ce.subject_type = 'CONTROL' AND ce.subject_id = ca.id AND ce.verification_status = 'VERIFIED'
         ))::int AS confirmed FROM control_assessments ca WHERE organization_id = $1`, [org]),
-      db.query('SELECT COUNT(*)::int AS total FROM risk_matrix WHERE organization_id = $1', [org]),
+      db.query(`SELECT COUNT(*)::int AS total,
+        COUNT(*) FILTER (WHERE review_status = 'CONFIRMED' AND EXISTS (
+          SELECT 1 FROM compliance_evidence ce WHERE ce.organization_id = risk_matrix.organization_id
+            AND ce.subject_type = 'RISK' AND ce.subject_id = risk_matrix.id AND ce.verification_status = 'VERIFIED'
+        ))::int AS confirmed,
+        COUNT(*) FILTER (WHERE review_status = 'PENDING_REVIEW')::int AS pending_review
+        FROM risk_matrix WHERE organization_id = $1`, [org]),
       db.query(`SELECT document_type, workflow_status FROM documents WHERE organization_id = $1 AND is_active = TRUE`, [org]),
       db.query('SELECT COUNT(*)::int AS total FROM security_incidents WHERE organization_id = $1', [org]),
       db.query('SELECT COUNT(*)::int AS total FROM form_consent_logs WHERE organization_id = $1', [org]),
@@ -104,12 +112,16 @@ router.get('/deliverables/readiness', requireOrganizationPermission('compliance.
       retentionAndDeletion: evidenceStatus(flowConfirmed, flowDraft),
       securityMeasures: evidenceStatus(Number(controls.rows[0]?.confirmed || 0) > 0, Number(controls.rows[0]?.total || 0) > 0),
       incidentResponse: evidenceStatus(docStatus('INCIDENT_PLAYBOOK') === 'CONFIRMED', docStatus('INCIDENT_PLAYBOOK') === 'DRAFT' || Number(incidents.rows[0]?.total || 0) > 0),
-      riskAndImpactAssessment: evidenceStatus(Number(risks.rows[0]?.total || 0) > 0, false),
+      riskAndImpactAssessment: evidenceStatus(Number(risks.rows[0]?.confirmed || 0) > 0, Number(risks.rows[0]?.total || 0) > 0),
       consentEvidence: evidenceStatus(Number(consents.rows[0]?.total || 0) > 0, false),
       training: evidenceStatus(Number(training.rows[0]?.total || 0) > 0, false),
       approvalsAndVersioning: evidenceStatus(documents.rows.some((row: any) => row.workflow_status === 'APPROVED'), documents.rows.length > 0)
     };
-    res.json({ evidence, deliverables: assessLegalDeliverables(evidence) });
+    res.json({
+      evidence,
+      reviewQueues: { riskCandidates: Number(risks.rows[0]?.pending_review || 0) },
+      deliverables: assessLegalDeliverables(evidence)
+    });
   } catch (error: any) {
     console.error('Error evaluating legal deliverables:', error.message);
     res.status(500).json({ error: 'No fue posible evaluar los entregables del expediente.' });
@@ -563,7 +575,11 @@ router.get('/arco', requireOrganizationPermission('arco.operate'), async (req: a
     const result = await getDb().query(
       `SELECT id, domain, requester_name, requester_email, request_type, details,
               status, verification_status, due_date, assigned_membership_id,
-              response_sent_at, resolved_at, created_at
+              response_content, response_channel, analysis_notes, closed_reason, deadline_rule,
+              deadline_reviewed_at, deadline_reviewed_by,
+              response_sent_at, resolved_at, created_at,
+              COALESCE((SELECT json_agg(ev ORDER BY ev.created_at) FROM arco_request_events ev
+                WHERE ev.organization_id = arco_requests.organization_id AND ev.arco_request_id = arco_requests.id), '[]') AS events
          FROM arco_requests
         WHERE organization_id = $1
         ORDER BY due_date ASC, created_at ASC`,
@@ -586,7 +602,28 @@ router.patch('/arco/:id', requireOrganizationPermission('arco.operate'), async (
     return res.status(400).json({ error: 'Estado de verificación inválido.' });
   }
   try {
-    const result = await getDb().query(
+    const db = getDb();
+    const currentResult = await db.query('SELECT * FROM arco_requests WHERE id = $1 AND organization_id = $2', [req.params.id, req.organization.id]);
+    if (!currentResult.rowCount) return res.status(404).json({ error: 'Solicitud ARCO+ no encontrada.' });
+    const current = currentResult.rows[0];
+    const nextVerification = verificationStatus || current.verification_status;
+    const nextAnalysis = req.body.analysis_notes ?? current.analysis_notes;
+    const nextResponse = req.body.response_content ?? current.response_content;
+    const deadlineReviewed = req.body.mark_deadline_reviewed === true || Boolean(current.deadline_reviewed_at);
+    const markSent = req.body.mark_response_sent === true;
+    if (status === 'En Revisión' && nextVerification !== 'VERIFIED') {
+      return res.status(409).json({ error: 'Debe verificar la identidad antes de registrar el análisis.' });
+    }
+    if ((status === 'En Revisión' || status === 'Resuelto') && !deadlineReviewed) {
+      return res.status(409).json({ error: 'Debe revisar y confirmar el plazo aplicable antes del análisis.' });
+    }
+    if ((status === 'En Revisión' || status === 'Resuelto') && !String(nextAnalysis || '').trim()) {
+      return res.status(409).json({ error: 'Debe registrar el análisis de la solicitud.' });
+    }
+    if (status === 'Resuelto' && (!String(nextResponse || '').trim() || !markSent || !req.body.response_channel)) {
+      return res.status(409).json({ error: 'Para cerrar debe registrar respuesta, canal y envío.' });
+    }
+    const result = await db.query(
       `UPDATE arco_requests SET
          status = COALESCE($1, status),
          verification_status = COALESCE($2, verification_status),
@@ -595,6 +632,10 @@ router.patch('/arco/:id', requireOrganizationPermission('arco.operate'), async (
          response_content = COALESCE($4, response_content),
          response_sent_at = CASE WHEN $5::boolean = TRUE THEN CURRENT_TIMESTAMP ELSE response_sent_at END,
          closed_reason = COALESCE($6, closed_reason),
+         analysis_notes = COALESCE($9, analysis_notes),
+         response_channel = COALESCE($10, response_channel),
+         deadline_reviewed_at = CASE WHEN $11::boolean = TRUE THEN CURRENT_TIMESTAMP ELSE deadline_reviewed_at END,
+         deadline_reviewed_by = CASE WHEN $11::boolean = TRUE THEN $12 ELSE deadline_reviewed_by END,
          resolved_at = CASE WHEN $1 = 'Resuelto' THEN CURRENT_TIMESTAMP WHEN $1 IS NOT NULL THEN NULL ELSE resolved_at END
        WHERE id = $7 AND organization_id = $8
        RETURNING *`,
@@ -606,10 +647,40 @@ router.patch('/arco/:id', requireOrganizationPermission('arco.operate'), async (
         req.body.mark_response_sent === true,
         req.body.closed_reason || null,
         req.params.id,
-        req.organization.id
+        req.organization.id,
+        req.body.analysis_notes || null,
+        req.body.response_channel || null,
+        req.body.mark_deadline_reviewed === true,
+        req.user.id
       ]
     );
     if (!result.rowCount) return res.status(404).json({ error: 'Solicitud ARCO+ no encontrada.' });
+    let eventType = 'ANALYSIS_RECORDED';
+    if (verificationStatus) eventType = 'IDENTITY_UPDATED';
+    if (markSent) eventType = 'RESPONSE_RECORDED';
+    if (status === 'Resuelto') eventType = 'CLOSED';
+    if (status === 'Escalado') eventType = 'ESCALATED';
+    await db.query(
+      `INSERT INTO arco_request_events (organization_id, arco_request_id, event_type, notes, actor_user_id, metadata)
+       VALUES ($1, $2, $3, $4, $5, $6::jsonb)`,
+      [req.organization.id, req.params.id, eventType, req.body.event_notes || null, req.user.id,
+       JSON.stringify({ status: status || current.status, verification_status: nextVerification })]
+    );
+    if (status === 'Resuelto') {
+      await db.query(
+        `UPDATE compliance_tasks SET status = 'COMPLETED', completed_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
+          WHERE organization_id = $1 AND activity_code = 8 AND description = $2 AND status NOT IN ('COMPLETED', 'CANCELLED')`,
+        [req.organization.id, `Solicitud ARCO+ #${req.params.id}`]
+      );
+      await db.query(
+        `INSERT INTO compliance_evidence
+         (organization_id, evidence_type, title, description, source_reference, uploaded_by)
+         VALUES ($1, 'SYSTEM_RECORD', $2, $3, $4, $5)`,
+        [req.organization.id, `Cierre solicitud ARCO+ #${req.params.id}`,
+         `Respuesta enviada mediante ${req.body.response_channel}. ${req.body.closed_reason || ''}`,
+         `ARCO:${req.params.id}`, req.user.id]
+      );
+    }
     res.json(result.rows[0]);
   } catch (error: any) {
     if (error?.code === '23503' || error?.code === '22P02') {
