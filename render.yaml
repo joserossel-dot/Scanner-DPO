@@ -9,6 +9,7 @@ services:
     plan: free
     buildCommand: npm install --include=dev && npm run build -w backend
     startCommand: npm run start -w backend
+    healthCheckPath: /health
     envVars:
       - key: NODE_ENV
         value: production
@@ -16,6 +17,8 @@ services:
         sync: false # Set in Render Dashboard from Neon connection string
       - key: JWT_SECRET
         sync: false
+      - key: REDIS_URL
+        sync: false # Required in production for the shared rate-limit store
       - key: DASHBOARD_ORIGIN
         fromService:
           name: pt-compliance-dashboard

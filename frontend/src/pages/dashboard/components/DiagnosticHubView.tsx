@@ -14,6 +14,7 @@ import {
   AlertTriangle
 } from 'lucide-react';
 import DiagnosticQuestionnaire from './DiagnosticQuestionnaire';
+import BusinessDiscoveryQuestionnaire from './BusinessDiscoveryQuestionnaire';
 
 interface RopaRecord {
   id: string;
@@ -234,9 +235,13 @@ export default function DiagnosticHubView({ token, scanUrl, onEvaluationSuccess,
           <div className="bg-slate-900/60 border border-slate-800/80 rounded-2xl p-6 shadow-md">
             <h2 className="text-sm font-bold text-white mb-4 flex items-center gap-2">
               <FileText className="text-indigo-400 w-4 h-4" />
-              <span>Cuestionario de Cumplimiento PYME</span>
+              <span>Descubrimiento guiado de la empresa</span>
             </h2>
-            <DiagnosticQuestionnaire onSubmit={handleQuestionnaireSubmit} token={token} setActiveTab={setActiveTab} />
+            <BusinessDiscoveryQuestionnaire onDraftCreated={() => void fetchDrafts()} />
+            <details className="mt-6 border-t border-slate-800 pt-4">
+              <summary className="text-xs text-slate-400 cursor-pointer">Abrir cuestionario especializado anterior</summary>
+              <div className="mt-4"><DiagnosticQuestionnaire onSubmit={handleQuestionnaireSubmit} token={token} setActiveTab={setActiveTab} /></div>
+            </details>
           </div>
         </div>
 

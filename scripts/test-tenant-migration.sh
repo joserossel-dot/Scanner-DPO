@@ -2,6 +2,7 @@
 set -euo pipefail
 
 repo_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+baseline="$repo_dir/backend/src/database/migrations/001_legacy_baseline.sql"
 migration="$repo_dir/backend/src/database/migrations/005_organizations_and_tenant_isolation.sql"
 activation="$repo_dir/backend/src/database/migrations/006_tenant_rls_activation.sql.example"
 cluster_dir="$(mktemp -d "${TMPDIR:-/tmp}/scanner-dpo-pg.XXXXXX")"
@@ -47,12 +48,29 @@ createdb -h 127.0.0.1 -p "$port" scanner_dpo_empty_test
     npx --no-install tsx -e \
       "import('./src/database/db.ts').then(async ({ initDb }) => { await initDb(); process.exit(0); }).catch((error) => { console.error(error); process.exit(1); })"
 )
+
+# Startup must be idempotent. A second execution must neither reapply nor
+# duplicate migrations.
+(
+  cd "$repo_dir/backend"
+  DATABASE_URL="postgresql://127.0.0.1:$port/scanner_dpo_empty_test" \
+  DATABASE_SSL_MODE=disable NODE_ENV=test \
+    npx --no-install tsx -e \
+      "import('./src/database/db.ts').then(async ({ initDb }) => { await initDb(); process.exit(0); }).catch((error) => { console.error(error); process.exit(1); })"
+)
+
+migration_count="$(find "$repo_dir/backend/src/database/migrations" -maxdepth 1 -type f -name '[0-9][0-9][0-9]_*.sql' | wc -l | tr -d ' ')"
 psql -X -v ON_ERROR_STOP=1 -h 127.0.0.1 -p "$port" -d scanner_dpo_empty_test <<'SQL'
 DO $$ BEGIN
  IF to_regclass('public.organizations') IS NULL THEN RAISE EXCEPTION 'empty initialization did not apply migration 005'; END IF;
  IF (SELECT count(*) FROM schema_migrations WHERE version = '005_organizations_and_tenant_isolation.sql') <> 1 THEN RAISE EXCEPTION 'migration runner did not record migration 005'; END IF;
 END $$;
 SQL
+actual_migration_count="$(psql -X -A -t -v ON_ERROR_STOP=1 -h 127.0.0.1 -p "$port" -d scanner_dpo_empty_test -c 'SELECT count(*) FROM schema_migrations')"
+if [[ "$actual_migration_count" != "$migration_count" ]]; then
+  echo "ERROR: schema_migrations has $actual_migration_count records, expected $migration_count SQL files" >&2
+  exit 1
+fi
 
 # Minimal schema produced by legacy initialization before migration 005.
 "${psql_cmd[@]}" <<'SQL'
@@ -85,6 +103,16 @@ INSERT INTO documents (client_id) VALUES ('00000000-0000-0000-0000-000000000002'
 INSERT INTO form_consent_logs (client_id) VALUES ('00000000-0000-0000-0000-000000000001');
 INSERT INTO consent_logs (domain) VALUES ('one.example'), ('shared.example'), ('unknown.example');
 SQL
+
+# The additive baseline must be safe on a populated installation that predates
+# schema_migrations, and a repeated application must preserve every row.
+"${psql_cmd[@]}" -f "$baseline" >/dev/null
+"${psql_cmd[@]}" -f "$baseline" >/dev/null
+legacy_user_count="$("${psql_cmd[@]}" -A -t -c 'SELECT count(*) FROM users')"
+if [[ "$legacy_user_count" != "2" ]]; then
+  echo "ERROR: baseline migration changed legacy user rows" >&2
+  exit 1
+fi
 
 "${psql_cmd[@]}" -f "$migration" >/dev/null
 "${psql_cmd[@]}" -f "$migration" >/dev/null

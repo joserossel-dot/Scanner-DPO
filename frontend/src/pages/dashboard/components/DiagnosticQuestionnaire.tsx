@@ -168,6 +168,29 @@ export default function DiagnosticQuestionnaire({ onSubmit, token, setActiveTab 
     fetchScanData();
   }, [token]);
 
+  React.useEffect(() => {
+    if (!token) return;
+    const loadSavedAnswers = async () => {
+      try {
+        const response = await authFetch(`${API_BASE}/api/reports/questionnaire/latest`);
+        if (!response.ok) return;
+        const saved = await response.json();
+        if (saved?.questionnaire_answers) {
+          const restored = Object.fromEntries(
+            Object.keys(initialFormState).map(key => [
+              key,
+              saved.questionnaire_answers[key] ?? initialFormState[key as keyof QuestionnaireState]
+            ])
+          ) as unknown as QuestionnaireState;
+          setFormData(restored);
+        }
+      } catch (err) {
+        console.error('Error loading saved questionnaire answers:', err);
+      }
+    };
+    void loadSavedAnswers();
+  }, [token]);
+
   const toggleAccordion = (index: number) => {
     setActiveAccordion(activeAccordion === index ? null : index);
   };

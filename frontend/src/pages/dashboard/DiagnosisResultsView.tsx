@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { API_BASE } from '../../lib/api';
+import { complianceTrafficLight } from '../../lib/complianceTrafficLight';
 import { 
   ShieldAlert, 
   CheckCircle, 
@@ -133,16 +134,18 @@ export default function DiagnosisResultsView({
     // Determine severity border and text color for the score
     const getScoreColor = () => {
       if (isRopaMissing) return 'text-amber-500 stroke-amber-500 animate-pulse';
-      if (scoreTotal >= 80) return 'text-emerald-500 stroke-emerald-500';
-      if (scoreTotal >= 50) return 'text-amber-500 stroke-amber-500';
-      return 'text-rose-500 stroke-rose-500';
+      const light = complianceTrafficLight(displayScore);
+      if (light === 'green') return 'text-emerald-500 stroke-emerald-500';
+      if (light === 'red') return 'text-rose-500 stroke-rose-500';
+      return 'text-amber-500 stroke-amber-500';
     };
 
     const getScoreBgColorClass = () => {
       if (isRopaMissing) return 'bg-amber-950/20 border-amber-900/30';
-      if (scoreTotal >= 80) return 'bg-emerald-950/20 border-emerald-900/30';
-      if (scoreTotal >= 50) return 'bg-amber-950/20 border-amber-900/30';
-      return 'bg-rose-950/20 border-rose-900/30';
+      const light = complianceTrafficLight(displayScore);
+      if (light === 'green') return 'bg-emerald-950/20 border-emerald-900/30';
+      if (light === 'red') return 'bg-rose-950/20 border-rose-900/30';
+      return 'bg-amber-950/20 border-amber-900/30';
     };
 
     // Phase classification helper

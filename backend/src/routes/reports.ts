@@ -277,6 +277,16 @@ router.get('/diagnosis', requireOrganizationPermission('compliance.read'), async
 });
 
 // POST /api/reports/evaluate - Evaluate diagnostic questionnaire and save report
+router.get('/questionnaire/latest', requireOrganizationPermission('compliance.read'), async (req: any, res) => {
+  const result = await getDb().query(
+    `SELECT questionnaire_answers, created_at FROM audit_reports
+      WHERE organization_id = $1 AND questionnaire_answers IS NOT NULL
+      ORDER BY created_at DESC LIMIT 1`,
+    [req.organization.id]
+  );
+  res.json(result.rows[0] || null);
+});
+
 router.post('/evaluate', requireOrganizationPermission('compliance.write'), async (req: any, res) => {
   try {
     const db = getDb();
@@ -292,7 +302,22 @@ router.post('/evaluate', requireOrganizationPermission('compliance.write'), asyn
     const confirmed_ropa_count = ropaRes.rows[0]?.confirmed_count || 0;
     const draft_ropa_count = ropaRes.rows[0]?.draft_count || 0;
 
-    const answers = { ...req.body, confirmed_ropa_count, draft_ropa_count };
+    const eligibilityRes = await db.query(
+      `SELECT employee_count, operates_in_chile, industries, risk_factors
+        FROM eligibility_assessments WHERE organization_id = $1
+        ORDER BY created_at DESC LIMIT 1`,
+      [req.organization.id]
+    );
+    const eligibility = eligibilityRes.rows[0] || {};
+    const answers = {
+      ...req.body,
+      employee_count: eligibility.employee_count ?? null,
+      operates_in_chile: eligibility.operates_in_chile ?? null,
+      industries: eligibility.industries || [],
+      eligibility_risk_factors: eligibility.risk_factors || {},
+      confirmed_ropa_count,
+      draft_ropa_count
+    };
     const evaluation = evaluateQuestionnaire(answers);
     const domain = answers.domain || 'localhost:3000';
     
@@ -305,8 +330,8 @@ router.post('/evaluate', requireOrganizationPermission('compliance.write'), asyn
     };
 
     const result = await db.query(
-      `INSERT INTO audit_reports (url, score, severity_counts, findings, pages_analyzed, pages_skipped, action_plan, user_id, organization_id)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING id`,
+      `INSERT INTO audit_reports (url, score, severity_counts, findings, pages_analyzed, pages_skipped, action_plan, user_id, organization_id, questionnaire_answers)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) RETURNING id`,
       [
         domain,
         evaluation.scoreTotal,
@@ -316,7 +341,8 @@ router.post('/evaluate', requireOrganizationPermission('compliance.write'), asyn
         JSON.stringify([]),
         JSON.stringify(evaluation.actionPlan || []),
         req.user.id,
-        req.organization.id
+        req.organization.id,
+        JSON.stringify(answers)
       ]
     );
 

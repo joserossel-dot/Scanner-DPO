@@ -21,6 +21,8 @@ jobs:
       - run: npm ci
       - run: npm run build
       - run: npm test
+      - name: Verify deployment and migration contract
+        run: npm run test:operations
       - name: Install PostgreSQL test runtime
         run: sudo apt-get update && sudo apt-get install -y postgresql
       - name: Verify tenant migrations and RLS

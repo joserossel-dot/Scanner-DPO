@@ -1,5 +1,6 @@
 import { authFetch } from '../../../lib/authFetch';
 import { API_BASE, getApiError } from '../../../lib/api';
+import IntegratedDataFlowView from './IntegratedDataFlowView';
 import React, { useState, useEffect } from 'react';
 import { 
   FolderLock, 
@@ -435,6 +436,8 @@ export default function RopaInventoryView({ token, onRopaUpdated }: RopaInventor
           </button>
         </div>
       </header>
+
+      <IntegratedDataFlowView ropaRecords={ropaList} />
 
       {/* UX/UI Banner Informativo */}
       <div className="bg-indigo-950/20 border border-indigo-900/30 rounded-2xl p-4 md:p-5 flex items-start gap-4 text-left">

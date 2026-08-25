@@ -1,5 +1,6 @@
 import { authFetch } from '../../lib/authFetch';
 import { API_BASE } from '../../lib/api';
+import { complianceTrafficLight } from '../../lib/complianceTrafficLight';
 import React, { useState, useEffect } from 'react';
 import { 
   Shield, 
@@ -301,7 +302,7 @@ export default function AdminDashboardView({ token }: AdminDashboardViewProps) {
                         <tr key={l.id} className="hover:bg-slate-900/10">
                           <td style={{ fontWeight: 600, fontSize: '13px' }}>{l.domain}</td>
                           <td style={{ fontSize: '12.5px' }}>{l.email}</td>
-                          <td style={{ fontWeight: 700, fontSize: '12px', color: l.score_detected < 50 ? 'var(--color-danger)' : 'var(--color-warning)' }}>
+                          <td style={{ fontWeight: 700, fontSize: '12px', color: complianceTrafficLight(l.score_detected) === 'green' ? 'var(--color-success)' : complianceTrafficLight(l.score_detected) === 'red' ? 'var(--color-danger)' : 'var(--color-warning)' }}>
                             {l.score_detected}% Score
                           </td>
                           <td>

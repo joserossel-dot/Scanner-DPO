@@ -2,15 +2,18 @@ import { useCallback, useEffect, useState } from 'react';
 import { AlertTriangle, CalendarDays, CheckCircle, ClipboardList, Download, FileText, RefreshCw, ShieldCheck, UserCheck } from 'lucide-react';
 import { API_BASE, getApiError } from '../../../lib/api';
 import { authFetch } from '../../../lib/authFetch';
+import { complianceTrafficLight } from '../../../lib/complianceTrafficLight';
 
 interface Workspace {
   permissions: string[];
+  organization: any | null;
   engagement: any | null;
   eligibility: any | null;
   taskStats: Array<{ status: string; count: number }>;
   nextTasks: any[];
   periodicReviews: any[];
   contacts: any[];
+  readiness: any;
 }
 
 const riskOptions = [
@@ -34,26 +37,66 @@ export default function ServiceWorkspaceView() {
   const [riskFactors, setRiskFactors] = useState<Record<string, boolean>>({});
   const [documents, setDocuments] = useState<any[]>([]);
   const [arcoRequests, setArcoRequests] = useState<any[]>([]);
+  const [legalName, setLegalName] = useState('');
+  const [taxIdentifier, setTaxIdentifier] = useState('');
+  const [contactName, setContactName] = useState('');
+  const [contactEmail, setContactEmail] = useState('');
+  const [deliverables, setDeliverables] = useState<any[]>([]);
 
   const loadWorkspace = useCallback(async () => {
     setLoading(true);
     setError('');
     try {
-      const [workspaceResponse, documentsResponse, arcoResponse] = await Promise.all([
+      const [workspaceResponse, documentsResponse, arcoResponse, deliverablesResponse] = await Promise.all([
         authFetch(`${API_BASE}/api/service/workspace`),
         authFetch(`${API_BASE}/api/service/documents`),
-        authFetch(`${API_BASE}/api/service/arco`)
+        authFetch(`${API_BASE}/api/service/arco`),
+        authFetch(`${API_BASE}/api/service/deliverables/readiness`)
       ]);
       if (!workspaceResponse.ok) throw new Error(await getApiError(workspaceResponse, 'No fue posible cargar el expediente.'));
-      setWorkspace(await workspaceResponse.json());
+      const workspaceData = await workspaceResponse.json();
+      setWorkspace(workspaceData);
+      setLegalName(workspaceData.organization?.legal_name || workspaceData.organization?.name || '');
+      setTaxIdentifier(workspaceData.organization?.tax_identifier || '');
+      setEmployeeCount(workspaceData.eligibility?.employee_count ?? 20);
+      setIndustry(workspaceData.eligibility?.industries?.[0] || 'RETAIL');
+      setOperatesInChile(workspaceData.eligibility?.operates_in_chile ?? true);
+      setRiskFactors(workspaceData.eligibility?.risk_factors || {});
+      setContactName(workspaceData.contacts?.[0]?.full_name || '');
+      setContactEmail(workspaceData.contacts?.[0]?.email || '');
       setDocuments(documentsResponse.ok ? await documentsResponse.json() : []);
       setArcoRequests(arcoResponse.ok ? await arcoResponse.json() : []);
+      setDeliverables(deliverablesResponse.ok ? (await deliverablesResponse.json()).deliverables : []);
     } catch (cause: any) {
       setError(cause.message || 'No fue posible cargar el expediente.');
     } finally {
       setLoading(false);
     }
   }, []);
+
+  const saveOrganizationProfile = async () => {
+    setSaving(true);
+    setError('');
+    try {
+      const profileResponse = await authFetch(`${API_BASE}/api/service/organization`, {
+        method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ legal_name: legalName, tax_identifier: taxIdentifier })
+      });
+      if (!profileResponse.ok) throw new Error(await getApiError(profileResponse, 'No fue posible guardar la empresa.'));
+      if (!workspace?.contacts?.length && contactName && contactEmail) {
+        const contactResponse = await authFetch(`${API_BASE}/api/service/contacts`, {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ full_name: contactName, email: contactEmail, responsibility: 'CLIENT_REPRESENTATIVE', is_primary: true })
+        });
+        if (!contactResponse.ok) throw new Error(await getApiError(contactResponse, 'No fue posible guardar el responsable.'));
+      }
+      await loadWorkspace();
+    } catch (cause: any) {
+      setError(cause.message || 'No fue posible guardar la ficha empresarial.');
+    } finally {
+      setSaving(false);
+    }
+  };
 
   useEffect(() => { void loadWorkspace(); }, [loadWorkspace]);
 
@@ -188,10 +231,28 @@ export default function ServiceWorkspaceView() {
   if (loading) return <div className="card"><RefreshCw className="loader" size={18} /> Cargando expediente...</div>;
 
   const eligibility = workspace?.eligibility;
+  const eligibilityLabels: Record<string, string> = {
+    STANDARD: 'Paquete estándar',
+    STANDARD_WITH_ADDON: 'Paquete estándar con actividades adicionales',
+    SPECIAL_ASSESSMENT: 'Evaluación y cotización separada'
+  };
   const engagement = workspace?.engagement;
   const canActivate = engagement?.status === 'ACCEPTED' && eligibility?.professional_status === 'APPROVED';
   const canReview = workspace?.permissions?.includes('service.review') === true;
   const active = engagement && !['ELIGIBILITY_REVIEW', 'ACCEPTED', 'SPECIAL_ASSESSMENT', 'REJECTED', 'CLOSED'].includes(engagement.status);
+  const readinessChecks = [
+    ['Identidad legal confirmada', Boolean(workspace?.organization?.legal_name && workspace?.organization?.tax_identifier)],
+    ['Responsable principal designado', (workspace?.contacts?.length || 0) > 0],
+    ['Admisibilidad evaluada', Boolean(workspace?.eligibility)],
+    ['Sitio web escaneado', workspace?.readiness?.has_web_scan === true],
+    ['Cuestionario interno guardado', workspace?.readiness?.has_questionnaire === true],
+    ['Inventario RoPA confirmado', workspace?.readiness?.has_confirmed_ropa === true],
+    ['Matriz de riesgos iniciada', workspace?.readiness?.has_risk_assessment === true],
+    ['Controles evaluados', workspace?.readiness?.has_control_assessment === true],
+    ['Paquete documental aprobado', Number(workspace?.readiness?.approved_documents || 0) >= 4]
+  ] as Array<[string, boolean]>;
+  const readinessScore = Math.round((readinessChecks.filter(([, complete]) => complete).length / readinessChecks.length) * 100);
+  const readinessLight = complianceTrafficLight(readinessScore);
 
   return (
     <div className="text-left">
@@ -203,6 +264,26 @@ export default function ServiceWorkspaceView() {
       {error && <div className="card" style={{ borderColor: '#ef4444', color: '#fca5a5', marginBottom: 16 }}>{error}</div>}
 
       <div className="dashboard-grid">
+        <section className="card col-12">
+          <div style={{ display: 'flex', justifyContent: 'space-between', gap: 16, alignItems: 'center', flexWrap: 'wrap' }}>
+            <div><h3 style={{ margin: 0 }}>Cobertura verificable del expediente</h3><p style={{ color: 'var(--text-secondary)', marginBottom: 0 }}>Mide antecedentes y evidencias disponibles. No equivale por sí solo a una conclusión jurídica de cumplimiento.</p></div>
+            <div style={{ fontSize: 30, fontWeight: 900, color: readinessLight === 'green' ? 'var(--color-success)' : readinessLight === 'red' ? 'var(--color-danger)' : 'var(--color-warning)' }}>{readinessScore}%</div>
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(230px, 1fr))', gap: 8, marginTop: 16 }}>
+            {readinessChecks.map(([label, complete]) => <div key={label} style={{ padding: 10, borderRadius: 8, border: `1px solid ${complete ? 'rgba(16,185,129,.35)' : 'rgba(245,158,11,.35)'}`, color: complete ? '#6ee7b7' : '#fcd34d' }}>{complete ? 'Completo' : 'Pendiente'}: {label}</div>)}
+          </div>
+        </section>
+        <section className="card col-12">
+          <h3>0. Ficha empresarial reutilizable</h3>
+          <p style={{ color: 'var(--text-secondary)' }}>Estos datos alimentan el expediente, responsables y documentos generados. Use información confirmada antes de aprobar entregables.</p>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 16 }}>
+            <label>Razón social<input className="form-input" value={legalName} onChange={event => setLegalName(event.target.value)} /></label>
+            <label>RUT u otro identificador<input className="form-input" value={taxIdentifier} onChange={event => setTaxIdentifier(event.target.value)} placeholder="Ej. 76.123.456-7" /></label>
+            <label>Responsable principal<input className="form-input" value={contactName} disabled={(workspace?.contacts?.length || 0) > 0} onChange={event => setContactName(event.target.value)} /></label>
+            <label>Correo del responsable<input className="form-input" type="email" value={contactEmail} disabled={(workspace?.contacts?.length || 0) > 0} onChange={event => setContactEmail(event.target.value)} /></label>
+          </div>
+          <button className="btn-save" disabled={saving || !legalName} onClick={saveOrganizationProfile} style={{ marginTop: 16 }}>Guardar ficha empresarial</button>
+        </section>
         <section className="card col-12">
           <div style={{ display: 'flex', justifyContent: 'space-between', gap: 16, flexWrap: 'wrap' }}>
             <div>
@@ -243,7 +324,8 @@ export default function ServiceWorkspaceView() {
             <button className="btn-save" disabled={saving} onClick={submitEligibility} style={{ marginTop: 18 }}>Evaluar admisibilidad</button>
 
             {eligibility && <div style={{ marginTop: 20, padding: 16, border: '1px solid var(--border-color)', borderRadius: 8 }}>
-              <h4 style={{ marginTop: 0 }}>Resultado: {eligibility.decision}</h4>
+              <h4 style={{ marginTop: 0 }}>Alcance estimado: {eligibilityLabels[eligibility.decision] || eligibility.decision}</h4>
+              <p style={{ color: 'var(--text-secondary)' }}>Este indicador no rechaza a la organización. Define si el paquete base es suficiente o si deben evaluarse desarrollos, integraciones o asesorías adicionales.</p>
               <ul>{(eligibility.reasons || []).map((reason: string) => <li key={reason}>{reason}</li>)}</ul>
               <p>Revisión profesional: <strong>{eligibility.professional_status}</strong></p>
               {eligibility.professional_status === 'PENDING' && canReview && <div style={{ display: 'flex', gap: 10 }}>
@@ -273,9 +355,15 @@ export default function ServiceWorkspaceView() {
             <h3><FileText size={17} /> Paquete documental</h3>
             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 16 }}>
               {[
-                ['EMPLOYEE_ANNEX', 'Anexo laboral'], ['RETENTION_POLICY', 'Política de retención'],
+                ['PRIVACY_NOTICE', 'Política y aviso de privacidad'], ['DATA_PROTECTION_POLICY', 'Política interna'],
+                ['EMPLOYEE_ANNEX', 'Anexo laboral'], ['PROCESSOR_ANNEX', 'Anexo de proveedores'], ['RETENTION_POLICY', 'Política de retención'],
                 ['ARCO_PROCEDURE', 'Procedimiento ARCO+'], ['INCIDENT_PLAYBOOK', 'Playbook de incidentes']
               ].map(([type, label]) => <button key={type} className="btn-action" disabled={saving} onClick={() => generateDocument(type)}>{label}</button>)}
+            </div>
+            <div style={{ display: 'grid', gap: 8, marginBottom: 18 }}>
+              {deliverables.map(item => <div key={item.code} style={{ padding: 10, border: '1px solid var(--border-color)', borderRadius: 8 }}>
+                <strong>{item.name}</strong><div style={{ fontSize: 12, color: item.status === 'READY_FOR_APPROVAL' ? '#6ee7b7' : '#fcd34d' }}>{item.status === 'READY_FOR_APPROVAL' ? 'Listo para revisión y aprobación' : item.status === 'DRAFT_REVIEW_REQUIRED' ? 'Requiere validar antecedentes preliminares' : `Bloqueado por evidencia faltante: ${item.missingEvidence.join(', ')}`}</div>
+              </div>)}
             </div>
             <div style={{ display: 'grid', gap: 10 }}>
               {documents.map(document => <div key={document.id} style={{ padding: 12, border: '1px solid var(--border-color)', borderRadius: 8 }}>

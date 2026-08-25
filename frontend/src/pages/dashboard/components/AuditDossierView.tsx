@@ -1,5 +1,6 @@
 import { authFetch } from '../../../lib/authFetch';
 import { API_BASE } from '../../../lib/api';
+import { complianceTrafficLight } from '../../../lib/complianceTrafficLight';
 import React, { useState, useEffect } from 'react';
 import { 
   FileText, 
@@ -334,7 +335,7 @@ export default function AuditDossierView({ token }: AuditDossierViewProps) {
             {/* Score circle gauge */}
             <div className="md:col-span-4 flex flex-col items-center justify-center p-4 bg-slate-50 border border-slate-150 rounded-xl">
               <div className="relative flex items-center justify-center">
-                <span className="text-3xl font-black text-slate-900 font-mono">{data.latest_score}%</span>
+                <span className={`text-3xl font-black font-mono ${complianceTrafficLight(data.latest_score) === 'green' ? 'text-emerald-700' : complianceTrafficLight(data.latest_score) === 'red' ? 'text-rose-700' : 'text-amber-600'}`}>{data.latest_score}%</span>
               </div>
               <div className="text-[10px] font-extrabold uppercase text-slate-500 mt-2">Índice Global de Apego</div>
             </div>

@@ -17,6 +17,8 @@
     "build": "npm run build -w backend && npm run build:widget && npm run build:frontend",
     "build:all": "npm run build",
     "test": "npm run test --workspaces --if-present",
+    "test:operations": "node --test scripts/operational-contract.test.mjs",
+    "verify:deployment": "node scripts/verify-deployment.mjs",
     "start": "npm run start -w backend"
   },
   "dependencies": {

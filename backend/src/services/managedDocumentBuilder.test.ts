@@ -11,13 +11,19 @@ const context = {
 };
 
 test('builds every managed document as a reviewable HTML draft', () => {
-  for (const type of ['EMPLOYEE_ANNEX', 'RETENTION_POLICY', 'ARCO_PROCEDURE', 'INCIDENT_PLAYBOOK'] as const) {
+  for (const type of ['EMPLOYEE_ANNEX', 'PROCESSOR_ANNEX', 'PRIVACY_NOTICE', 'DATA_PROTECTION_POLICY', 'RETENTION_POLICY', 'ARCO_PROCEDURE', 'INCIDENT_PLAYBOOK'] as const) {
     const html = buildManagedDocument(type, context);
     assert.match(html, new RegExp(documentTitle(type)));
     assert.match(html, /Borrador sujeto a revisión profesional/);
     assert.doesNotMatch(html, /Empresa <Prueba>/);
     assert.match(html, /Empresa &lt;Prueba&gt;/);
   }
+});
+
+test('privacy notice does not silently invent missing legal evidence', () => {
+  const html = buildManagedDocument('PRIVACY_NOTICE', context);
+  assert.match(html, /Finalidad pendiente/);
+  assert.match(html, /Pendiente de revisión/);
 });
 
 test('retention policy is driven by confirmed process data', () => {

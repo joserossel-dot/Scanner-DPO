@@ -12,7 +12,7 @@ const standardInput = {
 test('accepts a standard SME profile', () => {
   const result = evaluateEligibility(standardInput);
   assert.equal(result.decision, 'STANDARD');
-  assert.equal(result.rulesVersion, 'SME_STANDARD_V1');
+  assert.equal(result.rulesVersion, 'SME_SCOPE_V2');
 });
 
 test('routes excluded industries and complex processing to special assessment', () => {
@@ -25,9 +25,10 @@ test('routes excluded industries and complex processing to special assessment', 
   assert.equal(result.reasons.length, 2);
 });
 
-test('rejects profiles outside the basic market boundary', () => {
-  assert.equal(evaluateEligibility({ ...standardInput, employeeCount: 251 }).decision, 'NOT_ELIGIBLE');
-  assert.equal(evaluateEligibility({ ...standardInput, operatesInChile: false }).decision, 'NOT_ELIGIBLE');
+test('routes profiles outside the base package to separately scoped assessment', () => {
+  assert.equal(evaluateEligibility({ ...standardInput, employeeCount: 150 }).decision, 'STANDARD_WITH_ADDON');
+  assert.equal(evaluateEligibility({ ...standardInput, employeeCount: 251 }).decision, 'SPECIAL_ASSESSMENT');
+  assert.equal(evaluateEligibility({ ...standardInput, operatesInChile: false }).decision, 'SPECIAL_ASSESSMENT');
 });
 
 test('rejects malformed employee counts', () => {
