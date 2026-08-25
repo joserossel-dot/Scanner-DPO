@@ -9,7 +9,8 @@ router.use(authenticateToken, resolveActiveOrganization);
 const entityConfig = {
   units: { table: 'organization_units', required: ['name'], fields: ['name', 'description', 'parent_unit_id', 'owner_contact_id'] },
   systems: { table: 'processing_systems', required: ['name'], fields: ['name', 'system_type', 'owner_contact_id', 'provider_name', 'hosting_countries', 'security_controls', 'description', 'status'] },
-  parties: { table: 'external_parties', required: ['legal_name'], fields: ['legal_name', 'tax_identifier', 'party_roles', 'countries', 'contact_name', 'contact_email', 'contract_reference', 'data_processing_terms_status'] }
+  parties: { table: 'external_parties', required: ['legal_name'], fields: ['legal_name', 'tax_identifier', 'party_roles', 'countries', 'contact_name', 'contact_email', 'contract_reference', 'data_processing_terms_status'] },
+  contacts: { table: 'organization_contacts', required: ['full_name', 'email', 'responsibility'], fields: ['full_name', 'email', 'job_title', 'responsibility', 'is_primary', 'active'] }
 } as const;
 
 router.get('/catalog', requireOrganizationPermission('compliance.read'), async (req: any, res) => {
@@ -29,7 +30,7 @@ router.get('/catalog', requireOrganizationPermission('compliance.read'), async (
   }
 });
 
-router.post('/:entity(units|systems|parties)', requireOrganizationPermission('compliance.write'), async (req: any, res) => {
+router.post('/:entity(units|systems|parties|contacts)', requireOrganizationPermission('compliance.write'), async (req: any, res) => {
   const config = entityConfig[req.params.entity as keyof typeof entityConfig];
   const missing = config.required.filter(field => !req.body[field]);
   if (missing.length) return res.status(400).json({ error: `Faltan campos requeridos: ${missing.join(', ')}.` });

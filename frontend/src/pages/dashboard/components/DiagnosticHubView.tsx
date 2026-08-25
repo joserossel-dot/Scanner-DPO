@@ -38,6 +38,7 @@ interface DiagnosticHubViewProps {
 
 export default function DiagnosticHubView({ token, scanUrl, onEvaluationSuccess, setActiveTab }: DiagnosticHubViewProps) {
   const [drafts, setDrafts] = useState<RopaRecord[]>([]);
+  const [hasConfirmedInventory, setHasConfirmedInventory] = useState(false);
   const [isLoadingDrafts, setIsLoadingDrafts] = useState(false);
   const [evaluationData, setEvaluationData] = useState<any>(null);
   const [isTransitioning, setIsTransitioning] = useState(false);
@@ -65,6 +66,7 @@ export default function DiagnosticHubView({ token, scanUrl, onEvaluationSuccess,
       if (response.ok) {
         const data: RopaRecord[] = await response.json();
         setDrafts(data.filter(r => r.status === 'draft'));
+        setHasConfirmedInventory(data.some(r => r.status === 'confirmed'));
       }
     } catch (e) {
       console.error('Error fetching drafts in Hub:', e);
@@ -148,6 +150,7 @@ export default function DiagnosticHubView({ token, scanUrl, onEvaluationSuccess,
       });
       if (response.ok) {
         setDrafts(prev => prev.filter(d => d.id !== editingRecord.id));
+        setHasConfirmedInventory(true);
         setIsModalOpen(false);
         setEditingRecord(null);
       } else {
@@ -273,9 +276,9 @@ export default function DiagnosticHubView({ token, scanUrl, onEvaluationSuccess,
                   <HelpCircle size={18} />
                 </div>
                 <div>
-                  <h4 className="text-xs font-bold text-slate-350">Sin borradores pendientes</h4>
+                  <h4 className="text-xs font-bold text-slate-350">{hasConfirmedInventory ? 'Inventario confirmado' : 'Todavía no hay actividades completas'}</h4>
                   <p className="text-[10px] text-slate-500 mt-1 leading-normal max-w-xs mx-auto">
-                    Todos los borradores han sido procesados. Puede proceder a revisar su Diagnóstico haciendo clic abajo.
+                    {hasConfirmedInventory ? 'Puede revisar el diagnóstico con las actividades ya confirmadas.' : 'Complete al menos una actividad, cree su borrador y confírmelo antes de avanzar.'}
                   </p>
                 </div>
               </div>
@@ -338,7 +341,7 @@ export default function DiagnosticHubView({ token, scanUrl, onEvaluationSuccess,
           <div className="pt-4 border-t border-slate-800/80 mt-6 bg-slate-900/20 sticky bottom-0 text-left">
             <button
               onClick={handleTransitionToResults}
-              disabled={isTransitioning}
+              disabled={isTransitioning || drafts.length > 0 || !hasConfirmedInventory}
               className="w-full py-3 bg-indigo-650 hover:bg-indigo-600 disabled:bg-slate-800 text-white disabled:text-slate-500 font-bold text-xs rounded-xl transition-all shadow-lg flex items-center justify-center gap-2"
             >
               {isTransitioning ? (
