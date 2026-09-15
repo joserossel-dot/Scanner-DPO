@@ -1,8 +1,8 @@
+import 'dotenv/config';
 import express from 'express';
 import cors from 'cors';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import dotenv from 'dotenv';
 import { initDb } from './database/db.js';
 import apiRouter from './routes/api.js';
 import transfersRouter from './routes/transfers.js';
@@ -14,18 +14,40 @@ import dpoSuiteRouter from './routes/dpoSuite.js';
 import ropaRouter from './routes/ropa.js';
 import aiRouter from './routes/ai.js';
 import adminRouter from './routes/admin.js';
-// Load environment variables
-dotenv.config();
-if (!process.env.JWT_SECRET) {
-    console.error('FATAL ERROR: JWT_SECRET environment variable is missing.');
+import healthRouter from './routes/health.js';
+import serviceWorkspaceRouter from './routes/serviceWorkspace.js';
+import dataInventoryRouter from './routes/dataInventory.js';
+import discoveryRouter from './routes/discovery.js';
+if (!process.env.JWT_SECRET || process.env.JWT_SECRET.length < 32) {
+    console.error('FATAL ERROR: JWT_SECRET must contain at least 32 characters.');
     process.exit(1);
 }
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
 const PORT = process.env.PORT || 3000;
 app.use(express.json());
-app.use(cors());
+const configuredOrigins = [process.env.DASHBOARD_ORIGIN, ...(process.env.CORS_ALLOWED_ORIGINS || '').split(',')]
+    .map(origin => origin?.trim().replace(/\/$/, ''))
+    .filter((origin) => Boolean(origin));
+if (process.env.NODE_ENV !== 'production') {
+    configuredOrigins.push('http://localhost:5173', 'http://localhost:3000');
+}
+const publicCorsPaths = [
+    /^\/sdk(?:\/|$)/,
+    /^\/widget\.js$/,
+    /^\/embed\/cmp\.js$/,
+    /^\/api\/(?:remediation\/consent-log|arco|config\/|free-scan|consent\/collect|consent\/form-collect|training\/materials\/)/
+];
+app.use(cors((req, callback) => {
+    const origin = req.header('Origin');
+    const isPublicPath = publicCorsPaths.some(pattern => pattern.test(req.path));
+    if (!origin || isPublicPath || configuredOrigins.includes(origin.replace(/\/$/, ''))) {
+        return callback(null, { origin: origin || false, credentials: !isPublicPath });
+    }
+    return callback(new Error('Origen no permitido por CORS'));
+}));
 // API Routes
+app.use('/health', healthRouter);
 app.use('/api/auth', authRouter);
 app.use('/api/admin', adminRouter);
 app.use('/api', apiRouter);
@@ -36,14 +58,17 @@ app.use('/api/remediation', remediationRouter);
 app.use('/api/dpo', dpoSuiteRouter);
 app.use('/api/ropa', ropaRouter);
 app.use('/api/ai', aiRouter);
+app.use('/api/service', serviceWorkspaceRouter);
+app.use('/api/data-inventory', dataInventoryRouter);
+app.use('/api/discovery', discoveryRouter);
 // Serve the compiled Frontend Dashboard from the frontend workspace
 const frontendDistPath = path.resolve(__dirname, '../../frontend/dist');
 app.use(express.static(frontendDistPath));
 // Serve the compiled Widget from the widget workspace (build target)
 const widgetDistPath = path.resolve(__dirname, '../../widget/dist');
-app.use('/sdk', cors(), express.static(widgetDistPath));
+app.use('/sdk', express.static(widgetDistPath));
 // Fallback mapping: also serve direct from /widget.js for simplicity of embedding
-app.get('/widget.js', cors(), (req, res) => {
+app.get('/widget.js', (req, res) => {
     res.sendFile(path.join(widgetDistPath, 'widget.js'), (err) => {
         if (err) {
             res.status(404).send('Widget script not found. Build the widget workspace first using: npm run build -w widget');
@@ -51,7 +76,7 @@ app.get('/widget.js', cors(), (req, res) => {
     });
 });
 // CMP Multi-tenant Embed Route (P3)
-app.get('/embed/cmp.js', cors(), (req, res) => {
+app.get('/embed/cmp.js', (req, res) => {
     res.sendFile(path.join(widgetDistPath, 'widget.js'), (err) => {
         if (err) {
             res.status(404).send('CMP widget script not found. Build the widget workspace first using: npm run build -w widget');
