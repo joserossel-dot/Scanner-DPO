@@ -101,7 +101,7 @@ router.post('/scan', authenticateToken, resolveActiveOrganization, requireOrgani
         // Synchronously generate ROPA drafts from scan findings to prevent race conditions (P1-B)
         let ropaDraftsGenerated = [];
         try {
-            await analyzeScanResults(req.user.id, report);
+            await analyzeScanResults(req.user.id, req.organization.id, report);
             const draftsRes = await db.query("SELECT * FROM ropa_inventory WHERE organization_id = $1 AND status = 'draft' ORDER BY created_at DESC", [req.organization.id]);
             ropaDraftsGenerated = draftsRes.rows;
         }
