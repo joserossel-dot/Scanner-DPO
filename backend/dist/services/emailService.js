@@ -86,6 +86,34 @@ export async function sendImplementationRequestAlert(userId, userEmail, companyN
         console.log(`[EmailService] [SIMULACIÓN] Alerta de ayuda para implementación para ${companyName} (User ID: ${userId}, Finding ID: ${findingId}, Esfuerzo: ${effort})`);
     }
 }
+export async function sendVerificationEmail(toEmail, verificationToken) {
+    const verifyUrl = `${process.env.BACKEND_URL || 'http://localhost:3000'}/api/auth/verify-email?token=${verificationToken}`;
+    const subject = 'Verifica tu correo — Scanner DPO';
+    const html = `
+    <h1>Confirma tu correo electrónico</h1>
+    <p>Gracias por registrarte en Scanner DPO. Antes de poder acceder a tu cuenta, necesitamos confirmar que este correo te pertenece.</p>
+    <p><a href="${verifyUrl}">Haz clic aquí para verificar tu correo</a></p>
+    <p>Este enlace expira en 24 horas. Si no creaste esta cuenta, puedes ignorar este correo de forma segura.</p>
+  `;
+    if (resend) {
+        try {
+            await resend.emails.send({
+                from: 'Scanner DPO <noreply@privacytech.cl>',
+                to: toEmail,
+                subject,
+                html
+            });
+            console.log(`[EmailService] Correo de verificación enviado con Resend para ${toEmail}`);
+        }
+        catch (err) {
+            console.error(`[EmailService] Error enviando correo de verificación con Resend:`, err.message);
+            throw err;
+        }
+    }
+    else {
+        console.log(`[EmailService] [SIMULACIÓN] Link de verificación para ${toEmail}: ${verifyUrl}`);
+    }
+}
 export async function sendPasswordResetEmail(toEmail, resetToken) {
     const resetUrl = `${process.env.FRONTEND_URL || 'http://localhost:5173'}/reset-password/${resetToken}`;
     const subject = 'Recupera tu contraseña — Scanner DPO';

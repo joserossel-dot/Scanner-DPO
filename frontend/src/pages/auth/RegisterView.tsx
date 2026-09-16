@@ -18,6 +18,7 @@ export default function RegisterView({ onRegisterSuccess }: RegisterViewProps) {
   const [companyName, setCompanyName] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
+  const [verificationSent, setVerificationSent] = useState(false);
 
   // Consent states
   const [privacyConsent, setPrivacyConsent] = useState(false);
@@ -53,8 +54,12 @@ export default function RegisterView({ onRegisterSuccess }: RegisterViewProps) {
       const data = await response.json();
 
       if (response.ok && data.success) {
-        onRegisterSuccess(data.token, data.user);
-        navigate('/dashboard', { state: location.state });
+        if (data.requiresVerification) {
+          setVerificationSent(true);
+        } else {
+          onRegisterSuccess(data.token, data.user);
+          navigate('/dashboard', { state: location.state });
+        }
       } else {
         setErrorMsg(data.error || 'Error al crear la cuenta de la organización.');
       }
@@ -65,6 +70,24 @@ export default function RegisterView({ onRegisterSuccess }: RegisterViewProps) {
       setIsLoading(false);
     }
   };
+
+  if (verificationSent) {
+    return (
+      <div className="min-h-screen bg-slate-950 flex flex-col justify-center items-center py-12 px-4 text-center select-none">
+        <div className="p-3 bg-indigo-950 text-indigo-400 border border-indigo-850 rounded-2xl shadow-xl shadow-indigo-500/10 mb-6">
+          <Mail size={40} />
+        </div>
+        <h2 className="text-3xl font-extrabold text-white tracking-tight mb-2">Revisa tu correo</h2>
+        <p className="text-sm text-slate-400 max-w-sm">
+          Te enviamos un enlace de verificación a <span className="text-slate-200 font-semibold">{email}</span>.
+          Debes confirmarlo antes de poder iniciar sesión.
+        </p>
+        <Link to="/login" className="mt-6 font-bold text-indigo-400 hover:text-indigo-300 transition-colors text-sm">
+          Ir a Iniciar Sesión
+        </Link>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-slate-950 flex flex-col justify-center py-12 sm:px-6 lg:px-8 relative overflow-hidden select-none">
