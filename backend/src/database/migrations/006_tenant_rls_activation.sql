@@ -1,12 +1,21 @@
--- REVIEW BEFORE EXECUTION. This file is an example and is not run automatically.
--- The application must run each tenant transaction as follows:
+-- Activa Row-Level Security sobre las tablas de tenant. Las políticas ya
+-- fueron instaladas por 005_organizations_and_tenant_isolation.sql; esta
+-- migración solo activa el interruptor.
+--
+-- IMPORTANTE: esto es inofensivo mientras la app siga conectándose a
+-- Postgres con un rol que sea dueño ("owner") de las tablas — Postgres deja
+-- pasar libremente al dueño de una tabla, ignore RLS o no. Hoy (confirmado
+-- contra producción) la app se conecta como neondb_owner, que es dueño de
+-- las 16 tablas de tenant. RLS no protege realmente nada hasta que la app
+-- se conecte con un rol de aplicación restringido y no-dueño (ver
+-- scripts/provision-app-role.sql) y las transacciones seteen
+-- app.organization_id (ver backend/src/tenancy/organizationTransaction.ts).
+--
+-- La app debe correr cada transacción de tenant así:
 --   BEGIN;
 --   SET LOCAL app.organization_id = '00000000-0000-0000-0000-000000000000';
---   ... tenant queries ...
+--   ... queries de tenant ...
 --   COMMIT;
---
--- Use a non-owner application DB role. PostgreSQL table owners bypass RLS unless
--- FORCE ROW LEVEL SECURITY is enabled. Keep a separate administrative/migration role.
 
 ALTER TABLE site_configs ENABLE ROW LEVEL SECURITY;
 ALTER TABLE audit_reports ENABLE ROW LEVEL SECURITY;

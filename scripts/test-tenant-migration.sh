@@ -4,7 +4,7 @@ set -euo pipefail
 repo_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 baseline="$repo_dir/backend/src/database/migrations/001_legacy_baseline.sql"
 migration="$repo_dir/backend/src/database/migrations/005_organizations_and_tenant_isolation.sql"
-activation="$repo_dir/backend/src/database/migrations/006_tenant_rls_activation.sql.example"
+activation="$repo_dir/backend/src/database/migrations/006_tenant_rls_activation.sql"
 cluster_dir="$(mktemp -d "${TMPDIR:-/tmp}/scanner-dpo-pg.XXXXXX")"
 port="${SCANNER_DPO_TEST_PG_PORT:-55432}"
 
