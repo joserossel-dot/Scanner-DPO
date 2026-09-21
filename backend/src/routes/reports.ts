@@ -349,7 +349,7 @@ router.post('/evaluate', requireOrganizationPermission('compliance.write'), asyn
     // Asynchronously generate ROPA drafts from questionnaire answers (isolated try-catch for resilience)
     let ropaDraftsGenerated: any[] = [];
     try {
-        await analyzeQuestionnaireAnswers(req.user.id, answers);
+        await analyzeQuestionnaireAnswers(req.user.id, req.organization.id, answers);
         const draftsRes = await db.query(
           "SELECT * FROM ropa_inventory WHERE organization_id = $1 AND status = 'draft' ORDER BY created_at DESC",
           [req.organization.id]

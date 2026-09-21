@@ -1,43 +1,24 @@
 import { Router } from 'express';
-import cors from 'cors';
+import crypto from 'crypto';
 import { getDb } from '../database/db.js';
 import { authenticateToken } from '../middlewares/auth.js';
+import { resolveActiveOrganization, requireOrganizationPermission } from '../tenancy/organizationContext.js';
 const router = Router();
-// CORS setup matching dashboard origins
-const adminCors = cors((req, callback) => {
-    const origin = req.header('Origin');
-    const host = req.header('Host');
-    const allowedOrigins = [
-        process.env.DASHBOARD_ORIGIN,
-        'http://localhost:5173',
-        'http://localhost:3000',
-        host
-    ].filter(Boolean);
-    const isAllowed = !origin || allowedOrigins.some(allowed => origin === allowed ||
-        origin === `https://${allowed}` ||
-        origin === `http://${allowed}`);
-    let corsOptions;
-    if (isAllowed || process.env.NODE_ENV !== 'production') {
-        corsOptions = { origin: true, credentials: true };
-    }
-    else {
-        corsOptions = { origin: false };
-    }
-    callback(null, corsOptions);
-});
 // Protect all routes under this router
 router.use(authenticateToken);
+router.use(resolveActiveOrganization);
 // GET /api/transfers - List all registered transfers for user
-router.get('/', adminCors, async (req, res) => {
+router.get('/', requireOrganizationPermission('compliance.read'), async (req, res) => {
     const db = getDb();
     try {
-        const result = await db.query('SELECT * FROM international_transfers WHERE user_id = $1 ORDER BY created_at DESC', [req.user.id]);
+        const result = await db.query('SELECT * FROM international_transfers WHERE organization_id = $1 ORDER BY created_at DESC', [req.organization.id]);
         const mapped = result.rows.map((row) => ({
             ...row,
             provider_name: row.vendor_name,
             country: row.destination_country,
             has_scc: row.has_signed_scc === true,
-            has_dpa: row.signature_status === 'SIGNED' || row.has_signed_scc === true
+            has_dpa: row.signature_status === 'SIGNED' || row.has_signed_scc === true,
+            has_verified_evidence: !!row.signed_document_id
         }));
         res.json(mapped);
     }
@@ -47,8 +28,8 @@ router.get('/', adminCors, async (req, res) => {
     }
 });
 // POST /api/transfers - Register a new transfer flow for user
-router.post('/', adminCors, async (req, res) => {
-    const { domain, vendor_name, provider_name, destination_country, country, data_categories, transfer_mechanism, has_signed_scc, has_scc, scc_document_url, signature_status, has_dpa } = req.body;
+router.post('/', requireOrganizationPermission('compliance.write'), async (req, res) => {
+    const { domain, vendor_name, provider_name, destination_country, country, data_categories, transfer_mechanism, has_signed_scc, has_scc, scc_document_url, signature_status, has_dpa, ropa_activity_id, purpose, legal_basis, safeguards, adequacy_status, assessment_source, assessment_version, review_due_at } = req.body;
     const vName = vendor_name || provider_name;
     const destCountry = destination_country || country;
     const hasScc = has_signed_scc !== undefined ? has_signed_scc === true : (has_scc !== undefined ? has_scc === true : false);
@@ -57,10 +38,35 @@ router.post('/', adminCors, async (req, res) => {
         return res.status(400).json({ error: 'Campos requeridos faltantes o con formato inválido.' });
     }
     const db = getDb();
+    // Evidencia de integridad: declarar la transferencia ya como firmada exige
+    // el ID de un documento SCC/DPA generado por la plataforma para esta organización.
+    const isDeclaringSigned = hasScc === true || sigStatus === 'SIGNED';
+    let verifiedDocumentId = null;
+    if (isDeclaringSigned) {
+        const { document_download_id } = req.body;
+        if (!document_download_id) {
+            return res.status(400).json({
+                error: 'Para registrar esta transferencia ya como firmada debes generar primero el documento SCC/DPA oficial (POST /api/transfers/generate-scc) y enviar el document_download_id resultante.'
+            });
+        }
+        const docCheck = await db.query(`SELECT id FROM document_downloads WHERE id = $1 AND organization_id = $2 AND document_type IN ('scc', 'dpa')`, [document_download_id, req.organization.id]);
+        if (docCheck.rowCount === 0) {
+            return res.status(400).json({ error: 'El document_download_id proporcionado no es válido para esta organización.' });
+        }
+        verifiedDocumentId = document_download_id;
+    }
     try {
+        if (ropa_activity_id) {
+            const activity = await db.query('SELECT 1 FROM ropa_inventory WHERE id = $1 AND organization_id = $2', [ropa_activity_id, req.organization.id]);
+            if (!activity.rowCount)
+                return res.status(400).json({ error: 'La actividad RoPA vinculada no pertenece a la organización.' });
+        }
         const result = await db.query(`INSERT INTO international_transfers 
-       (domain, vendor_name, destination_country, data_categories, transfer_mechanism, has_signed_scc, scc_document_url, signature_status, user_id)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+       (domain, vendor_name, destination_country, data_categories, transfer_mechanism, has_signed_scc,
+        scc_document_url, signature_status, user_id, organization_id, ropa_activity_id, purpose,
+        legal_basis, safeguards, adequacy_status, assessment_source, assessment_version, review_due_at,
+        signed_document_id)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)
        RETURNING *`, [
             domain,
             vName,
@@ -70,7 +76,17 @@ router.post('/', adminCors, async (req, res) => {
             hasScc,
             scc_document_url || null,
             sigStatus,
-            req.user.id
+            req.user.id,
+            req.organization.id,
+            ropa_activity_id || null,
+            purpose || null,
+            legal_basis || null,
+            JSON.stringify(Array.isArray(safeguards) ? safeguards.map(String).filter(Boolean) : []),
+            adequacy_status || 'PENDING_REVIEW',
+            assessment_source || null,
+            assessment_version || null,
+            review_due_at || null,
+            verifiedDocumentId
         ]);
         const row = result.rows[0];
         const mapped = {
@@ -78,7 +94,8 @@ router.post('/', adminCors, async (req, res) => {
             provider_name: row.vendor_name,
             country: row.destination_country,
             has_scc: row.has_signed_scc === true,
-            has_dpa: row.signature_status === 'SIGNED' || row.has_signed_scc === true
+            has_dpa: row.signature_status === 'SIGNED' || row.has_signed_scc === true,
+            has_verified_evidence: !!row.signed_document_id
         };
         res.status(201).json(mapped);
     }
@@ -88,19 +105,41 @@ router.post('/', adminCors, async (req, res) => {
     }
 });
 // PUT /api/transfers/:id - Update transfer mechanism or documents
-router.put('/:id', adminCors, async (req, res) => {
+router.put('/:id', requireOrganizationPermission('compliance.write'), async (req, res) => {
     const { id } = req.params;
-    const { vendor_name, provider_name, destination_country, country, data_categories, transfer_mechanism, has_signed_scc, has_scc, scc_document_url, signature_status, has_dpa } = req.body;
+    const { vendor_name, provider_name, destination_country, country, data_categories, transfer_mechanism, has_signed_scc, has_scc, scc_document_url, signature_status, has_dpa, ropa_activity_id, purpose, legal_basis, safeguards, adequacy_status, assessment_source, assessment_version, review_due_at } = req.body;
     const vName = vendor_name || provider_name;
     const destCountry = destination_country || country;
     const hasScc = has_signed_scc !== undefined ? has_signed_scc === true : (has_scc !== undefined ? has_scc === true : undefined);
     const sigStatus = signature_status || (has_dpa === true ? 'SIGNED' : (has_dpa === false ? 'PENDING' : undefined));
     const db = getDb();
+    const isDeclaringSigned = hasScc === true || sigStatus === 'SIGNED';
+    let verifiedDocumentId = undefined; // undefined = no tocar la columna existente
+    if (isDeclaringSigned) {
+        const { document_download_id } = req.body;
+        if (!document_download_id) {
+            return res.status(400).json({
+                error: 'Para marcar esta transferencia como firmada debes generar primero el documento SCC/DPA oficial desde la plataforma (POST /api/transfers/generate-scc) y enviar el document_download_id resultante.'
+            });
+        }
+        const docCheck = await db.query(`SELECT id FROM document_downloads WHERE id = $1 AND organization_id = $2 AND document_type IN ('scc', 'dpa')`, [document_download_id, req.organization.id]);
+        if (docCheck.rowCount === 0) {
+            return res.status(400).json({
+                error: 'El document_download_id proporcionado no corresponde a un documento SCC/DPA generado por la plataforma para esta organización. No se puede verificar la firma.'
+            });
+        }
+        verifiedDocumentId = document_download_id;
+    }
     try {
         // Check if transfer exists and belongs to the user
-        const check = await db.query('SELECT 1 FROM international_transfers WHERE id = $1 AND user_id = $2', [id, req.user.id]);
+        const check = await db.query('SELECT 1 FROM international_transfers WHERE id = $1 AND organization_id = $2', [id, req.organization.id]);
         if (check.rowCount === 0) {
             return res.status(404).json({ error: 'Registro de transferencia no encontrado o sin permisos.' });
+        }
+        if (ropa_activity_id) {
+            const activity = await db.query('SELECT 1 FROM ropa_inventory WHERE id = $1 AND organization_id = $2', [ropa_activity_id, req.organization.id]);
+            if (!activity.rowCount)
+                return res.status(400).json({ error: 'La actividad RoPA vinculada no pertenece a la organización.' });
         }
         const result = await db.query(`UPDATE international_transfers
        SET vendor_name = COALESCE($2, vendor_name),
@@ -110,8 +149,18 @@ router.put('/:id', adminCors, async (req, res) => {
            has_signed_scc = COALESCE($6, has_signed_scc),
            scc_document_url = COALESCE($7, scc_document_url),
            signature_status = COALESCE($8, signature_status),
+           ropa_activity_id = COALESCE($9, ropa_activity_id),
+           purpose = COALESCE($10, purpose),
+           legal_basis = COALESCE($11, legal_basis),
+           safeguards = COALESCE($12, safeguards),
+           adequacy_status = COALESCE($13, adequacy_status),
+           assessment_source = COALESCE($14, assessment_source),
+           assessment_version = COALESCE($15, assessment_version),
+           review_due_at = COALESCE($16, review_due_at),
+           signed_document_id = COALESCE($18, signed_document_id),
+           last_reviewed_at = CURRENT_TIMESTAMP,
            updated_at = CURRENT_TIMESTAMP
-       WHERE id = $1 AND user_id = $9
+       WHERE id = $1 AND organization_id = $17
        RETURNING *`, [
             id,
             vName,
@@ -121,7 +170,16 @@ router.put('/:id', adminCors, async (req, res) => {
             hasScc,
             scc_document_url,
             sigStatus,
-            req.user.id
+            ropa_activity_id,
+            purpose,
+            legal_basis,
+            Array.isArray(safeguards) ? JSON.stringify(safeguards.map(String).filter(Boolean)) : null,
+            adequacy_status,
+            assessment_source,
+            assessment_version,
+            review_due_at,
+            req.organization.id,
+            verifiedDocumentId
         ]);
         const row = result.rows[0];
         const mapped = {
@@ -129,7 +187,8 @@ router.put('/:id', adminCors, async (req, res) => {
             provider_name: row.vendor_name,
             country: row.destination_country,
             has_scc: row.has_signed_scc === true,
-            has_dpa: row.signature_status === 'SIGNED' || row.has_signed_scc === true
+            has_dpa: row.signature_status === 'SIGNED' || row.has_signed_scc === true,
+            has_verified_evidence: !!row.signed_document_id
         };
         res.json(mapped);
     }
@@ -139,15 +198,15 @@ router.put('/:id', adminCors, async (req, res) => {
     }
 });
 // DELETE /api/transfers/:id - Delete transfer record
-router.delete('/:id', adminCors, async (req, res) => {
+router.delete('/:id', requireOrganizationPermission('compliance.write'), async (req, res) => {
     const { id } = req.params;
     const db = getDb();
     try {
-        const check = await db.query('SELECT 1 FROM international_transfers WHERE id = $1 AND user_id = $2', [id, req.user.id]);
+        const check = await db.query('SELECT 1 FROM international_transfers WHERE id = $1 AND organization_id = $2', [id, req.organization.id]);
         if (check.rowCount === 0) {
             return res.status(404).json({ error: 'Registro de transferencia no encontrado o sin permisos.' });
         }
-        await db.query('DELETE FROM international_transfers WHERE id = $1 AND user_id = $2', [id, req.user.id]);
+        await db.query('DELETE FROM international_transfers WHERE id = $1 AND organization_id = $2', [id, req.organization.id]);
         res.json({ message: 'Registro de transferencia eliminado exitosamente.' });
     }
     catch (error) {
@@ -156,7 +215,7 @@ router.delete('/:id', adminCors, async (req, res) => {
     }
 });
 // GET /api/transfers/countries - List all adequate countries and reference notes
-router.get('/countries', adminCors, async (req, res) => {
+router.get('/countries', requireOrganizationPermission('compliance.read'), async (req, res) => {
     const db = getDb();
     try {
         const result = await db.query('SELECT * FROM adequate_countries_reference ORDER BY country_name ASC');
@@ -168,7 +227,7 @@ router.get('/countries', adminCors, async (req, res) => {
     }
 });
 // POST /api/transfers/generate-scc - Generate custom Model Contractual Clauses (SCC)
-router.post('/generate-scc', adminCors, async (req, res) => {
+router.post('/generate-scc', requireOrganizationPermission('compliance.read'), async (req, res) => {
     const { exporterName, exporterRut, exporterAddress, importerName, importerCountry, importerAddress, dataCategories } = req.body;
     if (!exporterName || !exporterRut || !exporterAddress || !importerName || !importerCountry || !importerAddress) {
         return res.status(400).json({ error: 'Faltan datos de las partes contratantes para generar las Cláusulas Tipo.' });
@@ -228,6 +287,25 @@ Cargo:                                      Cargo:
 Fecha:                                      Fecha:
 \`\`\`
 `;
-    res.json({ sccContent });
+    // Evidencia de integridad: se registra el hash del documento exacto que el
+    // sistema generó, junto con un ID de descarga. Ese ID es el único que el
+    // PUT/POST de esta ruta van a aceptar como prueba de que el contrato
+    // "firmado" corresponde a un documento real emitido por la plataforma —
+    // no a una declaración libre del usuario.
+    const contentHash = crypto.createHash('sha256').update(sccContent).digest('hex');
+    let downloadId = null;
+    try {
+        const db = getDb();
+        const insertRes = await db.query(`INSERT INTO document_downloads (user_id, organization_id, document_type, content_hash, disclaimer_version)
+       VALUES ($1, $2, 'scc', $3, $4)
+       RETURNING id`, [req.user.id, req.organization.id, contentHash, 'DISCLAIMER_V1']);
+        downloadId = insertRes.rows[0].id;
+    }
+    catch (error) {
+        console.error('Error registrando la generación de SCC en document_downloads:', error.message);
+        // No bloqueamos la generación del documento por un fallo de logging, pero
+        // sin downloadId el usuario no podrá marcar la transferencia como firmada.
+    }
+    res.json({ sccContent, contentHash, documentDownloadId: downloadId });
 });
 export default router;

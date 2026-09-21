@@ -12,7 +12,24 @@ export default function LoginView({ onLoginSuccess }: LoginViewProps) {
   const [password, setPassword] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
+  const [needsVerification, setNeedsVerification] = useState(false);
+  const [resendMsg, setResendMsg] = useState('');
   const navigate = useNavigate();
+
+  const handleResend = async () => {
+    setResendMsg('');
+    try {
+      const response = await fetch(`${API_BASE}/api/auth/resend-verification`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email }),
+      });
+      const data = await response.json();
+      setResendMsg(data.message || 'Si corresponde, se reenvió el correo de verificación.');
+    } catch (err) {
+      setResendMsg('No pudimos reenviar el correo. Intenta nuevamente.');
+    }
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -20,6 +37,8 @@ export default function LoginView({ onLoginSuccess }: LoginViewProps) {
 
     setIsLoading(true);
     setErrorMsg('');
+    setNeedsVerification(false);
+    setResendMsg('');
 
     try {
       const response = await fetch(`${API_BASE}/api/auth/login`, {
@@ -37,6 +56,9 @@ export default function LoginView({ onLoginSuccess }: LoginViewProps) {
         navigate('/dashboard');
       } else {
         setErrorMsg(data.error || 'Credenciales inválidas. Reintente.');
+        if (data.requiresVerification) {
+          setNeedsVerification(true);
+        }
       }
     } catch (err) {
       console.error(err);
@@ -73,7 +95,17 @@ export default function LoginView({ onLoginSuccess }: LoginViewProps) {
           {errorMsg && (
             <div className="mb-4 p-3.5 bg-rose-950/40 border border-rose-900/30 text-rose-400 text-xs rounded-xl flex items-start gap-2.5">
               <AlertCircle size={16} className="flex-shrink-0 mt-0.5" />
-              <span>{errorMsg}</span>
+              <div>
+                <span>{errorMsg}</span>
+                {needsVerification && (
+                  <div className="mt-2">
+                    <button type="button" onClick={handleResend} className="text-indigo-400 hover:underline font-semibold">
+                      Reenviar correo de verificación
+                    </button>
+                    {resendMsg && <p className="mt-1 text-slate-400">{resendMsg}</p>}
+                  </div>
+                )}
+              </div>
             </div>
           )}
 

@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import crypto from 'crypto';
 import { getDb } from '../database/db.js';
 import { authenticateToken } from '../middlewares/auth.js';
 import { resolveActiveOrganization, requireOrganizationPermission } from '../tenancy/organizationContext.js';
@@ -22,7 +23,8 @@ router.get('/', requireOrganizationPermission('compliance.read'), async (req: an
       provider_name: row.vendor_name,
       country: row.destination_country,
       has_scc: row.has_signed_scc === true,
-      has_dpa: row.signature_status === 'SIGNED' || row.has_signed_scc === true
+      has_dpa: row.signature_status === 'SIGNED' || row.has_signed_scc === true,
+      has_verified_evidence: !!row.signed_document_id
     }));
     res.json(mapped);
   } catch (error: any) {
@@ -47,6 +49,28 @@ router.post('/', requireOrganizationPermission('compliance.write'), async (req: 
   }
 
   const db = getDb();
+
+  // Evidencia de integridad: declarar la transferencia ya como firmada exige
+  // el ID de un documento SCC/DPA generado por la plataforma para esta organización.
+  const isDeclaringSigned = hasScc === true || sigStatus === 'SIGNED';
+  let verifiedDocumentId: string | null = null;
+  if (isDeclaringSigned) {
+    const { document_download_id } = req.body;
+    if (!document_download_id) {
+      return res.status(400).json({
+        error: 'Para registrar esta transferencia ya como firmada debes generar primero el documento SCC/DPA oficial (POST /api/transfers/generate-scc) y enviar el document_download_id resultante.'
+      });
+    }
+    const docCheck = await db.query(
+      `SELECT id FROM document_downloads WHERE id = $1 AND organization_id = $2 AND document_type IN ('scc', 'dpa')`,
+      [document_download_id, req.organization.id]
+    );
+    if (docCheck.rowCount === 0) {
+      return res.status(400).json({ error: 'El document_download_id proporcionado no es válido para esta organización.' });
+    }
+    verifiedDocumentId = document_download_id;
+  }
+
   try {
     if (ropa_activity_id) {
       const activity = await db.query(
@@ -59,8 +83,9 @@ router.post('/', requireOrganizationPermission('compliance.write'), async (req: 
       `INSERT INTO international_transfers 
        (domain, vendor_name, destination_country, data_categories, transfer_mechanism, has_signed_scc,
         scc_document_url, signature_status, user_id, organization_id, ropa_activity_id, purpose,
-        legal_basis, safeguards, adequacy_status, assessment_source, assessment_version, review_due_at)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)
+        legal_basis, safeguards, adequacy_status, assessment_source, assessment_version, review_due_at,
+        signed_document_id)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)
        RETURNING *`,
       [
         domain,
@@ -80,7 +105,8 @@ router.post('/', requireOrganizationPermission('compliance.write'), async (req: 
         adequacy_status || 'PENDING_REVIEW',
         assessment_source || null,
         assessment_version || null,
-        review_due_at || null
+        review_due_at || null,
+        verifiedDocumentId
       ]
     );
     
@@ -90,7 +116,8 @@ router.post('/', requireOrganizationPermission('compliance.write'), async (req: 
       provider_name: row.vendor_name,
       country: row.destination_country,
       has_scc: row.has_signed_scc === true,
-      has_dpa: row.signature_status === 'SIGNED' || row.has_signed_scc === true
+      has_dpa: row.signature_status === 'SIGNED' || row.has_signed_scc === true,
+      has_verified_evidence: !!row.signed_document_id
     };
     res.status(201).json(mapped);
   } catch (error: any) {
@@ -112,6 +139,28 @@ router.put('/:id', requireOrganizationPermission('compliance.write'), async (req
   const sigStatus = signature_status || (has_dpa === true ? 'SIGNED' : (has_dpa === false ? 'PENDING' : undefined));
 
   const db = getDb();
+
+  const isDeclaringSigned = hasScc === true || sigStatus === 'SIGNED';
+  let verifiedDocumentId: string | null | undefined = undefined; // undefined = no tocar la columna existente
+  if (isDeclaringSigned) {
+    const { document_download_id } = req.body;
+    if (!document_download_id) {
+      return res.status(400).json({
+        error: 'Para marcar esta transferencia como firmada debes generar primero el documento SCC/DPA oficial desde la plataforma (POST /api/transfers/generate-scc) y enviar el document_download_id resultante.'
+      });
+    }
+    const docCheck = await db.query(
+      `SELECT id FROM document_downloads WHERE id = $1 AND organization_id = $2 AND document_type IN ('scc', 'dpa')`,
+      [document_download_id, req.organization.id]
+    );
+    if (docCheck.rowCount === 0) {
+      return res.status(400).json({
+        error: 'El document_download_id proporcionado no corresponde a un documento SCC/DPA generado por la plataforma para esta organización. No se puede verificar la firma.'
+      });
+    }
+    verifiedDocumentId = document_download_id;
+  }
+
   try {
     // Check if transfer exists and belongs to the user
     const check = await db.query('SELECT 1 FROM international_transfers WHERE id = $1 AND organization_id = $2', [id, req.organization.id]);
@@ -143,6 +192,7 @@ router.put('/:id', requireOrganizationPermission('compliance.write'), async (req
            assessment_source = COALESCE($14, assessment_source),
            assessment_version = COALESCE($15, assessment_version),
            review_due_at = COALESCE($16, review_due_at),
+           signed_document_id = COALESCE($18, signed_document_id),
            last_reviewed_at = CURRENT_TIMESTAMP,
            updated_at = CURRENT_TIMESTAMP
        WHERE id = $1 AND organization_id = $17
@@ -164,7 +214,8 @@ router.put('/:id', requireOrganizationPermission('compliance.write'), async (req
         assessment_source,
         assessment_version,
         review_due_at,
-        req.organization.id
+        req.organization.id,
+        verifiedDocumentId
       ]
     );
     
@@ -174,7 +225,8 @@ router.put('/:id', requireOrganizationPermission('compliance.write'), async (req
       provider_name: row.vendor_name,
       country: row.destination_country,
       has_scc: row.has_signed_scc === true,
-      has_dpa: row.signature_status === 'SIGNED' || row.has_signed_scc === true
+      has_dpa: row.signature_status === 'SIGNED' || row.has_signed_scc === true,
+      has_verified_evidence: !!row.signed_document_id
     };
     res.json(mapped);
   } catch (error: any) {
@@ -277,7 +329,29 @@ Fecha:                                      Fecha:
 \`\`\`
 `;
 
-  res.json({ sccContent });
+  // Evidencia de integridad: se registra el hash del documento exacto que el
+  // sistema generó, junto con un ID de descarga. Ese ID es el único que el
+  // PUT/POST de esta ruta van a aceptar como prueba de que el contrato
+  // "firmado" corresponde a un documento real emitido por la plataforma —
+  // no a una declaración libre del usuario.
+  const contentHash = crypto.createHash('sha256').update(sccContent).digest('hex');
+  let downloadId: string | null = null;
+  try {
+    const db = getDb();
+    const insertRes = await db.query(
+      `INSERT INTO document_downloads (user_id, organization_id, document_type, content_hash, disclaimer_version)
+       VALUES ($1, $2, 'scc', $3, $4)
+       RETURNING id`,
+      [req.user.id, req.organization.id, contentHash, 'DISCLAIMER_V1']
+    );
+    downloadId = insertRes.rows[0].id;
+  } catch (error: any) {
+    console.error('Error registrando la generación de SCC en document_downloads:', error.message);
+    // No bloqueamos la generación del documento por un fallo de logging, pero
+    // sin downloadId el usuario no podrá marcar la transferencia como firmada.
+  }
+
+  res.json({ sccContent, contentHash, documentDownloadId: downloadId });
 });
 
 export default router;

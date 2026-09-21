@@ -1,27 +1,5 @@
 import * as cheerio from 'cheerio';
-import dns from 'dns';
-import { promisify } from 'util';
-const dnsLookup = promisify(dns.lookup);
-function isPrivateIp(ip) {
-    const parts = ip.split('.').map(Number);
-    if (parts.length !== 4 || parts.some(isNaN)) {
-        return false;
-    }
-    const [p1, p2] = parts;
-    if (p1 === 10)
-        return true;
-    if (p1 === 127)
-        return true;
-    if (p1 === 172 && p2 >= 16 && p2 <= 31)
-        return true;
-    if (p1 === 192 && p2 === 168)
-        return true;
-    if (p1 === 169 && p2 === 254)
-        return true;
-    if (p1 === 0)
-        return true;
-    return false;
-}
+import { assertPublicHttpUrl, fetchStaticHtml } from '../scanner/networkSafety.js';
 export async function runAudit(url) {
     let fetchedUrl = url;
     // Add default protocol if missing
@@ -37,10 +15,7 @@ export async function runAudit(url) {
     }
     // SSRF prevention: DNS resolution check
     try {
-        const lookupRes = await dnsLookup(baseUrl.hostname);
-        if (isPrivateIp(lookupRes.address)) {
-            throw new Error("No se permite escanear hosts o IPs privadas (Prevención de SSRF).");
-        }
+        await assertPublicHttpUrl(baseUrl);
     }
     catch (dnsErr) {
         if (dnsErr.message.includes("SSRF")) {
@@ -73,17 +48,11 @@ export async function runAudit(url) {
         pagesAnalyzed.push(currentUrl);
         try {
             console.log(`Auditing subpage: ${currentUrl}`);
-            const response = await fetch(currentUrl, {
-                headers: {
-                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
-                },
-                signal: AbortSignal.timeout(8000) // 8s timeout per page
-            });
+            const { response, html } = await fetchStaticHtml(currentUrl, 8000);
             if (!response.ok) {
                 console.warn(`Failed to fetch subpage ${currentUrl}: Status ${response.status}`);
                 continue;
             }
-            const html = await response.text();
             crawledHtmls.push({ url: currentUrl, html });
             const $ = cheerio.load(html);
             // Check for cookie banner presence (classes, IDs, or text keywords)
@@ -195,9 +164,13 @@ export async function runAudit(url) {
             id: 'unconsented_scripts',
             category: 'cookies_scripts',
             severity: 'Grave',
-            description: `Se detectaron scripts de seguimiento de terceros (${uniqueTrackers.join(', ')}) cargando en las páginas analizadas sin consentimiento previo.`,
-            recommendation: 'Implementar el CMP (Consent Management Platform) de PrivacyTech para bloquear dinámicamente estos scripts hasta recibir el consentimiento del usuario.',
-            details: `Scripts detectados: ${uniqueTrackers.join(', ')}. El rastreo de usuarios sin consentimiento previo explícito vulnera el principio de licitud de la Ley N° 21.719.`
+            description: `El HTML estático referencia scripts de seguimiento de terceros (${uniqueTrackers.join(', ')}). No se verificó su ejecución ni el estado de consentimiento.`,
+            recommendation: 'Verificar con navegador instrumentado la carga real antes de decidir medidas técnicas o jurídicas.',
+            details: `Referencias detectadas: ${uniqueTrackers.join(', ')}. Hallazgo técnico preliminar.`,
+            evidence: [{ type: 'html_static', url: baseUrl.origin, observation: `Referencias a: ${uniqueTrackers.join(', ')}` }],
+            limitations: ['No se ejecutó JavaScript ni se observó tráfico de red o cookies.'],
+            pendingInformation: ['Configuración efectiva del CMP y base jurídica aplicable.'],
+            legalInterpretation: 'Preliminar y sujeta a revisión jurídica.'
         });
     }
     // 1.5 Cookie Banner presence check
@@ -206,9 +179,12 @@ export async function runAudit(url) {
             id: 'missing_cookie_banner',
             category: 'cookies_scripts',
             severity: 'Grave',
-            description: 'No se detectó un banner o mecanismo activo para la aceptación y gestión de cookies en el sitio web.',
-            recommendation: 'Implementar el CMP (Consent Management Platform) de PrivacyTech para gestionar las preferencias de cookies del usuario conforme a la Ley N° 21.719.',
-            details: 'La ley exige obtener el consentimiento previo del usuario antes de almacenar cookies no necesarias o de seguimiento en su navegador.'
+            description: 'No se identificó texto o marcado HTML estático asociado a un banner de cookies.',
+            recommendation: 'Verificar en navegador si existe un mecanismo dinámico y determinar qué tecnologías requieren consentimiento.',
+            details: 'La ausencia en HTML estático no demuestra ausencia del mecanismo ni falta de licitud.',
+            limitations: ['Un banner cargado mediante JavaScript puede no aparecer.'],
+            pendingInformation: ['Comportamiento antes y después de aceptar o rechazar.'],
+            legalInterpretation: 'Hallazgo preliminar; no constituye conclusión de incumplimiento.'
         });
     }
     // 2. Form findings
@@ -217,9 +193,11 @@ export async function runAudit(url) {
             id: 'missing_opt_in',
             category: 'forms',
             severity: 'Grave',
-            description: `Se detectaron ${totalMissingOptIn} formulario(s) de contacto/registro en el sitio que recopilan datos sin casilla de consentimiento explícito (opt-in).`,
-            recommendation: 'Añadir una casilla de verificación no seleccionada por defecto con un enlace a la Política de Privacidad en todos los formularios del sitio.',
-            details: 'La ley exige que el consentimiento sea libre e informado, por lo que no es lícito asumir consentimiento por el simple envío del formulario.'
+            description: `Se identificaron ${totalMissingOptIn} formulario(s) sin casilla de consentimiento visible en el HTML estático.`,
+            recommendation: 'Documentar finalidad y base de licitud; añadir consentimiento solo cuando sea la base aplicable.',
+            details: 'La falta de checkbox no demuestra por sí sola ausencia de licitud.',
+            pendingInformation: ['Finalidad, datos, responsable y base de licitud de cada formulario.'],
+            legalInterpretation: 'Requiere revisión jurídica caso a caso.'
         });
     }
     if (totalPreCheckedOptIn > 0) {
@@ -229,7 +207,9 @@ export async function runAudit(url) {
             severity: 'Gravísima',
             description: `Se detectaron casillas de consentimiento pre-marcadas (pre-checked) en los formularios analizados.`,
             recommendation: 'Modificar las casillas de aceptación de términos y políticas para que aparezcan vacías por defecto.',
-            details: 'La ley exige que el consentimiento sea una acción afirmativa clara. Las casillas pre-marcadas no constituyen consentimiento válido.'
+            details: 'Si la base invocada es consentimiento, una casilla pre-marcada requiere revisión jurídica de su validez.',
+            pendingInformation: ['Base de licitud y contexto de cada casilla.'],
+            legalInterpretation: 'Preliminar, pendiente de revisión jurídica.'
         });
     }
     // 2.5 ARCO Link presence check
@@ -238,9 +218,12 @@ export async function runAudit(url) {
             id: 'missing_arco_channel',
             category: 'forms',
             severity: 'Grave',
-            description: 'No se encontró un canal digital o formulario interactivo para la gestión y ejercicio de los Derechos ARCO+.',
-            recommendation: 'Integrar y publicar en su sitio el enlace al formulario interactivo ARCO+ provisto por el Widget de PrivacyTech.',
-            details: 'El titular de datos tiene derecho a solicitar el acceso, rectificación, cancelación, oposición o bloqueo de su información personal de forma expedita.'
+            description: 'No se identificó en el HTML estático un enlace cuyo texto o URL indique un canal ARCO+.',
+            recommendation: 'Confirmar los canales disponibles y hacerlos encontrables en el sitio cuando corresponda.',
+            details: 'El canal puede existir fuera de las páginas o cargarse dinámicamente.',
+            limitations: ['Detección por palabras clave en enlaces HTML.'],
+            pendingInformation: ['Canales operativos y procedimiento de atención de derechos.'],
+            legalInterpretation: 'Observación preliminar, no prueba ausencia de un canal.'
         });
     }
     // 3. Privacy Policy Link & Content findings
@@ -249,9 +232,12 @@ export async function runAudit(url) {
             id: 'missing_privacy_link',
             category: 'privacy_policy',
             severity: 'Gravísima',
-            description: 'No se encontró un enlace visible a la Política de Privacidad en ninguna de las páginas analizadas.',
+            description: 'No se identificó un enlace a una Política de Privacidad mediante las palabras clave analizadas.',
             recommendation: 'Agregar un enlace a la Política de Privacidad de forma permanente y visible en el pie de página (footer) de todo el sitio.',
-            details: 'Infracción grave al principio de transparencia e información obligatoria de la Ley N° 21.719.'
+            details: 'La política puede usar otra denominación o cargarse dinámicamente.',
+            limitations: ['Detección por palabras clave sobre HTML estático.'],
+            pendingInformation: ['URL oficial y mecanismo de publicación de la política.'],
+            legalInterpretation: 'Posible brecha de transparencia, pendiente de comprobación y revisión jurídica.'
         });
     }
     else {
@@ -265,9 +251,8 @@ export async function runAudit(url) {
         }
         let policyText = '';
         try {
-            const policyResponse = await fetch(resolvedPolicyUrl, { signal: AbortSignal.timeout(5000) });
+            const { response: policyResponse, html: policyHtml } = await fetchStaticHtml(resolvedPolicyUrl, 5000);
             if (policyResponse.ok) {
-                const policyHtml = await policyResponse.text();
                 const policy$ = cheerio.load(policyHtml);
                 policyText = policy$('body').text().toLowerCase();
             }
@@ -299,9 +284,11 @@ export async function runAudit(url) {
                 id: 'incomplete_policy_content',
                 category: 'policy_content',
                 severity: 'Grave',
-                description: `La Política de Privacidad no cumple cabalmente con el Art. 14 ter. Faltan las siguientes cláusulas obligatorias: ${missingClauses.join(', ')}.`,
+                description: `La búsqueda automatizada no identificó referencias claras a: ${missingClauses.join(', ')}.`,
                 recommendation: `Actualizar el texto de la política para incluir: ${missingClausesRecommendations.join(' ')}`,
-                details: `La Ley 21.719 exige informar claramente la identidad del responsable, los fines del tratamiento, el tiempo de conservación y los medios para el ejercicio de derechos ARCO+.`
+                details: 'La detección se basa en palabras clave y puede omitir redacciones equivalentes.',
+                limitations: ['Análisis léxico automatizado, sin interpretación jurídica del contexto.'],
+                legalInterpretation: 'Posible brecha informativa, pendiente de revisión jurídica.'
             });
         }
     }
@@ -336,7 +323,12 @@ export async function runAudit(url) {
         severityCounts,
         actionPlan,
         pagesAnalyzed,
-        pagesSkipped
+        pagesSkipped,
+        methodology: {
+            mode: 'static_html',
+            executesJavaScript: false,
+            limitations: ['No ejecuta JavaScript.', 'No observa red, cookies ni almacenamiento.', 'No compara estados de consentimiento.']
+        }
     };
 }
 function generateActionPlan(findings) {

@@ -76,11 +76,11 @@ export function generateContractText(data: ContractData): string {
   <p>Ambas partes acuerdan someterse expresamente a la supervisión, requerimientos e instrucciones de la <strong>Agencia de Protección de Datos Personales de Chile</strong> ante cualquier reclamación o auditoría legal vinculada al flujo transfronterizo regulado en este acto.</p>
 
   <div class="footer-signatures">
-    <div className="signature-line">
+    <div class="signature-line">
       Por el Exportador: <strong>${data.clientName}</strong><br/>
       Firma y Timbre
     </div>
-    <div className="signature-line">
+    <div class="signature-line">
       Por el Importador: <strong>${data.vendorName}</strong><br/>
       Firma y Timbre
     </div>
@@ -96,7 +96,7 @@ export function generateContractText(data: ContractData): string {
   <style>
     body { font-family: 'Georgia', 'Times New Roman', serif; line-height: 1.6; color: #1e293b; padding: 20px; }
     h1 { text-align: center; font-size: 20px; text-transform: uppercase; margin-bottom: 20px; font-weight: bold; }
-    h2 { font-size: 14px; text-transform: uppercase; margin-top: 20px; margin-bottom: 10px; font-weight: bold; border-bottom: 1px solid #slate-300; padding-bottom: 4px; }
+    h2 { font-size: 14px; text-transform: uppercase; margin-top: 20px; margin-bottom: 10px; font-weight: bold; border-bottom: 1px solid #cbd5e1; padding-bottom: 4px; }
     p { margin-bottom: 12px; text-align: justify; font-size: 13px; }
     .party-block { background: #f8fafc; padding: 15px; border: 1px solid #e2e8f0; border-radius: 6px; margin-bottom: 15px; font-size: 13px; }
     .footer-signatures { margin-top: 50px; display: flex; justify-content: space-between; gap: 40px; }
@@ -137,11 +137,11 @@ export function generateContractText(data: ContractData): string {
   <p>Ante cualquier evento de ransomware, hacking, robo de credenciales o suplantación que afecte la integridad de las bases de datos personales bajo custodia del Encargado, este informará de inmediato al Responsable en un plazo que no excederá las 24 horas hábiles, cooperando de buena fe para subsanar y mitigar los efectos.</p>
 
   <div class="footer-signatures">
-    <div className="signature-line">
+    <div class="signature-line">
       Por el Responsable (Cliente): <strong>${data.clientName}</strong><br/>
       Firma y Timbre
     </div>
-    <div className="signature-line">
+    <div class="signature-line">
       Por el Encargado (Proveedor): <strong>${data.vendorName}</strong><br/>
       Firma y Timbre
     </div>

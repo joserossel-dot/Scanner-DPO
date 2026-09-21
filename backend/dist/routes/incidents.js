@@ -1,41 +1,19 @@
 import { Router } from 'express';
-import cors from 'cors';
 import { getDb } from '../database/db.js';
 import { runSecurityScan } from '../services/securityScanner.js';
 import { authenticateToken } from '../middlewares/auth.js';
+import { resolveActiveOrganization, requireOrganizationPermission } from '../tenancy/organizationContext.js';
 const router = Router();
-// CORS setup matching dashboard origins
-const adminCors = cors((req, callback) => {
-    const origin = req.header('Origin');
-    const host = req.header('Host');
-    const allowedOrigins = [
-        process.env.DASHBOARD_ORIGIN,
-        'http://localhost:5173',
-        'http://localhost:3000',
-        host
-    ].filter(Boolean);
-    const isAllowed = !origin || allowedOrigins.some(allowed => origin === allowed ||
-        origin === `https://${allowed}` ||
-        origin === `http://${allowed}`);
-    let corsOptions;
-    if (isAllowed || process.env.NODE_ENV !== 'production') {
-        corsOptions = { origin: true, credentials: true };
-    }
-    else {
-        corsOptions = { origin: false };
-    }
-    callback(null, corsOptions);
-});
-router.options('*', cors());
 // Protect all endpoints in this router
 router.use(authenticateToken);
+router.use(resolveActiveOrganization);
 // GET /api/incidents - List all incidents for the authenticated user
-router.get('/', adminCors, async (req, res) => {
+router.get('/', requireOrganizationPermission('compliance.read'), async (req, res) => {
     const db = getDb();
     try {
         const result = await db.query(`SELECT * FROM security_incidents 
-       WHERE user_id = $1 
-       ORDER BY incident_date DESC`, [req.user.id]);
+       WHERE organization_id = $1
+       ORDER BY incident_date DESC`, [req.organization.id]);
         res.json(result.rows);
     }
     catch (error) {
@@ -44,7 +22,7 @@ router.get('/', adminCors, async (req, res) => {
     }
 });
 // POST /api/incidents - Register a new security breach
-router.post('/', adminCors, async (req, res) => {
+router.post('/', requireOrganizationPermission('incidents.manage'), async (req, res) => {
     const { domain, incident_title, incident_date, incident_type, affected_data_categories, approx_affected_titulars, description_and_effects, mitigation_measures, status } = req.body;
     if (!domain || !incident_title || !incident_date || !incident_type || !Array.isArray(affected_data_categories)) {
         return res.status(400).json({ error: 'Campos obligatorios faltantes o inválidos.' });
@@ -67,8 +45,8 @@ router.post('/', adminCors, async (req, res) => {
         const result = await db.query(`INSERT INTO security_incidents 
        (domain, incident_title, incident_date, incident_type, affected_data_categories, 
         approx_affected_titulars, description_and_effects, mitigation_measures, 
-        requires_agency_notification, requires_titulars_notification, status, user_id)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+        requires_agency_notification, requires_titulars_notification, status, user_id, organization_id)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
        RETURNING *`, [
             domain,
             incident_title,
@@ -81,7 +59,8 @@ router.post('/', adminCors, async (req, res) => {
             requires_agency_notification,
             requires_titulars_notification,
             status || 'DETECTED',
-            req.user.id
+            req.user.id,
+            req.organization.id
         ]);
         res.status(201).json(result.rows[0]);
     }
@@ -91,12 +70,12 @@ router.post('/', adminCors, async (req, res) => {
     }
 });
 // PUT /api/incidents/:id - Update mitigation, status and notifications
-router.put('/:id', adminCors, async (req, res) => {
+router.put('/:id', requireOrganizationPermission('incidents.manage'), async (req, res) => {
     const { id } = req.params;
     const { status, mitigation_measures, agency_notified_at, titulars_notified_at } = req.body;
     const db = getDb();
     try {
-        const check = await db.query('SELECT 1 FROM security_incidents WHERE id = $1 AND user_id = $2', [id, req.user.id]);
+        const check = await db.query('SELECT 1 FROM security_incidents WHERE id = $1 AND organization_id = $2', [id, req.organization.id]);
         if (check.rowCount === 0) {
             return res.status(404).json({ error: 'Registro de incidente no encontrado o sin permisos.' });
         }
@@ -106,14 +85,14 @@ router.put('/:id', adminCors, async (req, res) => {
            agency_notified_at = COALESCE($4, agency_notified_at),
            titulars_notified_at = COALESCE($5, titulars_notified_at),
            updated_at = CURRENT_TIMESTAMP
-       WHERE id = $1 AND user_id = $6
+       WHERE id = $1 AND organization_id = $6
        RETURNING *`, [
             id,
             status,
             mitigation_measures,
             agency_notified_at,
             titulars_notified_at,
-            req.user.id
+            req.organization.id
         ]);
         res.json(result.rows[0]);
     }
@@ -123,11 +102,11 @@ router.put('/:id', adminCors, async (req, res) => {
     }
 });
 // POST /api/incidents/:id/generate-notice - Generate agency report and user notification email
-router.post('/:id/generate-notice', adminCors, async (req, res) => {
+router.post('/:id/generate-notice', requireOrganizationPermission('incidents.manage'), async (req, res) => {
     const { id } = req.params;
     const db = getDb();
     try {
-        const check = await db.query('SELECT * FROM security_incidents WHERE id = $1 AND user_id = $2', [id, req.user.id]);
+        const check = await db.query('SELECT * FROM security_incidents WHERE id = $1 AND organization_id = $2', [id, req.organization.id]);
         if (check.rowCount === 0) {
             return res.status(404).json({ error: 'Incidente no encontrado o sin permisos.' });
         }
@@ -206,7 +185,7 @@ Atentamente,
     }
 });
 // POST /api/incidents/scan-vulnerabilities - Proactive vulnerability scanning
-router.post('/scan-vulnerabilities', adminCors, async (req, res) => {
+router.post('/scan-vulnerabilities', requireOrganizationPermission('incidents.manage'), async (req, res) => {
     const { domain } = req.body;
     if (!domain) {
         return res.status(400).json({ error: 'Falta parámetro domain' });
@@ -220,14 +199,14 @@ router.post('/scan-vulnerabilities', adminCors, async (req, res) => {
         for (const vul of targetVulnerabilities) {
             // 1. Prevent duplicate active alert incidents for this user
             const dupCheck = await db.query(`SELECT id FROM security_incidents 
-         WHERE domain = $1 AND incident_title = $2 AND status != 'REPORTED_AND_CLOSED' AND user_id = $3`, [domain, `[ALERTA PREVENTIVA] ${vul.title}`, req.user.id]);
+         WHERE domain = $1 AND incident_title = $2 AND status != 'REPORTED_AND_CLOSED' AND organization_id = $3`, [domain, `[ALERTA PREVENTIVA] ${vul.title}`, req.organization.id]);
             if (dupCheck.rowCount === 0) {
                 // 2. Insert alert as a preventive incident in database
                 const insertRes = await db.query(`INSERT INTO security_incidents 
            (domain, incident_title, incident_date, incident_type, affected_data_categories, 
             approx_affected_titulars, description_and_effects, mitigation_measures, 
-            requires_agency_notification, requires_titulars_notification, status, user_id)
-           VALUES ($1, $2, CURRENT_TIMESTAMP, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+            requires_agency_notification, requires_titulars_notification, status, user_id, organization_id)
+           VALUES ($1, $2, CURRENT_TIMESTAMP, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
            RETURNING *`, [
                     domain,
                     `[ALERTA PREVENTIVA] ${vul.title}`,
@@ -239,7 +218,8 @@ router.post('/scan-vulnerabilities', adminCors, async (req, res) => {
                     false,
                     false,
                     'DETECTED',
-                    req.user.id
+                    req.user.id,
+                    req.organization.id
                 ]);
                 incidentsCreated.push(insertRes.rows[0]);
             }
@@ -255,7 +235,7 @@ router.post('/scan-vulnerabilities', adminCors, async (req, res) => {
     }
 });
 // POST /api/incidents/assess-risk - Sandbox Legal Risk Assessor
-router.post('/assess-risk', adminCors, async (req, res) => {
+router.post('/assess-risk', requireOrganizationPermission('compliance.read'), async (req, res) => {
     const { incident_type, affected_data_categories, approx_affected_titulars } = req.body;
     const requiresAgencyNotification = ['DATA_LEAK', 'RANSOMWARE_HACK', 'UNAUTHORIZED_ACCESS', 'LOST_DEVICE'].includes(incident_type) ||
         (approx_affected_titulars && Number(approx_affected_titulars) > 0);

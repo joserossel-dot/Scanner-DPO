@@ -2,6 +2,7 @@ import { getDb } from '../database/db.js';
 
 export async function createRopaDraft(
   userId: string,
+  organizationId: string,
   processName: string,
   purpose: string,
   legalBasis: string,
@@ -14,16 +15,17 @@ export async function createRopaDraft(
   try {
     // Check if a similar draft already exists to avoid duplicates (ignoring source)
     const dupCheck = await db.query(
-      `SELECT id FROM ropa_inventory WHERE user_id = $1 AND process_name = $2`,
-      [userId, processName]
+      `SELECT id FROM ropa_inventory WHERE organization_id = $1 AND process_name = $2`,
+      [organizationId, processName]
     );
 
     if (dupCheck.rowCount === 0) {
       await db.query(
-        `INSERT INTO ropa_inventory (user_id, process_name, purpose, legal_basis, data_categories, retention_period, cross_border_transfer, source, status)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'draft')`,
+        `INSERT INTO ropa_inventory (user_id, organization_id, process_name, purpose, legal_basis, data_categories, retention_period, cross_border_transfer, source, status)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'draft')`,
         [
           userId,
+          organizationId,
           processName,
           purpose,
           legalBasis,
@@ -33,7 +35,7 @@ export async function createRopaDraft(
           source
         ]
       );
-      console.log(`[RoPADraftService] Borrador '${processName}' inyectado para usuario ${userId}.`);
+      console.log(`[RoPADraftService] Borrador '${processName}' inyectado para organización ${organizationId}.`);
     }
   } catch (err: any) {
     console.error(`[RoPADraftService] Error al insertar borrador de RoPA:`, err.message);
@@ -44,7 +46,7 @@ export async function createRopaDraft(
  * Analiza los hallazgos del crawler tecnológico (cookies, formularios, pixels)
  * y sugiere borradores en el RoPA para evitar la fricción de "hoja en blanco".
  */
-export async function analyzeScanResults(userId: string, scanResult: any) {
+export async function analyzeScanResults(userId: string, organizationId: string, scanResult: any) {
   if (!scanResult || !scanResult.findings) return;
 
   const findings = scanResult.findings as any[];
@@ -60,6 +62,7 @@ export async function analyzeScanResults(userId: string, scanResult: any) {
   if (hasAnalytics) {
     await createRopaDraft(
       userId,
+      organizationId,
       'Analítica Web y Rastreo',
       'Análisis estadístico del comportamiento de los usuarios en el sitio web, optimización de campañas de marketing y personalización de contenidos.',
       'Consentimiento',
@@ -79,6 +82,7 @@ export async function analyzeScanResults(userId: string, scanResult: any) {
   if (hasForms) {
     await createRopaDraft(
       userId,
+      organizationId,
       'Contacto y Registro de Prospectos',
       'Gestión de consultas de soporte, contacto comercial y captación de leads a través del sitio web.',
       'Consentimiento',
@@ -94,7 +98,7 @@ export async function analyzeScanResults(userId: string, scanResult: any) {
  * Analiza las respuestas declaradas en el diagnóstico interno
  * y sugiere borradores correspondientes en el RoPA.
  */
-export async function analyzeQuestionnaireAnswers(userId: string, answers: any) {
+export async function analyzeQuestionnaireAnswers(userId: string, organizationId: string, answers: any) {
   if (!answers) return;
 
   // 1. Detectar uso de cámaras de seguridad o videovigilancia
@@ -109,6 +113,7 @@ export async function analyzeQuestionnaireAnswers(userId: string, answers: any) 
   if (hasCctv) {
     await createRopaDraft(
       userId,
+      organizationId,
       'Cámaras de Videovigilancia (CCTV)',
       'Seguridad física, prevención de incidentes delictivos, control de accesos y seguridad de los trabajadores e instalaciones de la empresa.',
       'Interés Legítimo',
@@ -124,6 +129,7 @@ export async function analyzeQuestionnaireAnswers(userId: string, answers: any) 
   if (hasRrhh) {
     await createRopaDraft(
       userId,
+      organizationId,
       'Liquidación de Sueldos y Contratos (RRHH)',
       'Administración del personal, cálculo y pago de remuneraciones, cotizaciones de seguridad social, salud y control de licencias médicas laboral.',
       'Contrato',
@@ -139,6 +145,7 @@ export async function analyzeQuestionnaireAnswers(userId: string, answers: any) 
   if (hasCommercial) {
     await createRopaDraft(
       userId,
+      organizationId,
       'Base de Datos de Clientes y CRM',
       'Gestión comercial de la relación con el cliente, facturación de servicios, soporte posventa y envíos de boletines comerciales.',
       'Ejecución del Contrato',
@@ -157,6 +164,7 @@ export async function analyzeQuestionnaireAnswers(userId: string, answers: any) 
     if (providers.some(p => ['hubspot', 'salesforce', 'mailchimp', 'activecampaign', 'sendgrid'].includes(p))) {
       await createRopaDraft(
         userId,
+        organizationId,
         'Gestión de Leads y Campañas de Marketing (SaaS)',
         'Envío de correos, gestión de oportunidades de venta y control de embudo comercial utilizando proveedores en la nube.',
         'Consentimiento / Interés Legítimo',
@@ -171,6 +179,7 @@ export async function analyzeQuestionnaireAnswers(userId: string, answers: any) 
     if (providers.some(p => ['google_analytics', 'meta_pixel', 'hotjar'].includes(p))) {
       await createRopaDraft(
         userId,
+        organizationId,
         'Rastreo y Analítica de Comportamiento Web',
         'Seguimiento estadístico de visitas, conversiones y comportamiento de usuarios en el portal institucional.',
         'Consentimiento',
@@ -185,6 +194,7 @@ export async function analyzeQuestionnaireAnswers(userId: string, answers: any) 
     if (providers.some(p => ['aws', 'gcp', 'azure', 'digitalocean'].includes(p))) {
       await createRopaDraft(
         userId,
+        organizationId,
         'Alojamiento e Infraestructura en la Nube',
         'Almacenamiento general de bases de datos operativas de producción y backups de la infraestructura interna de la empresa.',
         'Ejecución del Contrato',
@@ -199,6 +209,7 @@ export async function analyzeQuestionnaireAnswers(userId: string, answers: any) 
     if (providers.some(p => ['google_workspace', 'office_365', 'zoom', 'slack'].includes(p))) {
       await createRopaDraft(
         userId,
+        organizationId,
         'Comunicaciones Corporativas y Colaboración Nube',
         'Gestión del correo electrónico corporativo, mensajería instantánea interna y videoconferencias operativas diarias.',
         'Interés Legítimo',
@@ -213,6 +224,7 @@ export async function analyzeQuestionnaireAnswers(userId: string, answers: any) 
     if (providers.some(p => ['bamboohr', 'workday'].includes(p))) {
       await createRopaDraft(
         userId,
+        organizationId,
         'Plataforma SaaS de Gestión de Personas',
         'Administración y control interno de CVs, fichas de personal, vacaciones y evaluaciones de desempeño.',
         'Ejecución de Contrato',
@@ -227,6 +239,7 @@ export async function analyzeQuestionnaireAnswers(userId: string, answers: any) 
     if (providers.some(p => ['zendesk', 'intercom'].includes(p))) {
       await createRopaDraft(
         userId,
+        organizationId,
         'Soporte y Atención de Clientes',
         'Gestión de tickets de ayuda, chat en vivo y resolución de reclamos de clientes en la plataforma.',
         'Ejecución del Contrato',
@@ -241,6 +254,7 @@ export async function analyzeQuestionnaireAnswers(userId: string, answers: any) 
     if (providers.includes('otro_shadow') && answers.shadow_it_providers_other) {
       await createRopaDraft(
         userId,
+        organizationId,
         `Tratamiento de Datos en ${answers.shadow_it_providers_other}`,
         `Actividad de tratamiento de datos personales utilizando la herramienta SaaS externa declarada: ${answers.shadow_it_providers_other}.`,
         'Consentimiento / Ejecución del Contrato',
@@ -258,6 +272,7 @@ export async function analyzeQuestionnaireAnswers(userId: string, answers: any) 
       if (vendor && vendor.trim()) {
         await createRopaDraft(
           userId,
+          organizationId,
           `Tratamiento de Datos en ${vendor.trim()}`,
           `Servicios provistos por el encargado externo de tratamiento de datos ${vendor.trim()}, según lo declarado en el cuestionario de diagnóstico.`,
           'Ejecución del Contrato / Interés Legítimo',
